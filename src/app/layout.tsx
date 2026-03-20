@@ -95,7 +95,7 @@ export default function RootLayout({
         <title>RuthServer Cloud</title>
       </head>
       <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased h-auto bg-gray-900`}
+        className={`${geistSans.variable} ${geistMono.variable} antialiased h-auto bg-gray-900 text-gray-100`}
       >
         <ErrorBoundary FallbackComponent={Error}>
           <Suspense fallback={<Loading />}>

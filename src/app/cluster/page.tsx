@@ -102,10 +102,10 @@ const ClusterPage = () => {
 
     // 메모이제이션된 서버 목록
     const servers = useMemo(() => [
-        { name: 'RuthServer', ip: 'ruthcloud.xyz', type: 'intel' as const },
-        { name: 'RuthPiMaster', ip: 'cluster0.ruthcloud.xyz', type: 'rpi' as const },
-        { name: 'RuthPiNode1', ip: 'cluster1.ruthcloud.xyz', type: 'rpi' as const },
-        { name: 'RuthPiNode2', ip: 'cluster2.ruthcloud.xyz', type: 'rpi' as const }
+        { name: 'RuthServer', ip: '192.168.0.100', type: 'intel' as const },
+        { name: 'RuthPiMaster', ip: '192.168.0.200', type: 'rpi' as const },
+        { name: 'RuthPiNode1', ip: '192.168.0.201', type: 'rpi' as const },
+        { name: 'RuthPiNode2', ip: '192.168.0.202', type: 'rpi' as const }
     ], []);
 
     // 메모리 관리를 위한 cleanup 함수
@@ -152,7 +152,7 @@ const ClusterPage = () => {
 
         for (const server of servers) {
             try {
-                const url = `https://${server.ip}/api/system`;
+                const url = `http://${server.ip}:3000/api/system`;
                 const controller = new AbortController();
                 const timeoutId = setTimeout(() => controller.abort(), 5000);
 
@@ -263,7 +263,7 @@ const ClusterPage = () => {
 
     // 메모이제이션된 PieChart 컴포넌트
     const PieChart = useMemo(() => {
-        return ({ percentage, size = 36, strokeWidth = 3, color }: PieChartProps) => {
+        function PieChartComponent({ percentage, size = 36, strokeWidth = 3, color }: PieChartProps) {
             const radius = (size - strokeWidth) / 2;
             const circumference = 2 * Math.PI * radius;
             const strokeDasharray = circumference;
@@ -274,7 +274,7 @@ const ClusterPage = () => {
                     <svg
                         width={size}
                         height={size}
-                        className="transform -rotate-90"
+                        className="-rotate-90"
                     >
                         <circle
                             cx={size / 2}
@@ -304,12 +304,14 @@ const ClusterPage = () => {
                     </div>
                 </div>
             );
-        };
+        }
+
+        return PieChartComponent;
     }, []);
 
     // 메모이제이션된 ServerCard 컴포넌트
     const ServerCard = useMemo(() => {
-        return ({ server, data }: ServerCardProps) => {
+        function ServerCardComponent({ server, data }: ServerCardProps) {
             if (!data || data.error) {
                 return (
                     <div className="bg-gray-800 rounded-lg p-2 border border-gray-700 h-full flex flex-col">
@@ -466,7 +468,9 @@ const ClusterPage = () => {
                     </div>
                 </div>
             );
-        };
+        }
+
+        return ServerCardComponent;
     }, [getStatusColor, formatMemory, formatDisk, getTemperatureDisplay, getFanSpeed, getTempColor, PieChart]);
 
     if (loading) {
@@ -474,7 +478,7 @@ const ClusterPage = () => {
     }
 
     return (
-        <div className="min-h-screen bg-gray-900">
+        <div className="min-h-screen bg-gray-900 text-gray-100">
             <Header error={null} />
             <div className="p-1 sm:p-2">
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-1 sm:gap-2 mb-1 sm:mb-2">
