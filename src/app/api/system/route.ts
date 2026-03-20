@@ -26,6 +26,10 @@ const defaultServerData: ServerData = {
 // 허용된 origin 목록
 const allowedOrigins = [
     'http://localhost:3000',
+    'http://192.168.0.100:3000',
+    'http://192.168.0.200:3000',
+    'http://192.168.0.201:3000',
+    'http://192.168.0.202:3000',
     'https://ruthcloud.xyz',
     'https://cluster0.ruthcloud.xyz',
     'https://cluster1.ruthcloud.xyz',
