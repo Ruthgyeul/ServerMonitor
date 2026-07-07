@@ -6,7 +6,7 @@ import { Cpu, HardDrive, MemoryStick, Network, Thermometer, Fan, Clock, Activity
 import { Header } from '@/components/common/Header';
 import Loading from '@/app/loading';
 import { NetworkChart } from '@/components/charts/NetworkChart';
-import { getClusterServers, CLUSTER_PORT, ClusterServer } from '@/config/clusterConfig';
+import { getClusterServers, CLUSTER_PORT, CLUSTER_PROTOCOL, ClusterServer } from '@/config/clusterConfig';
 
 type Server = ClusterServer;
 
@@ -144,7 +144,7 @@ const ClusterPage = () => {
 
         for (const server of servers) {
             try {
-                const url = `http://${server.ip}:${CLUSTER_PORT}/api/system`;
+                const url = `${CLUSTER_PROTOCOL}://${server.ip}:${CLUSTER_PORT}/api/system`;
                 const controller = new AbortController();
                 const timeoutId = setTimeout(() => controller.abort(), 5000);
 

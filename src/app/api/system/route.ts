@@ -26,7 +26,7 @@ const defaultServerData: ServerData = {
 // 허용된 origin 목록 (.env의 ALLOWED_ORIGINS로 설정, 콤마로 구분)
 const allowedOrigins = (process.env.ALLOWED_ORIGINS || 'http://localhost:3000')
     .split(',')
-    .map((origin) => origin.trim())
+    .map((origin) => origin.trim().replace(/\/+$/, ''))
     .filter(Boolean);
 
 function getCorsHeaders(origin: string | undefined) {

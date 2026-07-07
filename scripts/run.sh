@@ -1,14 +1,18 @@
 #!/bin/bash
 
-# Load KIOSK_USER / KIOSK_URL from .env if present
+# Read a single KEY=value out of .env without sourcing (executing) the file,
+# since dotenv values aren't guaranteed to be safe shell syntax.
 ENV_FILE="$(cd "$(dirname "$0")/.." && pwd)/.env"
-if [ -f "$ENV_FILE" ]; then
-    set -a
-    source "$ENV_FILE"
-    set +a
-fi
 
+read_env_value() {
+    local key="$1"
+    [ -f "$ENV_FILE" ] || return 0
+    grep -E "^${key}=" "$ENV_FILE" | tail -n 1 | cut -d '=' -f2- | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' -e "s/^['\"]//" -e "s/['\"]\$//"
+}
+
+KIOSK_USER="${KIOSK_USER:-$(read_env_value KIOSK_USER)}"
 KIOSK_USER="${KIOSK_USER:-$(whoami)}"
+KIOSK_URL="${KIOSK_URL:-$(read_env_value KIOSK_URL)}"
 KIOSK_URL="${KIOSK_URL:-http://localhost:3000}"
 
 # DISPLAY Setup

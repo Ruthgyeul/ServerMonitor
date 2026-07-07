@@ -9,6 +9,10 @@ export interface ClusterServer {
 
 export const CLUSTER_PORT = process.env.NEXT_PUBLIC_CLUSTER_PORT || '3000';
 
+// Configurable so dashboards served over HTTPS can point at nodes that also
+// terminate TLS, avoiding mixed-content blocks on an all-http default.
+export const CLUSTER_PROTOCOL = process.env.NEXT_PUBLIC_CLUSTER_PROTOCOL || 'http';
+
 function isClusterServer(value: unknown): value is ClusterServer {
     if (!value || typeof value !== 'object') return false;
     const server = value as Record<string, unknown>;
