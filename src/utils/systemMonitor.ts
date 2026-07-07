@@ -1,6 +1,7 @@
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import path from 'path';
+import { readFile } from 'fs/promises';
 
 import { isValidServerData } from '@/utils/validation';
 import { ServerData, Process, X86TemperatureInfo, ARMTemperatureInfo, TemperatureValue, TemperatureInfo, isX86TemperatureInfo, isARMTemperatureInfo } from '@/types/system';
@@ -130,16 +131,32 @@ async function getDiskInfo(): Promise<DiskInfo> {
   };
 }
 
+// Linux network interface names are restricted to this charset (see netdevice(7)).
+// Validating against it before touching sysfs paths keeps a value derived from
+// command output from ever being treated as shell syntax.
+const INTERFACE_NAME_PATTERN = /^[a-zA-Z0-9@.:_-]+$/;
+
+async function readInterfaceStat(interfaceName: string, stat: string): Promise<string> {
+  const contents = await readFile(`/sys/class/net/${interfaceName}/statistics/${stat}`, 'utf-8');
+  return contents.trim();
+}
+
 async function getNetworkInfo(): Promise<NetworkInfo> {
   const { stdout: netInterface } = await execAsync('ip route | grep default | awk \'{print $5}\'');
   const interfaceName = netInterface.trim();
-  
-  const { stdout: rx_bytes } = await execAsync(`cat /sys/class/net/${interfaceName}/statistics/rx_bytes`);
-  const { stdout: tx_bytes } = await execAsync(`cat /sys/class/net/${interfaceName}/statistics/tx_bytes`);
-  const { stdout: rx_errors } = await execAsync(`cat /sys/class/net/${interfaceName}/statistics/rx_errors`);
-  const { stdout: tx_errors } = await execAsync(`cat /sys/class/net/${interfaceName}/statistics/tx_errors`);
+
+  if (!INTERFACE_NAME_PATTERN.test(interfaceName)) {
+    throw new Error(`Unexpected network interface name: ${interfaceName}`);
+  }
+
+  const [rx_bytes, tx_bytes, rx_errors, tx_errors] = await Promise.all([
+    readInterfaceStat(interfaceName, 'rx_bytes'),
+    readInterfaceStat(interfaceName, 'tx_bytes'),
+    readInterfaceStat(interfaceName, 'rx_errors'),
+    readInterfaceStat(interfaceName, 'tx_errors')
+  ]);
   const { stdout: ping } = await execAsync('ping -c 1 8.8.8.8 | grep "time=" | awk \'{print $7}\' | sed \'s/time=//\'');
-  
+
   const currentRxBytes = parseInt(rx_bytes.trim());
   const currentTxBytes = parseInt(tx_bytes.trim());
   

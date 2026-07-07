@@ -6,29 +6,32 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "eslint ."
   },
   "dependencies": {
-    "@tailwindcss/postcss": "^4.2.2",
+    "@tailwindcss/postcss": "^4.3.2",
     "lucide-react": "^0.511.0",
-    "next": ">=15.5.14",
+    "next": "^16.2.10",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
-    "react-error-boundary": "^6.0.0",
-    "recharts": "^2.15.3"
+    "react-error-boundary": "^6.1.2",
+    "recharts": "^2.15.4"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3.3.1",
-    "@types/node": "^20.11.19",
+    "@types/node": "^20.19.43",
     "@types/react": "^18.2.57",
     "@types/react-dom": "^18.2.19",
-    "@typescript-eslint/eslint-plugin": "^8.32.1",
-    "@typescript-eslint/parser": "^8.32.1",
-    "autoprefixer": "^10.4.21",
-    "eslint": "^9.27.0",
-    "eslint-config-next": "^15.5.14",
-    "postcss": "^8.5.3",
-    "tailwindcss": "^4.1.17",
-    "typescript": "^5.3.3"
+    "@typescript-eslint/eslint-plugin": "^8.63.0",
+    "@typescript-eslint/parser": "^8.63.0",
+    "autoprefixer": "^10.5.2",
+    "eslint": "^9.39.4",
+    "eslint-config-next": "^15.5.20",
+    "postcss": "^8.5.16",
+    "tailwindcss": "^4.3.2",
+    "typescript": "^5.9.3"
+  },
+  "overrides": {
+    "postcss": "^8.5.16"
   }
 }
