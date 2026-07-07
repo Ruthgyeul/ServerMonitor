@@ -6,12 +6,9 @@ import { Cpu, HardDrive, MemoryStick, Network, Thermometer, Fan, Clock, Activity
 import { Header } from '@/components/common/Header';
 import Loading from '@/app/loading';
 import { NetworkChart } from '@/components/charts/NetworkChart';
+import { getClusterServers, CLUSTER_PORT, CLUSTER_PROTOCOL, ClusterServer } from '@/config/clusterConfig';
 
-interface Server {
-    name: string;
-    ip: string;
-    type: 'intel' | 'rpi';
-}
+type Server = ClusterServer;
 
 interface Uptime {
     days: number;
@@ -100,13 +97,8 @@ const ClusterPage = () => {
     const [lastUpdate, setLastUpdate] = useState(new Date());
     const [networkHistory, setNetworkHistory] = useState<{ [key: string]: NetworkHistoryEntry[] }>({});
 
-    // 메모이제이션된 서버 목록
-    const servers = useMemo(() => [
-        { name: 'RuthServer', ip: '192.168.0.100', type: 'intel' as const },
-        { name: 'RuthPiMaster', ip: '192.168.0.200', type: 'rpi' as const },
-        { name: 'RuthPiNode1', ip: '192.168.0.201', type: 'rpi' as const },
-        { name: 'RuthPiNode2', ip: '192.168.0.202', type: 'rpi' as const }
-    ], []);
+    // 메모이제이션된 서버 목록 (.env의 NEXT_PUBLIC_CLUSTER_SERVERS로 설정)
+    const servers = useMemo(() => getClusterServers(), []);
 
     // 메모리 관리를 위한 cleanup 함수
     const cleanupNetworkHistory = useCallback(() => {
@@ -152,7 +144,7 @@ const ClusterPage = () => {
 
         for (const server of servers) {
             try {
-                const url = `http://${server.ip}:3000/api/system`;
+                const url = `${CLUSTER_PROTOCOL}://${server.ip}:${CLUSTER_PORT}/api/system`;
                 const controller = new AbortController();
                 const timeoutId = setTimeout(() => controller.abort(), 5000);
 

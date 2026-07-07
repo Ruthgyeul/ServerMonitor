@@ -23,18 +23,11 @@ const defaultServerData: ServerData = {
     processes: []
 };
 
-// 허용된 origin 목록
-const allowedOrigins = [
-    'http://localhost:3000',
-    'http://192.168.0.100:3000',
-    'http://192.168.0.200:3000',
-    'http://192.168.0.201:3000',
-    'http://192.168.0.202:3000',
-    'https://ruthcloud.xyz',
-    'https://cluster0.ruthcloud.xyz',
-    'https://cluster1.ruthcloud.xyz',
-    'https://cluster2.ruthcloud.xyz'
-];
+// 허용된 origin 목록 (.env의 ALLOWED_ORIGINS로 설정, 콤마로 구분)
+const allowedOrigins = (process.env.ALLOWED_ORIGINS || 'http://localhost:3000')
+    .split(',')
+    .map((origin) => origin.trim().replace(/\/+$/, ''))
+    .filter(Boolean);
 
 function getCorsHeaders(origin: string | undefined) {
     const headers: Record<string, string> = {
