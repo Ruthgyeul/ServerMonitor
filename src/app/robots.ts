@@ -1,3 +1,5 @@
+import { SITE_URL } from '@/config/siteConfig';
+
 export default function robots() {
     return {
         rules: [
@@ -39,7 +41,7 @@ export default function robots() {
                 disallow: ['/'],
             },
         ],
-        sitemap: 'https://ruthcloud.xyz/sitemap.xml',
-        host: 'https://ruthcloud.xyz',
+        sitemap: `${SITE_URL}/sitemap.xml`,
+        host: SITE_URL,
     }
 }

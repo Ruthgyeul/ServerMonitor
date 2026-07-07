@@ -1,5 +1,7 @@
+import { SITE_URL } from '@/config/siteConfig';
+
 export default function sitemap() {
-    const baseUrl = 'https://ruthcloud.xyz';
+    const baseUrl = SITE_URL;
     const currentDate = new Date().toISOString();
 
     const routes = [
