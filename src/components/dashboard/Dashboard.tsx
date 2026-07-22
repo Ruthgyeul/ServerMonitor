@@ -360,11 +360,13 @@ const CoresCard: React.FC<{ data: DashboardData }> = ({ data }) => {
       <ul className={cn('dash-corelist', cores.length > CORE_SPLIT_THRESHOLD && 'dash-corelist--split')}>
         {cores.map((usage, index) => (
           <li key={index} className="flex items-center gap-1.5">
-            <span className="t-micro w-5 shrink-0 text-gray-500">C{index}</span>
+            {/* 폭을 ch 로 잡아야 글자 배율(--dash-scale)을 따라 같이 넓어진다.
+                px 로 고정하면 큰 화면에서 숫자가 칸을 넘어 서로 붙는다. */}
+            <span className="t-micro w-[3ch] shrink-0 text-gray-500">C{index}</span>
             <div className="h-1.5 min-w-0 flex-1 overflow-hidden rounded bg-gray-900">
               <div className="h-full rounded" style={{ width: `${usage}%`, background: statusColor(usage) }} />
             </div>
-            <span className="t-micro w-7 shrink-0 text-right text-gray-400">{usage.toFixed(0)}%</span>
+            <span className="t-micro w-[4ch] shrink-0 text-right text-gray-400">{usage.toFixed(0)}%</span>
           </li>
         ))}
       </ul>
@@ -625,8 +627,8 @@ const ProcessesCard: React.FC<{ data: DashboardData }> = ({ data }) => {
       <div className="t-micro mb-0.5 flex items-center justify-between text-gray-500">
         <span>Name</span>
         <div className="flex gap-2">
-          <span className="w-8 text-right text-yellow-400">CPU</span>
-          <span className="w-8 text-right text-blue-400">RAM</span>
+          <span className="w-[5ch] text-right text-yellow-400">CPU</span>
+          <span className="w-[5ch] text-right text-blue-400">RAM</span>
         </div>
       </div>
       {processes.length === 0 && <Empty>process list unavailable</Empty>}
@@ -637,8 +639,8 @@ const ProcessesCard: React.FC<{ data: DashboardData }> = ({ data }) => {
               {process.name}
             </span>
             <div className="flex shrink-0 gap-2 font-mono">
-              <span className="w-8 text-right text-yellow-400">{process.cpu.toFixed(1)}</span>
-              <span className="w-8 text-right text-blue-400">{process.memory.toFixed(1)}</span>
+              <span className="w-[5ch] text-right text-yellow-400">{process.cpu.toFixed(1)}</span>
+              <span className="w-[5ch] text-right text-blue-400">{process.memory.toFixed(1)}</span>
             </div>
           </li>
         ))}
