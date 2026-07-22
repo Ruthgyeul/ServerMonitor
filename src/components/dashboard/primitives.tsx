@@ -1,66 +1,45 @@
 import React from 'react';
-import { LucideIcon } from 'lucide-react';
 
 import { cn } from '@/lib/utils';
 
-// 1024x600 캔버스에 맞춘 공통 조각들. 치수(7px 라운드, 9px 라벨 등)는
-// 디자인 시안 그대로다.
-
-interface PanelProps extends React.HTMLAttributes<HTMLDivElement> {
-  children: React.ReactNode;
-}
-
-export const Panel: React.FC<PanelProps> = ({ className, children, ...props }) => (
-  <div
-    className={cn('box-border rounded-[7px] border border-gray-700 bg-gray-800', className)}
-    {...props}
-  >
-    {children}
-  </div>
-);
-
-interface PanelTitleProps {
-  icon: LucideIcon;
-  color: string;
-  label: string;
-  right?: React.ReactNode;
-  className?: string;
-}
-
-export const PanelTitle: React.FC<PanelTitleProps> = ({ icon: Icon, color, label, right, className }) => (
-  <div className={cn('flex items-center justify-between gap-1.5', className)}>
-    <div className="flex min-w-0 items-center gap-[5px]">
-      <Icon size={12} color={color} strokeWidth={2} className="shrink-0" />
-      <span className="whitespace-nowrap text-[9px] tracking-[0.03em] text-gray-300">{label}</span>
-    </div>
-    {right}
-  </div>
-);
+// 대시보드 카드 안에서 반복되는 그래픽 조각들.
+// 치수는 CSS 클래스(.dash-*)가 정하므로, 화면 밀도가 바뀌어도 여기는 그대로다.
 
 interface GaugeProps {
   percentage: number;
   color: string;
-  size?: number;
-  strokeWidth?: number;
+  className?: string;
 }
 
-export const Gauge: React.FC<GaugeProps> = ({ percentage, color, size = 36, strokeWidth = 3.5 }) => {
-  const radius = size / 2 - strokeWidth / 2 - 1.25;
-  const circumference = 2 * Math.PI * radius;
+// 크기는 CSS(.dash-gauge)가 정한다. viewBox 로 그리면 화면 밀도에 따라
+// 지름이 바뀌어도 선 두께가 같은 비율로 따라간다.
+const GAUGE_BOX = 36;
+const GAUGE_STROKE = 3.5;
+const GAUGE_RADIUS = GAUGE_BOX / 2 - GAUGE_STROKE / 2 - 1.25;
+const GAUGE_CIRCUMFERENCE = 2 * Math.PI * GAUGE_RADIUS;
+
+export const Gauge: React.FC<GaugeProps> = ({ percentage, color, className }) => {
   const filled = Math.max(0, Math.min(100, percentage));
 
   return (
-    <svg width={size} height={size} className="shrink-0 -rotate-90">
-      <circle cx={size / 2} cy={size / 2} r={radius} stroke="#374151" strokeWidth={strokeWidth} fill="transparent" />
+    <svg viewBox={`0 0 ${GAUGE_BOX} ${GAUGE_BOX}`} className={cn('dash-gauge shrink-0 -rotate-90', className)}>
       <circle
-        cx={size / 2}
-        cy={size / 2}
-        r={radius}
-        stroke={color}
-        strokeWidth={strokeWidth}
+        cx={GAUGE_BOX / 2}
+        cy={GAUGE_BOX / 2}
+        r={GAUGE_RADIUS}
+        stroke="#374151"
+        strokeWidth={GAUGE_STROKE}
         fill="transparent"
-        strokeDasharray={circumference}
-        strokeDashoffset={circumference - (filled / 100) * circumference}
+      />
+      <circle
+        cx={GAUGE_BOX / 2}
+        cy={GAUGE_BOX / 2}
+        r={GAUGE_RADIUS}
+        stroke={color}
+        strokeWidth={GAUGE_STROKE}
+        fill="transparent"
+        strokeDasharray={GAUGE_CIRCUMFERENCE}
+        strokeDashoffset={GAUGE_CIRCUMFERENCE - (filled / 100) * GAUGE_CIRCUMFERENCE}
       />
     </svg>
   );
@@ -103,7 +82,7 @@ export const Sparkline: React.FC<SparklineProps> = ({ series, className, emptyLa
 
   if (length < 2) {
     return (
-      <div className={cn('flex items-center justify-center text-[8px] text-gray-500', className)}>
+      <div className={cn('t-micro flex h-full items-center justify-center text-gray-500', className)}>
         {emptyLabel}
       </div>
     );
@@ -132,8 +111,3 @@ export const Sparkline: React.FC<SparklineProps> = ({ series, className, emptyLa
     </svg>
   );
 };
-
-// 값이 없는 카드가 통째로 접히지 않도록 자리를 잡아주는 한 줄.
-export const EmptyRow: React.FC<{ children?: React.ReactNode }> = ({ children = 'no data' }) => (
-  <div className="text-[9.5px] text-gray-500">{children}</div>
-);

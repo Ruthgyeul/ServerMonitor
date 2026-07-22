@@ -10,8 +10,8 @@ that aggregates several nodes on one screen.
 
 ## Features
 
-- **Live dashboard** (`/`) — polls `/api/system` every second and renders in
-  one of two layouts (see [Layouts](#layouts)):
+- **Live dashboard** (`/`) — one responsive layout, from a phone to a 7-inch
+  kiosk panel (see [Layout](#layout)), polling `/api/system` every second:
   - CPU/GPU/RAM/disk gauges, per-core bars, and a 24-hour hourly load heatmap
   - load average with a 12-hour history grid, swap, and disk I/O throughput
   - network throughput chart, interfaces, link utilisation, ping, error
@@ -28,31 +28,52 @@ that aggregates several nodes on one screen.
 - **Kiosk launch script** — boots the dashboard full-screen in Firefox for
   a dedicated status display.
 
-## Layouts
+## Layout
 
-The dashboard ships two layouts and picks one from the viewport on load and
-on every resize/orientation change:
+The three columns and the card order inside each one come from the design and
+are fixed in `Dashboard.tsx` — nothing is auto-placed, so no viewport ever
+reshuffles the cards:
 
-| Layout | When | Behaviour |
-| --- | --- | --- |
-| **Kiosk** | the 1024x600 canvas fits at ≥ 0.8 scale — i.e. ≥ 819x480 CSS px | the fixed three-column design, scaled as a whole and letterboxed. The 7-inch panel (1024x600) renders it at scale 1.0, exactly as designed. |
-| **Responsive** | anything smaller — phones, portrait tablets, narrow windows | the same panels reflowed into a scrolling 1/2/3-column grid with larger type, horizontal per-core bars, and the host name added to the header. |
+| Column | Cards, in order |
+| --- | --- |
+| Left | uptime · load average + 12h grid · CPU cores · swap · disk I/O · fan + CPU temp |
+| Centre | CPU/GPU/RAM/disk gauges · 24h CPU heatmap · network chart · interfaces + bandwidth · ping/err/conns/ports |
+| Right | alerts log · top processes · SSH sessions · top traffic IPs · firewall |
 
-The threshold is deliberately well below the kiosk panel's own scale, so a
-7-inch display never falls into the responsive layout. If a kiosk browser
-still reports an odd viewport, `?kiosk=1` forces the fixed layout and
-`?kiosk=0` forces the responsive one:
+Only how many columns stand side by side changes with the viewport:
 
-```bash
-KIOSK_URL=http://localhost:3000/?kiosk=1
-```
+| Viewport | Columns |
+| --- | --- |
+| < 640px | 1 — the three columns stack in order |
+| 640–1023px | 2 — the right column drops below the left |
+| ≥ 1024px | 3, at the design's own 238:472:282 proportions |
+| ≥ 960px **and** ≤ 700px tall | 3, at reduced density |
+
+That last row is the 7-inch kiosk panel (1024x600), where every card has to be
+on screen at once. The arrangement there is identical — same columns, same
+order — and only the sizes shrink: type scale, padding, gauge diameter, chart
+and sparkline heights. All of it is one media query in
+`src/styles/globals.css`, and the components carry semantic classes
+(`t-label`, `dash-card`, `dash-chart`) rather than hardcoded sizes, so
+retuning is a matter of editing that block.
+
+Two things to know before changing it:
+
+- The width trigger is 960px rather than 1024px on purpose. If the cards ever
+  overflow on a 1024px-wide panel a scrollbar appears, dropping the viewport
+  below 1024 — with the trigger at 1024 that would switch the type back up and
+  overflow further, a loop. 960 leaves room for the scrollbar.
+- The per-panel row caps in `Dashboard.tsx` (`MAX_PROCESSES`, `MAX_INTERFACES`
+  and friends) are what bound each card's height. The kiosk layout was checked
+  against a 16-core host with six interfaces and every list full, and clears
+  600px with roughly 28px to spare per column; raising a cap eats into that.
 
 ## Tech stack
 
 - [Next.js](https://nextjs.org) (App Router) + React + TypeScript
 - Tailwind CSS
-- Hand-rolled SVG charts on the main dashboard (viewBox-based, so the same
-  component serves both layouts); Recharts on the cluster view
+- Hand-rolled SVG charts on the main dashboard (viewBox-based, so they scale
+  with the card instead of being measured); Recharts on the cluster view
 - `src/utils/systemMonitor.ts` and `src/utils/collectors/*`, which read
   metrics straight from `/proc` and `/sys` and shell out only for `df`, `ps`,
   `ping`, `who`, `last`, `systemctl` and `journalctl`

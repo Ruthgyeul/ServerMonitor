@@ -30,59 +30,124 @@ body {
   50% { background-color: rgba(239, 68, 68, 0.32); }
 }
 
-/* 7-inch screen optimization */
-@media screen and (max-width: 1024px) and (max-height: 600px) {
-  html {
-    font-size: 14px;
+/* ---------------------------------------------------------------------------
+   대시보드 레이아웃
+
+   시안의 3열 구성을 그대로 쓴다. 어느 카드가 어느 열에, 어떤 순서로 들어가는지는
+   컴포넌트가 열 단위로 고정해 두었고(브라우저가 재배치하지 않는다), 여기서는
+   화면 폭에 따라 열을 몇 개 세울지만 정한다.
+
+   1024px 은 시안이 그려진 폭이라, 그 이상에서는 238:472:282 라는 시안의 열 비율을
+   그대로 유지한다. 더 좁아지면 열이 통째로 아래로 접히고, 각 열 안의 순서는
+   그대로 남는다.
+--------------------------------------------------------------------------- */
+
+.dash-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+  gap: 12px;
+  padding: 12px;
+}
+
+@media (min-width: 640px) {
+  .dash-layout { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (min-width: 1024px) {
+  .dash-layout {
+    grid-template-columns: minmax(0, 238fr) minmax(0, 472fr) minmax(0, 282fr);
+  }
+}
+
+/* 열 하나. 안의 카드 순서는 시안 그대로 고정된다. */
+.dash-col {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+/* 시안에서 나란히 놓인 두 카드(FAN+TEMP, INTERFACES+BANDWIDTH). */
+.dash-subgrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.dash-card { padding: 12px; }
+
+.dash-head { padding: 8px 12px; }
+.dash-alertbar { padding: 8px 12px; }
+
+.t-micro { font-size: 10px; }
+.t-label { font-size: 11px; }
+.t-body  { font-size: 12px; }
+.t-value { font-size: 15px; }
+.t-hero  { font-size: 20px; }
+
+.dash-icon { width: 14px; height: 14px; }
+.dash-card-head { margin-bottom: 6px; }
+.dash-rows > * + * { margin-top: 6px; }
+
+/* 코어가 많으면 한 줄에 하나씩 쌓기엔 너무 길어진다. 두 줄로 접는다.
+   단 휴대폰에서는 세로가 넉넉하고 가로가 없으니 한 줄로 둔다. */
+.dash-corelist { display: grid; grid-template-columns: 1fr; gap: 6px 10px; }
+
+@media (min-width: 640px) {
+  .dash-corelist--split { grid-template-columns: 1fr 1fr; }
+}
+
+.dash-gauge { width: 64px; height: 64px; }
+.dash-chart { height: 176px; }
+.dash-spark { height: 64px; }
+.dash-heat  { height: 28px; }
+.dash-loadgrid { gap: 4px; }
+.dash-loadcell { aspect-ratio: 1; }
+
+/* ---------------------------------------------------------------------------
+   7인치 키오스크(1024x600)
+
+   이 패널에서는 17개 카드가 스크롤 없이 한 화면에 들어가야 한다. 배치는
+   그대로 두고 — 열 구성도 순서도 위와 같다 — 치수만 한 단계 줄인다.
+
+   기준 폭이 1024 가 아니라 960 인 이유: 내용이 조금이라도 넘쳐 세로
+   스크롤바가 생기면 뷰포트 폭이 1024 밑으로 떨어진다. 기준이 1024 면 그
+   순간 이 블록이 풀려 글자가 커지고 더 넘치는 되먹임이 생긴다.
+--------------------------------------------------------------------------- */
+@media (min-width: 960px) and (max-height: 700px) {
+  .dash-layout {
+    grid-template-columns: minmax(0, 238fr) minmax(0, 472fr) minmax(0, 282fr);
+    gap: 8px;
+    padding: 8px;
   }
 
-  .text-4xl {
-    font-size: 1.75rem;
-  }
+  .dash-col { gap: 8px; }
+  .dash-subgrid { gap: 8px; }
+  .dash-card { padding: 6px; }
 
-  .text-2xl {
-    font-size: 1.25rem;
-  }
+  .dash-head { padding: 5px 12px; }
+  .dash-alertbar { padding: 3px 12px; }
 
-  .text-lg {
-    font-size: 1rem;
-  }
+  .t-micro { font-size: 8px; }
+  .t-label { font-size: 9px; }
+  .t-body  { font-size: 9.5px; }
+  .t-value { font-size: 12px; }
+  .t-hero  { font-size: 15px; }
 
-  .text-sm {
-    font-size: 0.875rem;
-  }
+  .dash-icon { width: 12px; height: 12px; }
+  .dash-card-head { margin-bottom: 2px; }
+  .dash-rows > * + * { margin-top: 2px; }
 
-  .text-xs {
-    font-size: 0.75rem;
-  }
+  /* 코어 16개면 두 줄로 접어도 8행이다. 행 높이를 글자 크기까지 붙인다. */
+  .dash-corelist { gap: 1px 8px; }
+  .dash-corelist > li { line-height: 1; }
 
-  .p-3 {
-    padding: 0.75rem;
-  }
-
-  .p-4 {
-    padding: 1rem;
-  }
-
-  .gap-3 {
-    gap: 0.75rem;
-  }
-
-  .space-y-3 > :not([hidden]) ~ :not([hidden]) {
-    --tw-space-y-reverse: 0;
-    margin-top: calc(0.75rem * calc(1 - var(--tw-space-y-reverse)));
-    margin-bottom: calc(0.75rem * var(--tw-space-y-reverse));
-  }
-
-  .space-y-2 > :not([hidden]) ~ :not([hidden]) {
-    --tw-space-y-reverse: 0;
-    margin-top: calc(0.5rem * calc(1 - var(--tw-space-y-reverse)));
-    margin-bottom: calc(0.5rem * var(--tw-space-y-reverse));
-  }
-
-  .space-y-1 > :not([hidden]) ~ :not([hidden]) {
-    --tw-space-y-reverse: 0;
-    margin-top: calc(0.25rem * calc(1 - var(--tw-space-y-reverse)));
-    margin-bottom: calc(0.25rem * var(--tw-space-y-reverse));
-  }
+  .dash-gauge { width: 36px; height: 36px; }
+  .dash-chart { height: 158px; }
+  .dash-spark { height: 24px; }
+  .dash-heat  { height: 16px; }
+  .dash-loadgrid { gap: 3px; }
+  /* 열 폭이 넓어 정사각형을 유지하면 격자만 커진다. 높이를 고정해 납작하게. */
+  .dash-loadcell { aspect-ratio: auto; height: 12px; }
 }

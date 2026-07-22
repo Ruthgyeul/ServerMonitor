@@ -2,16 +2,13 @@
 
 import React, { useEffect } from 'react';
 
-import { KioskDashboard, KIOSK_HEIGHT, KIOSK_WIDTH } from '@/components/dashboard/KioskDashboard';
-import { ResponsiveDashboard } from '@/components/dashboard/ResponsiveDashboard';
+import { Dashboard } from '@/components/dashboard/Dashboard';
 import { useNow } from '@/hooks/useNow';
 import { useSystemData } from '@/hooks/useSystemData';
-import { useViewMode } from '@/hooks/useViewMode';
 
 export default function DisplayPage() {
   const { data, error, connected, lastUpdate, networkHistory, diskIoHistory } = useSystemData();
   const now = useNow();
-  const { mode, scale } = useViewMode(KIOSK_WIDTH, KIOSK_HEIGHT);
 
   useEffect(() => {
     // 화면 잠김 방지
@@ -27,9 +24,7 @@ export default function DisplayPage() {
     wakeLock();
   }, []);
 
-  // 뷰포트를 재기 전에는 어느 배치가 맞는지 알 수 없다. 한 프레임 잘못 그리고
-  // 튀는 것보다, 배경만 깔고 기다리는 편이 낫다.
-  if (mode === null || data === null) {
+  if (data === null) {
     return (
       <div className="flex h-screen w-screen items-center justify-center bg-gray-900 text-gray-100">
         <StartupState error={error} />
@@ -37,28 +32,14 @@ export default function DisplayPage() {
     );
   }
 
-  if (mode === 'responsive') {
-    return (
-      <ResponsiveDashboard
-        data={data}
-        connected={connected}
-        lastUpdate={lastUpdate}
-        now={now}
-        networkHistory={networkHistory}
-        diskIoHistory={diskIoHistory}
-      />
-    );
-  }
-
   return (
-    <KioskDashboard
+    <Dashboard
       data={data}
       connected={connected}
       lastUpdate={lastUpdate}
       now={now}
       networkHistory={networkHistory}
       diskIoHistory={diskIoHistory}
-      scale={scale}
     />
   );
 }
