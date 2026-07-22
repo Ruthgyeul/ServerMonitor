@@ -1,56 +1,43 @@
-import { exec } from 'child_process';
-import { promisify } from 'util';
 import os from 'os';
 import { readFile, readdir } from 'fs/promises';
 
-import { ServerData, Process, X86TemperatureInfo, ARMTemperatureInfo, TemperatureInfo, TemperatureValue } from '@/types/system';
-
-const execFile = promisify(exec);
+import {
+  ServerData,
+  Process,
+  X86TemperatureInfo,
+  ARMTemperatureInfo,
+  TemperatureInfo,
+  TemperatureValue,
+  SecurityInfo
+} from '@/types/system';
+import { collect, readSys, round, run } from '@/utils/collectors/shell';
+import { getCpuUsage } from '@/utils/collectors/cpu';
+import { getHostInfo } from '@/utils/collectors/host';
+import { getLoadAverage, getSwapInfo } from '@/utils/collectors/load';
+import { getDiskIo } from '@/utils/collectors/diskio';
+import { getGpuInfo } from '@/utils/collectors/gpu';
+import {
+  getDefaultInterface,
+  getInterfaces,
+  getSocketSummary,
+  getTopTraffic,
+  readInterfaceStat,
+  SocketSummary
+} from '@/utils/collectors/netstat';
+import { getFirewallInfo, getSshSessions } from '@/utils/collectors/security';
+import { getHistory, recordSample } from '@/utils/collectors/history';
+import { evaluateAlerts } from '@/utils/collectors/alerts';
 
 // 캐시된 시스템 정보
 let cachedData: ServerData | null = null;
 let lastUpdateTime = 0;
 const UPDATE_INTERVAL = 1000; // 1초마다 업데이트
 
-// `ip`, `sensors`, `ps` 등은 /usr/sbin, /sbin 에 설치되는 경우가 많은데
-// 비-root 사용자로 뜬 systemd/pm2 서비스의 PATH 에는 그 경로가 빠져 있다.
-// 그래서 명령이 "not found" 로 끝나고, 지표가 통째로 0 이 된다.
-const EXEC_ENV = {
-  ...process.env,
-  PATH: [process.env.PATH, '/usr/local/sbin', '/usr/sbin', '/sbin'].filter(Boolean).join(':'),
-  LC_ALL: 'C', // 로케일에 따라 소수점이 ','가 되면 parseFloat가 잘라먹는다
-  LANG: 'C'
-};
-
-async function run(command: string): Promise<string> {
-  const { stdout } = await execFile(command, { env: EXEC_ENV, timeout: 5000 });
-  return stdout.trim();
-}
-
-async function readSys(filePath: string): Promise<string | null> {
-  try {
-    return (await readFile(filePath, 'utf-8')).trim();
-  } catch {
-    return null;
-  }
-}
-
-// 수집기 하나가 실패해도 나머지 지표는 살려 보낸다.
-async function collect<T>(name: string, fn: () => Promise<T>, fallback: T, warnings: string[]): Promise<T> {
-  try {
-    return await fn();
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    warnings.push(`${name}: ${message}`);
-    console.warn(`[systemMonitor] ${name} failed:`, message);
-    return fallback;
-  }
-}
-
 interface CpuInfo {
   usage: number;
   cores: number;
   temperature: number | 'N/A';
+  perCore: number[];
 }
 
 interface MemoryInfo {
@@ -73,6 +60,11 @@ interface NetworkInfo {
     rx: string;
     tx: string;
   };
+  connections: number;
+  listeningPorts: number;
+  interfaces: ServerData['network']['interfaces'];
+  linkSpeedMbps: number | null;
+  bandwidthPercentage: number;
 }
 
 interface FanInfo {
@@ -96,52 +88,13 @@ function getArchitecture(): 'x86' | 'arm' | 'unknown' {
 
 // --- CPU ---------------------------------------------------------------
 
-// `top -bn1` 의 첫 샘플은 부팅 이후 누적 평균이라 항상 0에 가깝게 나온다.
-// /proc/stat 를 두 번 읽어 그 사이의 변화량으로 계산한다.
-let prevCpuStat: { idle: number; total: number } | null = null;
-
-async function readCpuStat(): Promise<{ idle: number; total: number }> {
-  const contents = await readFile('/proc/stat', 'utf-8');
-  const line = contents.split('\n').find(l => l.startsWith('cpu '));
-  if (!line) throw new Error('no "cpu" line in /proc/stat');
-
-  const values = line.trim().split(/\s+/).slice(1).map(Number);
-  if (values.length < 4 || values.some(Number.isNaN)) {
-    throw new Error(`unparsable /proc/stat cpu line: ${line}`);
-  }
-
-  const idle = values[3] + (values[4] ?? 0); // idle + iowait
-  const total = values.reduce((sum, value) => sum + value, 0);
-  return { idle, total };
-}
-
-async function getCpuUsage(): Promise<number> {
-  let previous = prevCpuStat;
-
-  // 첫 호출이면 짧게 두 번 재서 0% 를 반환하지 않도록 한다.
-  if (!previous) {
-    previous = await readCpuStat();
-    await new Promise(resolve => setTimeout(resolve, 200));
-  }
-
-  const current = await readCpuStat();
-  prevCpuStat = current;
-
-  const totalDelta = current.total - previous.total;
-  const idleDelta = current.idle - previous.idle;
-  if (totalDelta <= 0) return 0;
-
-  const usage = (1 - idleDelta / totalDelta) * 100;
-  return parseFloat(Math.min(100, Math.max(0, usage)).toFixed(1));
-}
-
 async function getCpuInfo(warnings: string[]): Promise<CpuInfo> {
   const [usage, temperature] = await Promise.all([
-    collect('cpu.usage', getCpuUsage, 0, warnings),
+    collect('cpu.usage', getCpuUsage, { total: 0, perCore: [] }, warnings),
     collect<number | 'N/A'>('cpu.temperature', getCpuTemperature, 'N/A', warnings)
   ]);
 
-  return { usage, cores: os.cpus().length, temperature };
+  return { usage: usage.total, perCore: usage.perCore, cores: os.cpus().length, temperature };
 }
 
 // --- Memory ------------------------------------------------------------
@@ -164,7 +117,7 @@ async function getMemoryInfo(): Promise<MemoryInfo> {
   return {
     used: Math.round(usedKb / 1024),
     total: Math.round(totalKb / 1024),
-    percentage: parseFloat(((usedKb / totalKb) * 100).toFixed(1))
+    percentage: round((usedKb / totalKb) * 100, 1)
   };
 }
 
@@ -183,59 +136,17 @@ async function getDiskInfo(): Promise<DiskInfo> {
     throw new Error(`unparsable df output: ${line}`);
   }
 
-  const toGb = (kb: number) => parseFloat((kb / 1024 / 1024).toFixed(2));
+  const toGb = (kb: number) => round(kb / 1024 / 1024);
   return {
     used: toGb(used),
     total: toGb(total),
-    percentage: parseInt(percentage.replace('%', ''), 10) || parseFloat(((used / total) * 100).toFixed(1))
+    percentage: parseInt(percentage.replace('%', ''), 10) || round((used / total) * 100, 1)
   };
 }
 
 // --- Network -----------------------------------------------------------
 
-// Linux network interface names are restricted to this charset (see netdevice(7)).
-// Validating against it before touching sysfs paths keeps a value derived from
-// command output from ever being treated as a path traversal.
-const INTERFACE_NAME_PATTERN = /^[a-zA-Z0-9@.:_-]+$/;
-
 let prevNetSample: { rx: number; tx: number; at: number } | null = null;
-
-async function readInterfaceStat(interfaceName: string, stat: string): Promise<number> {
-  const contents = await readSys(`/sys/class/net/${interfaceName}/statistics/${stat}`);
-  const value = contents === null ? NaN : parseInt(contents, 10);
-  return Number.isNaN(value) ? 0 : value;
-}
-
-// `ip route` 는 /usr/sbin 에 있어 서비스 PATH 에서 빠지기 쉽다.
-// /proc/net/route 를 직접 읽으면 외부 바이너리가 전혀 필요 없다.
-async function getDefaultInterface(): Promise<string> {
-  const contents = await readFile('/proc/net/route', 'utf-8');
-  const lines = contents.split('\n').slice(1);
-
-  for (const line of lines) {
-    const [iface, destination] = line.trim().split(/\s+/);
-    if (destination === '00000000' && iface && INTERFACE_NAME_PATTERN.test(iface)) {
-      return iface;
-    }
-  }
-
-  // 기본 경로가 없으면(컨테이너 등) 트래픽이 가장 많은 물리 인터페이스로 대체한다.
-  const candidates = (await readdir('/sys/class/net')).filter(
-    name => name !== 'lo' && INTERFACE_NAME_PATTERN.test(name)
-  );
-  let best = '';
-  let bestBytes = -1;
-  for (const name of candidates) {
-    const bytes = await readInterfaceStat(name, 'rx_bytes');
-    if (bytes > bestBytes) {
-      best = name;
-      bestBytes = bytes;
-    }
-  }
-
-  if (!best) throw new Error('no usable network interface found');
-  return best;
-}
 
 async function getPing(): Promise<number> {
   const host = process.env.PING_HOST || '8.8.8.8';
@@ -249,7 +160,7 @@ async function getPing(): Promise<number> {
   return match ? parseFloat(match[1]) : 0;
 }
 
-async function getNetworkInfo(warnings: string[]): Promise<NetworkInfo> {
+async function getNetworkInfo(warnings: string[], sockets: SocketSummary): Promise<NetworkInfo> {
   const interfaceName = await getDefaultInterface();
 
   const [rxBytes, txBytes, rxErrors, txErrors, rxPackets, txPackets] = await Promise.all([
@@ -281,16 +192,29 @@ async function getNetworkInfo(warnings: string[]): Promise<NetworkInfo> {
   // 에러율은 바이트가 아니라 패킷 대비로 계산해야 의미가 있다.
   const rate = (errors: number, packets: number) => (packets > 0 ? ((errors / packets) * 100).toFixed(2) : '0.00');
 
-  const ping = await collect('network.ping', getPing, 0, warnings);
+  const [ping, interfaces] = await Promise.all([
+    collect('network.ping', getPing, 0, warnings),
+    collect('network.interfaces', () => getInterfaces(interfaceName), [], warnings)
+  ]);
+
+  const linkSpeedMbps = interfaces.find(entry => entry.isDefault)?.speedMbps ?? null;
+  // 링크 속도(Mbps)를 KB/s 로 바꿔 현재 처리량과 같은 단위로 비교한다.
+  const linkCapacityKbps = linkSpeedMbps === null ? null : (linkSpeedMbps * 1000) / 8;
 
   return {
-    download: parseFloat(download.toFixed(2)),
-    upload: parseFloat(upload.toFixed(2)),
+    download: round(download),
+    upload: round(upload),
     ping,
     errorRates: {
       rx: rate(rxErrors, rxPackets),
       tx: rate(txErrors, txPackets)
-    }
+    },
+    connections: sockets.connections,
+    listeningPorts: sockets.listeningPorts,
+    interfaces,
+    linkSpeedMbps,
+    bandwidthPercentage:
+      linkCapacityKbps === null ? 0 : round(Math.min(100, ((download + upload) / linkCapacityKbps) * 100), 1)
   };
 }
 
@@ -319,7 +243,7 @@ async function readThermalZone(): Promise<number | 'N/A'> {
     const milliCelsius = parseInt(raw, 10);
     if (Number.isNaN(milliCelsius)) continue;
 
-    const celsius = parseFloat((milliCelsius / 1000).toFixed(1));
+    const celsius = round(milliCelsius / 1000, 1);
     const type = (await readSys(`/sys/class/thermal/${zone}/type`)) ?? '';
     if (preferred.includes(type)) return celsius;
     if (fallback === 'N/A') fallback = celsius;
@@ -464,6 +388,26 @@ async function getUptime(): Promise<UptimeInfo> {
   };
 }
 
+// --- Security ----------------------------------------------------------
+
+async function getSecurityInfo(
+  peers: Map<string, number>,
+  warnings: string[]
+): Promise<SecurityInfo> {
+  const [firewall, sshSessions, topTraffic] = await Promise.all([
+    collect(
+      'security.firewall',
+      getFirewallInfo,
+      { status: 'unknown' as const, backend: null, blockedAttempts: null },
+      warnings
+    ),
+    collect('security.sshSessions', getSshSessions, [], warnings),
+    collect('security.topTraffic', () => getTopTraffic(peers), [], warnings)
+  ]);
+
+  return { firewall, sshSessions, topTraffic };
+}
+
 // --- Public API --------------------------------------------------------
 
 function emptyTemperature(): TemperatureInfo {
@@ -481,23 +425,82 @@ export async function getSystemInfo(): Promise<ServerData> {
 
   const warnings: string[] = [];
 
+  // 연결 수, 열린 포트, 상위 트래픽 피어는 모두 같은 소켓 목록에서 나온다.
+  // 한 번만 읽어 네트워크/보안 수집기가 나눠 쓴다.
+  const sockets = await collect(
+    'network.sockets',
+    getSocketSummary,
+    { connections: 0, listeningPorts: 0, peers: new Map<string, number>() },
+    warnings
+  );
+
   // Promise.all 이 아니라 개별 fallback 으로 감싼다. 예전에는 수집기 하나만
   // 실패해도 전체 응답이 0으로 떨어졌다.
-  const [cpu, memory, disk, network, temperature, fan, processes, uptime] = await Promise.all([
-    getCpuInfo(warnings),
-    collect('memory', getMemoryInfo, { used: 0, total: 0, percentage: 0 }, warnings),
-    collect('disk', getDiskInfo, { used: 0, total: 0, percentage: 0 }, warnings),
-    collect(
-      'network',
-      () => getNetworkInfo(warnings),
-      { download: 0, upload: 0, ping: 0, errorRates: { rx: '0.00', tx: '0.00' } },
-      warnings
-    ),
-    collect('temperature', getTemperature, emptyTemperature(), warnings),
-    collect('fan', getFanSpeed, { cpu: 0, case1: 0, case2: 0 }, warnings),
-    collect<Process[]>('processes', getProcesses, [], warnings),
-    collect('uptime', getUptime, { days: 0, hours: 0, minutes: 0 }, warnings)
-  ]);
+  const [cpu, memory, disk, network, temperature, fan, processes, uptime, host, swap, diskIO, gpu] =
+    await Promise.all([
+      getCpuInfo(warnings),
+      collect('memory', getMemoryInfo, { used: 0, total: 0, percentage: 0 }, warnings),
+      collect('disk', getDiskInfo, { used: 0, total: 0, percentage: 0 }, warnings),
+      collect(
+        'network',
+        () => getNetworkInfo(warnings, sockets),
+        {
+          download: 0,
+          upload: 0,
+          ping: 0,
+          errorRates: { rx: '0.00', tx: '0.00' },
+          connections: 0,
+          listeningPorts: 0,
+          interfaces: [],
+          linkSpeedMbps: null,
+          bandwidthPercentage: 0
+        },
+        warnings
+      ),
+      collect('temperature', getTemperature, emptyTemperature(), warnings),
+      collect('fan', getFanSpeed, { cpu: 0, case1: 0, case2: 0 }, warnings),
+      collect<Process[]>('processes', getProcesses, [], warnings),
+      collect('uptime', getUptime, { days: 0, hours: 0, minutes: 0 }, warnings),
+      collect(
+        'host',
+        getHostInfo,
+        {
+          hostname: os.hostname(),
+          os: `${os.type()} ${os.release()}`,
+          kernel: os.release(),
+          arch: os.arch(),
+          bootTime: new Date(Date.now() - os.uptime() * 1000).toISOString(),
+          rebootReason: null
+        },
+        warnings
+      ),
+      collect('swap', getSwapInfo, { used: 0, total: 0, percentage: 0 }, warnings),
+      collect('diskIO', getDiskIo, { read: 0, write: 0 }, warnings),
+      collect(
+        'gpu',
+        getGpuInfo,
+        { name: null, usage: 'N/A' as const, temperature: 'N/A' as const },
+        warnings
+      )
+    ]);
+
+  const load = getLoadAverage();
+  const security = await getSecurityInfo(sockets.peers, warnings);
+
+  recordSample(cpu.usage, load.avg1, now);
+
+  const alerts = evaluateAlerts(
+    {
+      cpu: cpu.usage,
+      memory: memory.percentage,
+      disk: disk.percentage,
+      swap: swap.percentage,
+      temperature: cpu.temperature,
+      firewall: security.firewall.status,
+      sshSessions: security.sshSessions
+    },
+    now
+  );
 
   const data: ServerData = {
     cpu,
@@ -508,6 +511,15 @@ export async function getSystemInfo(): Promise<ServerData> {
     fan,
     processes,
     uptime,
+    host,
+    load,
+    swap,
+    diskIO,
+    gpu,
+    security,
+    history: getHistory(now),
+    alerts,
+    timestamp: new Date(now).toISOString(),
     ...(warnings.length > 0 ? { warnings } : {})
   };
 

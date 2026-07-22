@@ -1,6 +1,6 @@
 import * as React from "react";
 import { Suspense } from "react";
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { ErrorBoundary } from "react-error-boundary";
 import { Geist, Geist_Mono } from "next/font/google";
 
@@ -18,6 +18,14 @@ const geistMono = Geist_Mono({
   variable: "--font-geist-mono",
   subsets: ["latin"],
 });
+
+// 모바일에서 CSS 픽셀이 기기 폭을 따라가야 반응형 레이아웃이 의도대로 접힌다.
+// 키오스크 배치는 자체 배율로 맞추므로 확대/축소는 막지 않는다.
+export const viewport: Viewport = {
+    width: "device-width",
+    initialScale: 1,
+    themeColor: "#111827"
+};
 
 export const metadata: Metadata = {
     metadataBase: new URL(SITE_URL),
@@ -88,7 +96,7 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
-        <meta name="theme-color" content="#111827"/>
+        {/* theme-color 는 위의 viewport export 가 넣어준다. */}
         <link rel="manifest" href="/manifest.json"/>
         <meta name="mobile-web-app-capable" content="yes"/>
         <meta name="mobile-web-app-status-bar-style" content="default"/>

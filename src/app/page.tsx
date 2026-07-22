@@ -1,76 +1,17 @@
 "use client";
 
-import React, { useState, useEffect } from 'react';
+import React, { useEffect } from 'react';
 
-import { Header } from '@/components/common/Header';
-import { SystemStats } from '@/components/stats/SystemStats';
-import { ResourceUsage } from '@/components/stats/ResourceUsage';
-import { ProcessList } from '@/components/stats/ProcessList';
-import { fetchSystemData } from '@/services/systemService';
-import { ServerData, NetworkHistoryEntry } from '@/types/system';
+import { KioskDashboard, KIOSK_HEIGHT, KIOSK_WIDTH } from '@/components/dashboard/KioskDashboard';
+import { ResponsiveDashboard } from '@/components/dashboard/ResponsiveDashboard';
+import { useNow } from '@/hooks/useNow';
+import { useSystemData } from '@/hooks/useSystemData';
+import { useViewMode } from '@/hooks/useViewMode';
 
 export default function DisplayPage() {
-  const [systemData, setSystemData] = useState<ServerData | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [networkHistory, setNetworkHistory] = useState<NetworkHistoryEntry[]>([]);
-
-  useEffect(() => {
-    const fetchData = async () => {
-      try {
-        const response = await fetch('/api/system');
-        if (!response.ok) {
-          throw new Error('Failed to fetch system data');
-        }
-        const data = await response.json();
-        
-        // 데이터 유효성 검사
-        if (!data || typeof data !== 'object') {
-          throw new Error('Invalid data format received');
-        }
-
-        // 필수 필드 확인
-        const requiredFields = ['cpu', 'memory', 'disk', 'network', 'uptime', 'temperature', 'fan', 'processes'];
-        const missingFields = requiredFields.filter(field => !data[field]);
-        
-        if (missingFields.length > 0) {
-          throw new Error(`Missing required fields: ${missingFields.join(', ')}`);
-        }
-
-        setSystemData(data);
-        setError(null);
-
-        // 네트워크 히스토리 업데이트
-        const now = new Date();
-        const time = now.toLocaleTimeString('ko-KR', { 
-          hour: '2-digit', 
-          minute: '2-digit', 
-          second: '2-digit',
-          hour12: false 
-        });
-        
-        setNetworkHistory(prev => {
-          const newHistory = [
-            ...prev,
-            {
-              time,
-              download: data.network.download,
-              upload: data.network.upload
-            }
-          ];
-          // 최대 60개의 데이터 포인트만 유지
-          return newHistory.slice(-60);
-        });
-      } catch (err) {
-        console.error('Error fetching system data:', err);
-        setError(err instanceof Error ? err.message : 'Unknown error occurred');
-        setSystemData(null);
-      }
-    };
-
-    fetchData();
-    const interval = setInterval(fetchData, 1000);
-    return () => clearInterval(interval);
-  }, []);
+  const { data, error, connected, lastUpdate, networkHistory, diskIoHistory } = useSystemData();
+  const now = useNow();
+  const { mode, scale } = useViewMode(KIOSK_WIDTH, KIOSK_HEIGHT);
 
   useEffect(() => {
     // 화면 잠김 방지
@@ -86,51 +27,56 @@ export default function DisplayPage() {
     wakeLock();
   }, []);
 
-  if (error) {
+  // 뷰포트를 재기 전에는 어느 배치가 맞는지 알 수 없다. 한 프레임 잘못 그리고
+  // 튀는 것보다, 배경만 깔고 기다리는 편이 낫다.
+  if (mode === null || data === null) {
     return (
-      <div className="min-h-screen bg-gray-900 text-gray-100">
-        <Header error={error} />
-        <div className="p-4">
-          <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-4 text-red-400">
-            {error}
-          </div>
-        </div>
+      <div className="flex h-screen w-screen items-center justify-center bg-gray-900 text-gray-100">
+        <StartupState error={error} />
       </div>
     );
   }
 
-  if (!systemData) {
+  if (mode === 'responsive') {
     return (
-      <div className="min-h-screen bg-gray-900 text-gray-100">
-        <Header error={null} />
-        <div className="p-4">
-          <div className="animate-pulse space-y-4">
-            <div className="h-8 bg-gray-800 rounded w-1/4"></div>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-              {[...Array(8)].map((_, i) => (
-                <div key={i} className="h-32 bg-gray-800 rounded"></div>
-              ))}
-            </div>
-          </div>
-        </div>
-      </div>
+      <ResponsiveDashboard
+        data={data}
+        connected={connected}
+        lastUpdate={lastUpdate}
+        now={now}
+        networkHistory={networkHistory}
+        diskIoHistory={diskIoHistory}
+      />
     );
   }
 
   return (
-    <div className="min-h-screen bg-gray-900 text-gray-100">
-      <Header error={error} />
-      <div className="p-2 sm:p-4">
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-2 sm:gap-4">
-          <div className="lg:col-span-3 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 sm:gap-4">
-            <SystemStats serverData={systemData} />
-            <ResourceUsage serverData={systemData} networkHistory={networkHistory} />
-          </div>
-          <div className="h-[300px] sm:h-[calc(100vh-7rem)]">
-            <ProcessList processes={systemData.processes} />
-          </div>
-        </div>
-      </div>
-    </div>
+    <KioskDashboard
+      data={data}
+      connected={connected}
+      lastUpdate={lastUpdate}
+      now={now}
+      networkHistory={networkHistory}
+      diskIoHistory={diskIoHistory}
+      scale={scale}
+    />
   );
 }
+
+// 첫 응답을 받기 전에만 보인다. 한 번이라도 받은 뒤에는 연결이 끊겨도
+// 마지막 값을 계속 띄우고, 헤더의 표시등으로 상태를 알린다.
+const StartupState: React.FC<{ error: string | null }> = ({ error }) => (
+  <div className="flex flex-col items-center justify-center gap-3 p-8">
+    {error ? (
+      <>
+        <div className="text-sm font-bold text-red-400">Cannot reach /api/system</div>
+        <div className="max-w-[600px] text-center text-xs text-gray-400">{error}</div>
+      </>
+    ) : (
+      <>
+        <div className="h-2 w-2 animate-[pulseDot_1s_ease-in-out_infinite] rounded-full bg-blue-400" />
+        <div className="text-xs text-gray-400">Connecting to /api/system…</div>
+      </>
+    )}
+  </div>
+);
