@@ -26,16 +26,23 @@ that aggregates several nodes on one screen.
 - [Next.js](https://nextjs.org) (App Router) + React + TypeScript
 - Tailwind CSS
 - Recharts for network history charts
-- A shell script (`scripts/monitor.sh`) that shells out to standard Linux
-  tools (`top`, `free`, `df`, `sensors`, `ip`, `ps`, …) to collect metrics
+- `src/utils/systemMonitor.ts`, which reads metrics straight from `/proc` and
+  `/sys` and shells out only for `df`, `ps` and `ping`
 
 ## Getting started
 
 ### Prerequisites
 
 - Node.js 18+
-- A Linux host (metrics collection relies on `/proc`, `sensors`, `ip`, etc.)
-- `lm-sensors` installed and configured if you want temperature/fan readings
+- A Linux host (metrics come from `/proc/stat`, `/proc/meminfo`,
+  `/proc/net/route`, `/sys/class/net`, `/sys/class/thermal`, …)
+- `lm-sensors` is optional. Install it for per-chip temperatures and fan RPM;
+  without it those fall back to `/sys/class/thermal` and `/sys/class/hwmon`,
+  and anything still unavailable reads `N/A` rather than zeroing the dashboard
+
+If a metric looks wrong on a real host, `./scripts/diagnose.sh` prints what
+each of those sources actually returns, and `curl localhost:3000/api/system`
+includes a `warnings` array naming any collector that failed.
 
 ### Install
 
@@ -90,6 +97,7 @@ read on the server.
 | `NEXT_PUBLIC_SITE_SHORT_NAME` | `src/config/siteConfig.ts` | Short name used in the title template and mobile web app title. |
 | `NEXT_PUBLIC_SITE_DESCRIPTION` | `src/config/siteConfig.ts` | Site description used in metadata and social previews. |
 | `NEXT_PUBLIC_AUTHOR_NAME` | `src/config/siteConfig.ts` | Author/creator/publisher metadata. |
+| `PING_HOST` | `src/utils/systemMonitor.ts` | Host pinged for the latency reading. Defaults to `8.8.8.8`; set it to a reachable host if outbound ICMP is blocked, otherwise ping shows `0`. |
 | `KIOSK_USER` | `scripts/run.sh` | Linux user whose Firefox session is killed/relaunched in kiosk mode. |
 | `KIOSK_URL` | `scripts/run.sh` | URL opened in kiosk mode. |
 
@@ -98,10 +106,12 @@ Adding, removing, or repointing a cluster node is now a one-line edit in
 
 ## Scripts
 
-- `scripts/monitor.sh` — collects system metrics and prints them as JSON;
-  invoked by the API route on the host it runs on.
+- `scripts/diagnose.sh` — prints the raw contents of every source the API
+  reads, so you can see which metric is unavailable on a given host.
 - `scripts/run.sh` — launches the dashboard full-screen in Firefox kiosk
   mode, reading `KIOSK_USER`/`KIOSK_URL` from `.env` if present.
+- `scripts/monitor.sh` — standalone JSON dump of the same metrics. Not used by
+  the API route; kept for shelling out from other tooling.
 
 ## Deploying a cluster
 
