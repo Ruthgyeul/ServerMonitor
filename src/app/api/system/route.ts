@@ -1,27 +1,10 @@
 import { NextResponse } from 'next/server';
 import { getSystemInfo } from '@/utils/systemMonitor';
-import { ServerData } from '@/types/system';
 import { isValidServerData } from '@/utils/validation';
 
-// 기본 서버 데이터
-const defaultServerData: ServerData = {
-    cpu: { usage: 0, cores: 0, temperature: 0 },
-    memory: { used: 0, total: 0, percentage: 0 },
-    disk: { used: 0, total: 0, percentage: 0 },
-    network: {
-        download: 0,
-        upload: 0,
-        ping: 0,
-        errorRates: {
-            rx: '0',
-            tx: '0'
-        }
-    },
-    uptime: { days: 0, hours: 0, minutes: 0 },
-    temperature: { cpu: 0, gpu: 0, motherboard: 0 },
-    fan: { cpu: 0, case1: 0, case2: 0 },
-    processes: []
-};
+// 수집기별 실패는 systemMonitor 안에서 각자 fallback 으로 처리되므로,
+// 여기까지 올라온 에러는 진짜 고장이다. 0으로 채운 정상 응답을 돌려주면
+// 대시보드에 "모든 값이 0" 으로만 보이고 원인이 감춰지므로 5xx 로 알린다.
 
 // 허용된 origin 목록 (.env의 ALLOWED_ORIGINS로 설정, 콤마로 구분)
 const allowedOrigins = (process.env.ALLOWED_ORIGINS || 'http://localhost:3000')
@@ -50,7 +33,8 @@ export async function GET(request: Request) {
         // 데이터 유효성 검사
         if (!data || !isValidServerData(data)) {
             console.error('Invalid server data received');
-            return new NextResponse(JSON.stringify(defaultServerData), {
+            return new NextResponse(JSON.stringify({ error: 'Invalid server data received' }), {
+                status: 500,
                 headers: getCorsHeaders(origin)
             });
         }
@@ -59,8 +43,10 @@ export async function GET(request: Request) {
             headers: getCorsHeaders(origin)
         });
     } catch (error) {
+        const message = error instanceof Error ? error.message : 'Unknown error';
         console.error('Error fetching system data:', error);
-        return new NextResponse(JSON.stringify(defaultServerData), {
+        return new NextResponse(JSON.stringify({ error: `Failed to collect system data: ${message}` }), {
+            status: 500,
             headers: getCorsHeaders(origin)
         });
     }

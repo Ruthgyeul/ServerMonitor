@@ -72,6 +72,9 @@ export interface ServerData {
         case2: number;
     };
     processes: Process[];
+    // 일부 수집기만 실패했을 때 어떤 지표가 왜 비었는지 알려준다.
+    // 헤드리스 서버에서 `curl localhost:3000/api/system` 만으로 진단할 수 있게 하는 용도.
+    warnings?: string[];
 }
 
 export interface NetworkHistoryEntry {
