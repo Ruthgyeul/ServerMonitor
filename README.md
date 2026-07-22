@@ -10,9 +10,16 @@ that aggregates several nodes on one screen.
 
 ## Features
 
-- **Live dashboard** (`/`) — CPU/memory/disk usage, network throughput and
-  error rates, temperature, fan speed, uptime, and a top-processes list,
-  polling `/api/system` every second.
+- **Live dashboard** (`/`) — polls `/api/system` every second and renders in
+  one of two layouts (see [Layouts](#layouts)):
+  - CPU/GPU/RAM/disk gauges, per-core bars, and a 24-hour hourly load heatmap
+  - load average with a 12-hour history grid, swap, and disk I/O throughput
+  - network throughput chart, interfaces, link utilisation, ping, error
+    rates, established connections and listening ports
+  - temperature against its alert threshold, fan RPM, uptime and last reboot
+  - alert log, top processes, SSH sessions, top traffic peers, firewall state
+  - keeps the last known values on screen when a poll fails, and says so in
+    the header instead of blanking the display
 - **Cluster view** (`/cluster`) — a compact grid that polls multiple
   ServerMonitor instances (e.g. an x86 server plus several Raspberry Pi
   nodes) and shows their status side by side.
@@ -21,13 +28,34 @@ that aggregates several nodes on one screen.
 - **Kiosk launch script** — boots the dashboard full-screen in Firefox for
   a dedicated status display.
 
+## Layouts
+
+The dashboard ships two layouts and picks one from the viewport on load and
+on every resize/orientation change:
+
+| Layout | When | Behaviour |
+| --- | --- | --- |
+| **Kiosk** | the 1024x600 canvas fits at ≥ 0.8 scale — i.e. ≥ 819x480 CSS px | the fixed three-column design, scaled as a whole and letterboxed. The 7-inch panel (1024x600) renders it at scale 1.0, exactly as designed. |
+| **Responsive** | anything smaller — phones, portrait tablets, narrow windows | the same panels reflowed into a scrolling 1/2/3-column grid with larger type, horizontal per-core bars, and the host name added to the header. |
+
+The threshold is deliberately well below the kiosk panel's own scale, so a
+7-inch display never falls into the responsive layout. If a kiosk browser
+still reports an odd viewport, `?kiosk=1` forces the fixed layout and
+`?kiosk=0` forces the responsive one:
+
+```bash
+KIOSK_URL=http://localhost:3000/?kiosk=1
+```
+
 ## Tech stack
 
 - [Next.js](https://nextjs.org) (App Router) + React + TypeScript
 - Tailwind CSS
-- Recharts for network history charts
-- `src/utils/systemMonitor.ts`, which reads metrics straight from `/proc` and
-  `/sys` and shells out only for `df`, `ps` and `ping`
+- Hand-rolled SVG charts on the main dashboard (viewBox-based, so the same
+  component serves both layouts); Recharts on the cluster view
+- `src/utils/systemMonitor.ts` and `src/utils/collectors/*`, which read
+  metrics straight from `/proc` and `/sys` and shell out only for `df`, `ps`,
+  `ping`, `who`, `last`, `systemctl` and `journalctl`
 
 ## Getting started
 
@@ -39,6 +67,19 @@ that aggregates several nodes on one screen.
 - `lm-sensors` is optional. Install it for per-chip temperatures and fan RPM;
   without it those fall back to `/sys/class/thermal` and `/sys/class/hwmon`,
   and anything still unavailable reads `N/A` rather than zeroing the dashboard
+
+Every panel degrades to `N/A` (never to a fake zero) when its source is
+missing. A few need more than `/proc` to show real numbers:
+
+| Panel | Needs |
+| --- | --- |
+| GPU usage/temperature | an AMD card (`gpu_busy_percent` in sysfs) or `nvidia-smi`. Intel iGPUs have no percentage to read, so they stay `N/A`. |
+| Top traffic IPs (in bytes) | `nf_conntrack` with `net.netfilter.nf_conntrack_acct=1`. Without it the panel ranks peers by open connections instead. |
+| Firewall blocked attempts | read access to the kernel journal (usually membership in `systemd-journal` or `adm`). |
+| Last reboot reason | readable `/var/log/wtmp` and a `last` binary; reports whether the previous shutdown was clean. |
+
+The 12-hour load grid and 24-hour CPU heatmap are kept in memory by the
+running process, so they start empty after a restart and fill in over time.
 
 If a metric looks wrong on a real host, `./scripts/diagnose.sh` prints what
 each of those sources actually returns, and `curl localhost:3000/api/system`

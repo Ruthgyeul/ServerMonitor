@@ -19,6 +19,17 @@ body {
   font-family: Arial, Helvetica, sans-serif;
 }
 
+/* 대시보드 상태 표시용. Tailwind 의 animate-[pulseDot_...] 에서 참조한다. */
+@keyframes pulseDot {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+@keyframes alertBlink {
+  0%, 100% { background-color: rgba(239, 68, 68, 0.12); }
+  50% { background-color: rgba(239, 68, 68, 0.32); }
+}
+
 /* 7-inch screen optimization */
 @media screen and (max-width: 1024px) and (max-height: 600px) {
   html {
