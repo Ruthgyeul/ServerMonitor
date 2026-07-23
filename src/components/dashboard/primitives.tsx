@@ -27,7 +27,7 @@ export const Gauge: React.FC<GaugeProps> = ({ percentage, color, className }) =>
         cx={GAUGE_BOX / 2}
         cy={GAUGE_BOX / 2}
         r={GAUGE_RADIUS}
-        stroke="#374151"
+        stroke="#242b3a"
         strokeWidth={GAUGE_STROKE}
         fill="transparent"
       />

@@ -68,19 +68,19 @@ export const NetworkAreaChart: React.FC<NetworkAreaChartProps> = ({ data }) => {
         </linearGradient>
       </defs>
 
-      <line x1={PAD_LEFT} y1={PAD_TOP} x2={PAD_LEFT} y2={PAD_TOP + innerHeight} stroke="#374151" strokeWidth={1} />
+      <line x1={PAD_LEFT} y1={PAD_TOP} x2={PAD_LEFT} y2={PAD_TOP + innerHeight} stroke="rgba(255,255,255,0.10)" strokeWidth={1} />
       <line
         x1={PAD_LEFT}
         y1={PAD_TOP + innerHeight}
         x2={PAD_LEFT + innerWidth}
         y2={PAD_TOP + innerHeight}
-        stroke="#374151"
+        stroke="rgba(255,255,255,0.10)"
         strokeWidth={1}
       />
 
       {ticks.map(tick => (
         <g key={tick}>
-          <line x1={PAD_LEFT - 4} y1={y(tick * divisor)} x2={PAD_LEFT} y2={y(tick * divisor)} stroke="#4b5563" strokeWidth={1} />
+          <line x1={PAD_LEFT - 4} y1={y(tick * divisor)} x2={PAD_LEFT} y2={y(tick * divisor)} stroke="rgba(255,255,255,0.14)" strokeWidth={1} />
           <text x={PAD_LEFT - 8} y={y(tick * divisor) + 3} fontSize={9} fill="#9ca3af" textAnchor="end">
             {`${tick.toFixed(tick < 2 ? 1 : 0)} ${unit}`}
           </text>

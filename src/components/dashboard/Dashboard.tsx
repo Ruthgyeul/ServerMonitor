@@ -70,7 +70,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
   networkHistory,
   diskIoHistory
 }) => (
-  <div className="min-h-screen bg-gray-900 text-gray-100">
+  <div className="terminal-bg min-h-screen text-gray-100">
+    <TerminalTitleBar data={data} />
     <Header data={data} connected={connected} lastUpdate={lastUpdate} now={now} />
     <AlertBar data={data} />
 
@@ -126,7 +127,7 @@ const Card: React.FC<CardProps> = ({ icon: Icon, color, title, right, children }
     <div className="dash-card-head flex items-center justify-between gap-2">
       <div className="flex min-w-0 items-center gap-1.5">
         <Icon className="dash-icon shrink-0" color={color} strokeWidth={2} />
-        <h2 className="t-label truncate tracking-wide text-gray-300">{title}</h2>
+        <h2 className="t-label truncate uppercase tracking-[0.08em] text-gray-300">{title}</h2>
       </div>
       {right}
     </div>
@@ -156,6 +157,28 @@ function currentAlerts(data: DashboardData): string[] {
   return alerts;
 }
 
+// 터미널 윈도우 크롬. 신호등 + 경로만 얹어 대시보드를 "터미널 창"처럼 감싼다.
+// 배치나 정보는 건드리지 않는, 순수 장식용 상단 바다.
+const TerminalTitleBar: React.FC<{ data: DashboardData }> = ({ data }) => {
+  const host = data.host.hostname || 'server';
+
+  return (
+    <div className="term-titlebar">
+      <div className="flex shrink-0 items-center gap-[7px]">
+        <span className="term-dot" style={{ background: '#ff5f56' }} />
+        <span className="term-dot" style={{ background: '#ffbd2e' }} />
+        <span className="term-dot" style={{ background: '#27c93f' }} />
+      </div>
+      <span className="min-w-0 flex-1 truncate text-center font-mono">
+        <span style={{ color: '#34d399' }}>root@{host}</span>
+        <span style={{ color: '#5c6478' }}> — ~/monitor — </span>
+        <span style={{ color: '#8b93a7' }}>zsh</span>
+      </span>
+      <span className="shrink-0 font-mono text-gray-500">⎇ main</span>
+    </div>
+  );
+};
+
 type HeaderProps = Omit<DashboardProps, 'networkHistory' | 'diskIoHistory'>;
 
 const Header: React.FC<HeaderProps> = ({ data, connected, lastUpdate, now }) => {
@@ -164,7 +187,8 @@ const Header: React.FC<HeaderProps> = ({ data, connected, lastUpdate, now }) => 
   return (
     <header className="dash-head sticky top-0 z-10 flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-gray-700 bg-gray-800/95 backdrop-blur">
       <div className="flex min-w-0 flex-1 items-center gap-2">
-        <Server size={16} color="#60a5fa" strokeWidth={2} className="shrink-0" />
+        <Server size={16} color="#38bdf8" strokeWidth={2} className="shrink-0" />
+        <span className="t-value shrink-0 font-bold text-emerald-400 select-none">❯</span>
         <h1 className="t-value truncate font-bold">Server Monitor</h1>
         <div className="h-[7px] w-[7px] shrink-0 animate-[pulseDot_2s_ease-in-out_infinite] rounded-full bg-green-400" />
       </div>
@@ -236,7 +260,7 @@ const GaugeCard: React.FC<GaugeTileProps> = ({ icon: Icon, iconColor, label, per
   const color = percentage === null ? COLORS.muted : statusColor(percentage);
 
   return (
-    <section className="dash-card flex min-w-0 flex-col items-center rounded-lg border border-gray-700 bg-gray-800">
+    <section className="gauge-card dash-card flex min-w-0 flex-col items-center rounded-lg border border-gray-700 bg-gray-800">
       <div className="flex w-full items-center gap-1">
         <Icon className="dash-icon shrink-0" color={iconColor} strokeWidth={2} />
         <span className="t-micro truncate text-gray-300">{label}</span>
