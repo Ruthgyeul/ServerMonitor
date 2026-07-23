@@ -65,7 +65,7 @@ export const NetworkChart: React.FC<NetworkChartProps> = ({ data, minimal }) => 
                             hide={false}
                         />
                         <Tooltip 
-                            formatter={(value: number) => [`${formatNumber(value)} MB/s`, '']}
+                            formatter={(value) => [`${formatNumber(Number(value))} MB/s`, '']}
                             labelFormatter={(label) => `Time: ${label}`}
                             contentStyle={{ 
                                 backgroundColor: '#1f2937',
