@@ -49,6 +49,12 @@ function isLoopbackIp(ip: string): boolean {
   return ip.startsWith('127.') || ip === '::1' || ip === '0.0.0.0' || ip === '::';
 }
 
+// 부팅 시각(epoch ms)은 한 번만 계산해 고정한다. 매번 Date.now()-os.uptime()
+// 으로 다시 구하면 os.uptime() 의 10ms 양자화 때문에 값이 수 ms 씩 흔들리고,
+// 그러면 같은 세션의 `since` 가 갱신마다 달라져 alerts 가 "SSH login" 을
+// 무한히 다시 찍는다(도배의 진짜 원인). 부팅 시각은 변하지 않으므로 캐시가 맞다.
+const BOOT_MS = Date.now() - os.uptime() * 1000;
+
 // /proc/<pid>/stat 22번째 필드(부팅 후 tick)로 프로세스 시작 시각을 복원한다.
 // comm 에 공백/괄호가 들어갈 수 있어 마지막 ')' 이후부터 센다.
 async function processStart(pid: string): Promise<string> {
@@ -58,8 +64,7 @@ async function processStart(pid: string): Promise<string> {
     const startTicks = Number(afterComm[19]); // 필드22 = state(3) 기준 인덱스 19
     if (!Number.isFinite(startTicks)) return new Date().toISOString();
 
-    const bootMs = Date.now() - os.uptime() * 1000;
-    return new Date(bootMs + (startTicks / USER_HZ) * 1000).toISOString();
+    return new Date(BOOT_MS + (startTicks / USER_HZ) * 1000).toISOString();
   } catch {
     return new Date().toISOString();
   }

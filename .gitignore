@@ -20,6 +20,9 @@
 # production
 /build
 
+# persisted metric history (survives restarts; must not be committed)
+/data
+
 # misc
 .DS_Store
 *.pem

@@ -102,12 +102,14 @@ export function evaluateAlerts(input: AlertInput, at: number = Date.now()): Aler
 
   // 새로 생긴 SSH 세션만 기록한다. 첫 평가에서는 이미 붙어 있던 세션을
   // 방금 로그인한 것처럼 쏟아내지 않도록 조용히 기억만 해둔다.
-  const sessionKeys = new Set(input.sshSessions.map(s => `${s.user}@${s.ip}@${s.since}`));
+  // 키는 user@ip 로만 잡는다. `since` 를 넣으면 타임스탬프가 조금만 흔들려도
+  // 같은 세션이 새 로그인처럼 반복 기록되므로(도배) 세션 지속 동안은 한 번만 남긴다.
+  const sessionKeys = new Set(input.sshSessions.map(s => `${s.user}@${s.ip}`));
   if (knownSessions === null) {
     knownSessions = sessionKeys;
   } else {
     for (const session of input.sshSessions) {
-      const key = `${session.user}@${session.ip}@${session.since}`;
+      const key = `${session.user}@${session.ip}`;
       if (!knownSessions.has(key)) push('info', `SSH login: ${session.user}@${session.ip}`, at);
     }
     knownSessions = sessionKeys;
