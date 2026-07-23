@@ -13,8 +13,9 @@ const allowedOrigins = (process.env.ALLOWED_ORIGINS || 'http://localhost:3000')
     .filter(Boolean);
 
 function getCorsHeaders(origin: string | undefined) {
+    // 이 라우트는 GET/OPTIONS 만 구현한다. 쓰지도 않는 메서드/헤더를 광고하지 않는다.
     const headers: Record<string, string> = {
-        'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+        'Access-Control-Allow-Methods': 'GET, OPTIONS',
         'Access-Control-Allow-Headers': 'Content-Type, Authorization',
         'Content-Type': 'application/json'
     };
@@ -43,9 +44,10 @@ export async function GET(request: Request) {
             headers: getCorsHeaders(origin)
         });
     } catch (error) {
-        const message = error instanceof Error ? error.message : 'Unknown error';
+        // 원인(파일 경로/명령 실패 메시지 등)은 서버 로그에만 남기고, 클라이언트에는
+        // 내부 구조를 드러내지 않는 일반 메시지만 돌려준다.
         console.error('Error fetching system data:', error);
-        return new NextResponse(JSON.stringify({ error: `Failed to collect system data: ${message}` }), {
+        return new NextResponse(JSON.stringify({ error: 'Failed to collect system data' }), {
             status: 500,
             headers: getCorsHeaders(origin)
         });
