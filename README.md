@@ -76,7 +76,8 @@ Two things to know before changing it:
   with the card instead of being measured); Recharts on the cluster view
 - `src/utils/systemMonitor.ts` and `src/utils/collectors/*`, which read
   metrics straight from `/proc` and `/sys` and shell out only for `df`, `ps`,
-  `ping`, `who`, `last`, `systemctl` and `journalctl`
+  `ping`, `last`, `systemctl`, `journalctl` and `who` (SSH sessions are
+  detected from `/proc` first, with `who` as a fallback)
 
 ## Getting started
 
@@ -98,6 +99,7 @@ missing. A few need more than `/proc` to show real numbers:
 | Top traffic IPs (in bytes) | `nf_conntrack` with `net.netfilter.nf_conntrack_acct=1`. Without it the panel ranks peers by open connections instead. |
 | Firewall blocked attempts | read access to the kernel journal (usually membership in `systemd-journal` or `adm`). |
 | Last reboot reason | readable `/var/log/wtmp` and a `last` binary; reports whether the previous shutdown was clean. |
+| SSH sessions | detected from sshd session processes (`/proc/<pid>/comm` + cmdline) and established connections on the SSH port(s), so it works without utmp and catches PTY-less sessions (scp/sftp). The remote IP is filled in from the socket when `/proc/<pid>/fd` is readable (own user, or root); otherwise it may read `—`. `who` is merged in as a fallback. Set `SSH_PORTS` if sshd listens somewhere other than 22 and can't read `sshd_config`. |
 
 The 12-hour load grid and 24-hour CPU heatmap are kept in memory by the
 running process, so they start empty after a restart and fill in over time.
@@ -160,6 +162,7 @@ read on the server.
 | `NEXT_PUBLIC_SITE_DESCRIPTION` | `src/config/siteConfig.ts` | Site description used in metadata and social previews. |
 | `NEXT_PUBLIC_AUTHOR_NAME` | `src/config/siteConfig.ts` | Author/creator/publisher metadata. |
 | `PING_HOST` | `src/utils/systemMonitor.ts` | Host pinged for the latency reading. Defaults to `8.8.8.8`; set it to a reachable host if outbound ICMP is blocked, otherwise ping shows `0`. |
+| `SSH_PORTS` | `src/utils/collectors/security.ts` | Comma-separated SSH port(s) used to match active sessions. Normally read from `sshd_config` with a fallback to `22`; set only if sshd listens elsewhere and the config isn't readable. |
 | `KIOSK_USER` | `scripts/run.sh` | Linux user whose Firefox session is killed/relaunched in kiosk mode. |
 | `KIOSK_URL` | `scripts/run.sh` | URL opened in kiosk mode. |
 

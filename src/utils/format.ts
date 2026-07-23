@@ -12,6 +12,18 @@ export function rateUnit(maxKbPerSecond: number): { unit: string; divisor: numbe
   return maxKbPerSecond >= 1024 ? { unit: 'MB/s', divisor: 1024 } : { unit: 'KB/s', divisor: 1 };
 }
 
+// 디스크 I/O 는 MB/s 로 들어온다. 유휴에 가까운 서버는 값이 1 MB/s 를 한참 밑돌아
+// MB/s 로 반올림하면 계속 0.0 으로만 보인다. 두 값 중 큰 쪽이 1 MB/s 미만이면
+// 둘 다 KB/s 로 바꿔, 단위 하나는 공유하되 실제 값이 드러나게 한다.
+export function formatMbPair(readMb: number, writeMb: number): { read: string; write: string; unit: string } {
+  const useKb = Math.max(readMb, writeMb) < 1;
+  if (useKb) {
+    const kb = (mb: number) => (mb * 1024).toFixed(mb * 1024 >= 10 ? 0 : 1);
+    return { read: kb(readMb), write: kb(writeMb), unit: 'KB/s' };
+  }
+  return { read: readMb.toFixed(1), write: writeMb.toFixed(1), unit: 'MB/s' };
+}
+
 export function formatBytes(bytes: number): string {
   const units = ['B', 'KB', 'MB', 'GB', 'TB'];
   let value = bytes;

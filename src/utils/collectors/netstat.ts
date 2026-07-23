@@ -62,6 +62,10 @@ interface Socket {
   localPort: number;
   remoteIp: string;
   state: string;
+  // 소켓을 소유한 UID 와 inode. SSH 세션을 프로세스와 연결(inode)하거나
+  // 사용자를 추정(uid)할 때 쓴다. 커널마다 컬럼이 빠질 수 있어 기본값을 둔다.
+  uid: number;
+  inode: string;
 }
 
 async function readSockets(path: string, ipv6: boolean): Promise<Socket[]> {
@@ -74,6 +78,7 @@ async function readSockets(path: string, ipv6: boolean): Promise<Socket[]> {
 
   const sockets: Socket[] = [];
   for (const line of contents.split('\n').slice(1)) {
+    // /proc/net/tcp 컬럼: sl local rem st tx:rx tr:when retr uid timeout inode ...
     const fields = line.trim().split(/\s+/);
     if (fields.length < 4) continue;
 
@@ -81,10 +86,14 @@ async function readSockets(path: string, ipv6: boolean): Promise<Socket[]> {
     const [remoteHex] = fields[2].split(':');
     if (!localPortHex || !remoteHex) continue;
 
+    const uid = fields.length > 7 ? parseInt(fields[7], 10) : NaN;
+
     sockets.push({
       localPort: parseInt(localPortHex, 16),
       remoteIp: ipv6 ? hexToIpv6(remoteHex) : hexToIpv4(remoteHex),
-      state: fields[3]
+      state: fields[3],
+      uid: Number.isNaN(uid) ? -1 : uid,
+      inode: fields.length > 9 ? fields[9] : '0'
     });
   }
   return sockets;
@@ -129,6 +138,22 @@ export async function getSocketSummary(): Promise<SocketSummary> {
 
 function isLoopback(ip: string): boolean {
   return ip.startsWith('127.') || ip === '::1' || ip === '0.0.0.0' || ip === '::';
+}
+
+export interface EstablishedConnection {
+  localPort: number;
+  remoteIp: string;
+  uid: number;
+  inode: string;
+}
+
+// 확립된(ESTABLISHED) TCP 연결 전부. 보안 수집기가 SSH 포트로 들어온 연결만
+// 걸러 세션을 재구성할 때 쓴다.
+export async function getEstablishedConnections(): Promise<EstablishedConnection[]> {
+  const sockets = await readAllSockets();
+  return sockets
+    .filter(socket => socket.state === TCP_ESTABLISHED)
+    .map(({ localPort, remoteIp, uid, inode }) => ({ localPort, remoteIp, uid, inode }));
 }
 
 // --- 인터페이스 ------------------------------------------------------------
