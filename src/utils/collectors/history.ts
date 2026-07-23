@@ -17,7 +17,10 @@ const HOUR_BUCKETS = 24;
 // 손실되는 최악의 구간도 이 간격만큼뿐이다.
 const SAVE_INTERVAL_MS = 30 * 1000;
 
-const DATA_DIR = process.env.DATA_DIR || path.join(process.cwd(), 'data');
+// process.cwd() resolves to the project root at runtime; without this ignore,
+// Turbopack's file tracer can't statically scope it and traces the entire
+// project into the output bundle (the "unexpected file in NFT list" warning).
+const DATA_DIR = process.env.DATA_DIR || path.join(/*turbopackIgnore: true*/ process.cwd(), 'data');
 const STORE_FILE = process.env.HISTORY_FILE || path.join(DATA_DIR, 'history.json');
 const STORE_VERSION = 1;
 
@@ -79,7 +82,7 @@ function ensureLoaded(): void {
   if (loaded) return;
   loaded = true;
   try {
-    const raw = fs.readFileSync(STORE_FILE, 'utf-8');
+    const raw = fs.readFileSync(/*turbopackIgnore: true*/ STORE_FILE, 'utf-8');
     const parsed = JSON.parse(raw) as StoreShape;
     if (parsed && parsed.v === STORE_VERSION) {
       hydrate(loadBuckets, parsed.loadBuckets, LOAD_BUCKET_MS, LOAD_BUCKETS);
