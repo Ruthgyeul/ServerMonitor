@@ -1,18 +1,25 @@
 {
-  "name": "RuthServer Monitor",
-  "short_name": "RuthServer Monitor",
-  "description": "RuthServer Monitoring System",
+  "name": "Server Monitor",
+  "short_name": "Server Monitor",
+  "description": "Server Monitoring Web",
   "start_url": "/",
+  "id": "/",
   "display": "standalone",
-  "background_color": "#111827",
-  "theme_color": "#ffffff",
+  "background_color": "#0a0d13",
+  "theme_color": "#0a0d13",
   "orientation": "portrait-primary",
   "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
     {
       "src": "/favicon.ico",
       "sizes": "any",
       "type": "image/x-icon",
-      "purpose": "any maskable"
+      "purpose": "any"
     },
     {
       "src": "/icons/64x64.png",
@@ -34,6 +41,8 @@
     }
   ],
   "categories": [
+    "utilities",
+    "productivity"
   ],
   "lang": "en-US",
   "dir": "ltr",
@@ -45,7 +54,7 @@
       "sizes": "1280x720",
       "type": "image/png",
       "platform": "wide",
-      "label": "RuthServer Monitoring System"
+      "label": "Server Monitoring System Web"
     }
   ]
 }
