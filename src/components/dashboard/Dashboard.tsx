@@ -29,6 +29,7 @@ import {
   formatBytes,
   formatClock,
   formatLinkSpeed,
+  formatMbPair,
   formatRate,
   formatRelativeTime,
   formatShortDateTime,
@@ -472,16 +473,19 @@ const SwapCard: React.FC<{ data: DashboardData }> = ({ data }) => {
   );
 };
 
-const DiskIoCard: React.FC<{ data: DashboardData; history: DiskIoPoint[] }> = ({ data, history }) => (
+const DiskIoCard: React.FC<{ data: DashboardData; history: DiskIoPoint[] }> = ({ data, history }) => {
+  const io = formatMbPair(data.diskIO.read, data.diskIO.write);
+
+  return (
   <Card
     icon={HardDriveDownload}
     color="#38bdf8"
     title="DISK I/O"
     right={
       <span className="t-micro shrink-0 whitespace-nowrap font-mono">
-        <span className="text-blue-400">R {data.diskIO.read.toFixed(1)}</span>{' '}
-        <span className="text-pink-400">W {data.diskIO.write.toFixed(1)}</span>{' '}
-        <span className="text-gray-500">MB/s</span>
+        <span className="text-blue-400">R {io.read}</span>{' '}
+        <span className="text-pink-400">W {io.write}</span>{' '}
+        <span className="text-gray-500">{io.unit}</span>
       </span>
     }
   >
@@ -494,7 +498,8 @@ const DiskIoCard: React.FC<{ data: DashboardData; history: DiskIoPoint[] }> = ({
       />
     </div>
   </Card>
-);
+  );
+};
 
 // --- 네트워크 --------------------------------------------------------------
 
@@ -583,6 +588,8 @@ const InterfacesCard: React.FC<{ data: DashboardData }> = ({ data }) => {
 const BandwidthCard: React.FC<{ data: DashboardData }> = ({ data }) => {
   const percentage = data.network.bandwidthPercentage;
   const color = statusColor(percentage);
+  // 게이지가 재는 것과 같은 값: 현재 총 처리량(다운로드+업로드).
+  const usage = data.network.download + data.network.upload;
 
   return (
     <Card
@@ -596,7 +603,10 @@ const BandwidthCard: React.FC<{ data: DashboardData }> = ({ data }) => {
       }
     >
       <Bar percentage={percentage} color={color} />
-      <p className="t-micro mt-1 text-gray-500">of {formatLinkSpeed(data.network.linkSpeedMbps)}</p>
+      <div className="t-micro mt-1 flex items-center justify-between gap-2 text-gray-500">
+        <span className="font-mono text-gray-400">{formatRate(usage)}</span>
+        <span>of {formatLinkSpeed(data.network.linkSpeedMbps)}</span>
+      </div>
     </Card>
   );
 };
