@@ -1,12 +1,10 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 
 import { NetworkHistoryEntry, ServerData } from '@/types/system';
 import { DashboardData, toDashboardData } from '@/utils/dashboardData';
 
-const POLL_INTERVAL_MS = 1000;
-const REQUEST_TIMEOUT_MS = 4000;
 const MAX_POINTS = 60;
 
 // 이 필드들이 없으면 응답이 /api/system 의 것이 아니거나 심하게 망가진 것이다.
@@ -48,26 +46,19 @@ export function useSystemData(): SystemDataState {
     diskIoHistory: []
   });
 
-  // 응답이 폴링 간격보다 느려지면 요청이 겹쳐 쌓인다. 한 번에 하나만 보낸다.
-  const inflight = useRef(false);
-
   useEffect(() => {
-    let cancelled = false;
+    // 폴링(초당 GET) 대신 연결 하나를 열어두고 서버가 밀어주는 SSE 를 구독한다.
+    // EventSource 는 연결이 끊기면 자동으로 재연결하므로 별도 백오프가 필요 없다.
+    const source = new EventSource('/api/system/stream');
 
-    const fetchOnce = async () => {
-      if (inflight.current) return;
-      inflight.current = true;
+    source.onopen = () => {
+      setState(previous => ({ ...previous, connected: true, error: null }));
+    };
 
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
-
+    source.onmessage = (event: MessageEvent<string>) => {
       try {
-        const response = await fetch('/api/system', { signal: controller.signal, cache: 'no-store' });
-        if (!response.ok) throw new Error(`Failed to fetch system data (${response.status})`);
-
-        const payload: unknown = await response.json();
+        const payload: unknown = JSON.parse(event.data);
         assertServerData(payload);
-        if (cancelled) return;
 
         const data = toDashboardData(payload);
         const time = new Date().toLocaleTimeString('ko-KR', {
@@ -92,25 +83,22 @@ export function useSystemData(): SystemDataState {
           ].slice(-MAX_POINTS)
         }));
       } catch (error) {
-        if (cancelled) return;
         const message = error instanceof Error ? error.message : 'Unknown error occurred';
-        console.error('Error fetching system data:', error);
-
-        // 마지막으로 받은 값은 지우지 않는다. 잠깐 끊겼다고 화면이 비어버리면
-        // 벽에 걸어둔 대시보드로서는 오히려 정보가 줄어든다.
-        setState(previous => ({ ...previous, error: message, connected: false }));
-      } finally {
-        clearTimeout(timeout);
-        inflight.current = false;
+        console.error('Error parsing system data:', error);
+        // 파싱 실패는 연결 문제가 아니다. 마지막 값은 유지하고 에러만 표시한다.
+        setState(previous => ({ ...previous, error: message }));
       }
     };
 
-    fetchOnce();
-    const interval = setInterval(fetchOnce, POLL_INTERVAL_MS);
+    source.onerror = () => {
+      // 연결이 끊긴 상태. 마지막으로 받은 값은 지우지 않는다. 잠깐 끊겼다고
+      // 화면이 비어버리면 벽에 걸어둔 대시보드로서는 오히려 정보가 줄어든다.
+      // EventSource 가 알아서 재연결을 시도하며, 성공하면 onopen 이 복구한다.
+      setState(previous => ({ ...previous, connected: false }));
+    };
 
     return () => {
-      cancelled = true;
-      clearInterval(interval);
+      source.close();
     };
   }, []);
 
