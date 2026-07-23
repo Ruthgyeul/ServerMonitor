@@ -155,7 +155,8 @@ read on the server.
 | `NEXT_PUBLIC_CLUSTER_SERVERS` | `src/config/clusterConfig.ts` | JSON array of `{ "name", "ip", "type" }` objects rendered on `/cluster`. `type` is `"intel"` or `"rpi"` and controls which sensors are read. |
 | `NEXT_PUBLIC_CLUSTER_PORT` | `src/config/clusterConfig.ts` | Port each cluster node's `/api/system` listens on (default `3000`). |
 | `NEXT_PUBLIC_CLUSTER_PROTOCOL` | `src/config/clusterConfig.ts` | Scheme (`http`/`https`) used to reach cluster nodes from the browser (default `http`). |
-| `ALLOWED_ORIGINS` | `src/app/api/system/route.ts` | Comma-separated list of origins allowed to call `/api/system` (CORS allow-list). |
+| `ALLOWED_ORIGINS` | `src/app/api/system/route.ts` | Comma-separated list of origins allowed to call `/api/system` (CORS allow-list). CORS only limits cross-origin browser reads — it does not authenticate. See [Securing the API](#securing-the-api). |
+| `API_AUTH_TOKEN` | `src/proxy.ts` | Optional shared secret. When set, every `/api/system*` request must present it as `Authorization: Bearer <token>` or an `api_auth_token` cookie. Unset by default. Enabling it breaks the built-in browser dashboard — see [Securing the API](#securing-the-api). |
 | `NEXT_PUBLIC_SITE_URL` | `src/config/siteConfig.ts` | Canonical site URL used for metadata, Open Graph tags, `robots.txt` and `sitemap.xml`. |
 | `NEXT_PUBLIC_SITE_NAME` | `src/config/siteConfig.ts` | Full site/app name shown in page titles and metadata. |
 | `NEXT_PUBLIC_SITE_SHORT_NAME` | `src/config/siteConfig.ts` | Short name used in the title template and mobile web app title. |
@@ -177,6 +178,33 @@ Adding, removing, or repointing a cluster node is now a one-line edit in
   mode, reading `KIOSK_USER`/`KIOSK_URL` from `.env` if present.
 - `scripts/monitor.sh` — standalone JSON dump of the same metrics. Not used by
   the API route; kept for shelling out from other tooling.
+
+## Securing the API
+
+`/api/system` and `/api/system/stream` return sensitive host reconnaissance:
+SSH session source IPs and usernames, listening ports, top traffic peer IPs,
+firewall state, and the running process list. **The endpoint is unauthenticated
+by default**, and the `ALLOWED_ORIGINS` CORS list only restricts cross-origin
+reads from browsers — it does nothing against `curl` or any script. Anyone who
+can reach the port can read everything.
+
+Pick at least one of these, in rough order of preference:
+
+1. **Network isolation (recommended).** Bind the app to `localhost` and expose
+   it only through a reverse proxy (nginx/Caddy/Traefik) that terminates TLS and
+   enforces auth (Basic auth, mTLS, OAuth2 proxy), or keep it reachable only
+   over a VPN / private network. This keeps the browser dashboard fully working.
+2. **Optional token gate.** Set `API_AUTH_TOKEN` (e.g. `openssl rand -hex 32`).
+   Every `/api/system*` request then needs `Authorization: Bearer <token>` or an
+   `api_auth_token` cookie. This suits machine-to-machine polling or a reverse
+   proxy that injects the token. Note it disables the built-in browser dashboard,
+   which cannot carry a secret token from the browser.
+
+The app also sends hardening response headers (`X-Frame-Options: DENY`,
+`X-Content-Type-Options: nosniff`, a `frame-ancestors 'none'` CSP,
+`Referrer-Policy`, `Permissions-Policy`, HSTS) from `next.config.ts`, and the
+process list reports executable names only (never full command lines) so
+secrets passed as CLI arguments are never exposed.
 
 ## Deploying a cluster
 

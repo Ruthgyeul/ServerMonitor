@@ -344,9 +344,12 @@ async function getFanSpeed(): Promise<FanInfo> {
 // --- Processes / Uptime ------------------------------------------------
 
 async function getProcesses(): Promise<Process[]> {
+  // `args`(전체 명령줄) 대신 `comm`(실행 파일명)만 읽는다. 명령줄 인자에는
+  // 비밀번호/토큰이 그대로 노출되는 경우가 많은데(예: `mysql -pSECRET`,
+  // `--api-key=...`), 이 목록은 API 로도 나가므로 실행 파일명이면 충분하고 안전하다.
   // 파이프라인의 종료 코드는 head 의 것이라 ps 가 실패해도 0 이 된다.
   // 빈 출력을 그대로 넘기면 원인 없이 목록만 비므로 여기서 에러로 올린다.
-  const stdout = await run('ps -eo pid,pcpu,pmem,stat,args --sort=-pcpu | head -n 21');
+  const stdout = await run('ps -eo pid,pcpu,pmem,stat,comm --sort=-pcpu | head -n 21');
   const lines = stdout.split('\n').slice(1); // 헤더 제거
   if (lines.length === 0) {
     throw new Error('ps returned no rows (does this ps support --sort?)');
