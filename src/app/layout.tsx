@@ -24,7 +24,7 @@ const geistMono = Geist_Mono({
 export const viewport: Viewport = {
     width: "device-width",
     initialScale: 1,
-    themeColor: "#111827"
+    themeColor: "#0a0d13"
 };
 
 export const metadata: Metadata = {
@@ -49,9 +49,10 @@ export const metadata: Metadata = {
     },
     icons: {
         icon: [
+            { url: "/favicon.svg", type: "image/svg+xml" },
             { url: "/favicon.ico", sizes: "any", type: "image/x-icon" }
         ],
-        shortcut: ["/favicon.ico"]
+        shortcut: ["/favicon.svg"]
     },
     openGraph: {
         title: SITE_NAME,
