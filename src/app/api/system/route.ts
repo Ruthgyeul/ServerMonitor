@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { corsHeaders } from '@/utils/cors';
 import { getSystemInfo } from '@/utils/systemMonitor';
 import { isValidServerData } from '@/utils/validation';
 
@@ -6,23 +7,13 @@ import { isValidServerData } from '@/utils/validation';
 // 여기까지 올라온 에러는 진짜 고장이다. 0으로 채운 정상 응답을 돌려주면
 // 대시보드에 "모든 값이 0" 으로만 보이고 원인이 감춰지므로 5xx 로 알린다.
 
-// 허용된 origin 목록 (.env의 ALLOWED_ORIGINS로 설정, 콤마로 구분)
-const allowedOrigins = (process.env.ALLOWED_ORIGINS || 'http://localhost:3000')
-    .split(',')
-    .map((origin) => origin.trim().replace(/\/+$/, ''))
-    .filter(Boolean);
-
 function getCorsHeaders(origin: string | undefined) {
     // 이 라우트는 GET/OPTIONS 만 구현한다. 쓰지도 않는 메서드/헤더를 광고하지 않는다.
-    const headers: Record<string, string> = {
+    return corsHeaders(origin, {
         'Access-Control-Allow-Methods': 'GET, OPTIONS',
         'Access-Control-Allow-Headers': 'Content-Type, Authorization',
         'Content-Type': 'application/json'
-    };
-    if (origin && allowedOrigins.includes(origin)) {
-        headers['Access-Control-Allow-Origin'] = origin;
-    }
-    return headers;
+    });
 }
 
 export async function GET(request: Request) {
