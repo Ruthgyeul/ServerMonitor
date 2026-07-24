@@ -35,7 +35,15 @@ import {
   formatShortDateTime,
   shortKernel
 } from '@/utils/format';
-import { ALERT_LEVEL_COLORS, COLORS, loadCellColor, loadColor, statusColor, tempColor } from '@/utils/statusColors';
+import {
+  ALERT_LEVEL_COLORS,
+  COLORS,
+  heatColor,
+  loadCellColor,
+  loadColor,
+  statusColor,
+  tempColor
+} from '@/utils/statusColors';
 
 // 카드는 멀티컬럼(.dash-grid)으로 흘러 화면 폭에 따라 1/2/3열이 된다.
 // 열 수와 치수는 전부 src/styles/globals.css 가 정한다.
@@ -332,7 +340,8 @@ const UptimeCard: React.FC<{ data: DashboardData }> = ({ data }) => (
 const LoadCard: React.FC<{ data: DashboardData }> = ({ data }) => {
   const { load, cpu, history } = data;
 
-  // 히스토리가 아직 48칸을 못 채웠으면 앞쪽을 빈 칸으로 메워 격자 모양을 유지한다.
+  // 한 칸이 1시간이라 48칸이면 48시간이다. 아직 다 못 채웠으면 앞쪽을 빈 칸으로
+  // 메워 격자 모양을 유지한다.
   const cells = [
     ...Array(Math.max(0, LOAD_CELLS - history.load.length)).fill(null),
     ...history.load.slice(-LOAD_CELLS)
@@ -350,7 +359,7 @@ const LoadCard: React.FC<{ data: DashboardData }> = ({ data }) => {
       }
     >
       <div className="t-micro mb-1 flex items-center justify-between gap-2 text-gray-500">
-        <span>Last 12h</span>
+        <span>Last 48h</span>
         <span className="truncate">
           5m {load.avg5.toFixed(2)} · 15m {load.avg15.toFixed(2)}
         </span>
@@ -456,7 +465,7 @@ const CpuDayCard: React.FC<{ data: DashboardData }> = ({ data }) => (
             <div
               key={sample.at}
               className="dash-heat flex-1 rounded-[2px]"
-              style={{ background: sample.usage === null ? COLORS.empty : statusColor(sample.usage) }}
+              style={{ background: sample.usage === null ? COLORS.empty : heatColor(sample.usage / 100) }}
               title={
                 sample.usage === null
                   ? `${new Date(sample.at).getHours()}:00 — no data`
