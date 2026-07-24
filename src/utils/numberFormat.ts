@@ -1,12 +1,4 @@
-import { 
-    ServerData, 
-    Process, 
-    X86TemperatureInfo, 
-    ARMTemperatureInfo, 
-    TemperatureInfo,
-    isX86TemperatureInfo,
-    isARMTemperatureInfo
-} from '@/types/system';
+import { ServerData, Process, isX86TemperatureInfo } from '@/types/system';
 
 export const formatNumber = (num: number): number => {
     return Number(num.toFixed(2));

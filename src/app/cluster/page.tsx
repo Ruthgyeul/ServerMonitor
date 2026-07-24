@@ -94,7 +94,6 @@ interface ServerCardProps {
 const ClusterPage = () => {
     const [serversData, setServersData] = useState<ServersData>({});
     const [loading, setLoading] = useState(true);
-    const [lastUpdate, setLastUpdate] = useState(new Date());
     const [networkHistory, setNetworkHistory] = useState<{ [key: string]: NetworkHistoryEntry[] }>({});
 
     // 메모이제이션된 서버 목록 (.env의 NEXT_PUBLIC_CLUSTER_SERVERS로 설정)
@@ -160,14 +159,13 @@ const ClusterPage = () => {
                 } else {
                     newData[server.ip] = { error: 'Failed to fetch' };
                 }
-            } catch (error) {
+            } catch {
                 newData[server.ip] = { error: 'Connection failed' };
             }
         }
 
         setServersData(newData);
         setLoading(false);
-        setLastUpdate(new Date());
     }, [servers, updateNetworkHistory]);
 
     // 컴포넌트 마운트/언마운트 관리
@@ -463,7 +461,7 @@ const ClusterPage = () => {
         }
 
         return ServerCardComponent;
-    }, [getStatusColor, formatMemory, formatDisk, getTemperatureDisplay, getFanSpeed, getTempColor, PieChart]);
+    }, [getStatusColor, formatMemory, formatDisk, getTemperatureDisplay, getFanSpeed, getTempColor, formatUptime, PieChart]);
 
     if (loading) {
         return <Loading />;
