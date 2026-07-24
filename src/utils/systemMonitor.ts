@@ -8,7 +8,8 @@ import {
   ARMTemperatureInfo,
   TemperatureInfo,
   TemperatureValue,
-  SecurityInfo
+  SecurityInfo,
+  LoadInfo
 } from '@/types/system';
 import { collect, readSys, round, run } from '@/utils/collectors/shell';
 import { getCpuUsage } from '@/utils/collectors/cpu';
@@ -25,7 +26,7 @@ import {
   SocketSummary
 } from '@/utils/collectors/netstat';
 import { getFirewallInfo, getSshSessions } from '@/utils/collectors/security';
-import { getHistory, recordSample } from '@/utils/collectors/history';
+import { getHistory, getLoad30mAverage, recordSample } from '@/utils/collectors/history';
 import { evaluateAlerts } from '@/utils/collectors/alerts';
 
 // 캐시된 시스템 정보
@@ -487,10 +488,18 @@ export async function getSystemInfo(): Promise<ServerData> {
       )
     ]);
 
-  const load = getLoadAverage();
+  const loadBase = await getLoadAverage();
   const security = await getSecurityInfo(sockets.peers, warnings);
 
-  recordSample(cpu.usage, load.avg1, now);
+  recordSample(cpu.usage, loadBase.avg1, now);
+
+  // 창은 방금 넣은 샘플까지 포함해야 하므로 recordSample 뒤에 읽는다.
+  const rolling30m = getLoad30mAverage(now);
+  const load: LoadInfo = {
+    ...loadBase,
+    avg30: rolling30m.value,
+    avg30WindowSeconds: rolling30m.windowSeconds
+  };
 
   const alerts = evaluateAlerts(
     {

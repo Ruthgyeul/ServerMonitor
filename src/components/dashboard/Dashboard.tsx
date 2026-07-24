@@ -60,6 +60,9 @@ const MAX_INTERFACES = 4;
 // 이보다 많으면 코어 막대를 두 줄로 접는다.
 const CORE_SPLIT_THRESHOLD = 8;
 const LOAD_CELLS = 48;
+// 30분 이동평균의 창 길이. history.ts 의 ROLLING_WINDOW_MS 와 같은 값이며,
+// 여기서는 "창이 다 찼는가" 를 판정하는 데만 쓴다.
+const ROLLING_30M_SECONDS = 30 * 60;
 
 interface DashboardProps {
   data: DashboardData;
@@ -347,21 +350,52 @@ const LoadCard: React.FC<{ data: DashboardData }> = ({ data }) => {
     ...history.load.slice(-LOAD_CELLS)
   ];
 
+  // 순간값은 실행 대기 태스크 수다. /proc 가 없는 OS 에서는 못 읽으므로 1분 평균으로
+  // 물러난다 — 색을 고를 기준값도 같이 따라간다.
+  const liveLoad = load.running ?? load.avg1;
+
+  // 30분은 커널이 주지 않아 우리 샘플로 낸다. 창이 아직 덜 찼으면 별표로 알리고,
+  // 툴팁에 실제로 덮은 구간을 적는다 — 시작 직후 "0분 평균" 이 되지 않도록 초로 받는다.
+  const partial30m = load.avg30 !== null && load.avg30WindowSeconds < ROLLING_30M_SECONDS;
+  const window30m =
+    load.avg30WindowSeconds < 60
+      ? `${load.avg30WindowSeconds}s`
+      : `${Math.floor(load.avg30WindowSeconds / 60)}min`;
+  const avg30Tip =
+    load.avg30 === null
+      ? 'collecting — no samples since start yet'
+      : partial30m
+        ? `average over the last ${window30m} so far, filling to 30min`
+        : 'average over the last 30min';
+
   return (
     <Card
       icon={Activity}
       color="#f472b6"
       title="LOAD AVG"
       right={
-        <span className="t-micro shrink-0 whitespace-nowrap" style={{ color: loadColor(load.avg1, cpu.cores) }}>
-          1m {load.avg1.toFixed(2)}
+        <span
+          className="dash-tip t-micro shrink-0 whitespace-nowrap"
+          tabIndex={-1}
+          style={{ color: loadColor(liveLoad, cpu.cores) }}
+          data-tip={
+            load.running === null
+              ? 'live run queue unavailable on this OS — showing 1m average'
+              : `${load.running} task${load.running === 1 ? '' : 's'} running or waiting right now`
+          }
+        >
+          {load.running === null ? `now ${load.avg1.toFixed(2)}` : `now ${load.running}`}
         </span>
       }
     >
       <div className="t-micro mb-1 flex items-center justify-between gap-2 text-gray-500">
         <span>Last 48h</span>
         <span className="truncate">
-          5m {load.avg5.toFixed(2)} · 15m {load.avg15.toFixed(2)}
+          1m {load.avg1.toFixed(2)} · 15m {load.avg15.toFixed(2)} ·{' '}
+          <span className="dash-tip" tabIndex={-1} data-tip={avg30Tip}>
+            30m {load.avg30 === null ? '—' : load.avg30.toFixed(2)}
+            {partial30m ? '*' : ''}
+          </span>
         </span>
       </div>
       <div className="dash-loadgrid grid grid-cols-12" role="list" aria-label="Load average, one cell per hour over the last 48 hours">

@@ -96,7 +96,7 @@ export function toDashboardData(raw: ServerData): DashboardData {
       bootTime: new Date().toISOString(),
       rebootReason: null
     },
-    load: raw.load ?? { avg1: 0, avg5: 0, avg15: 0 },
+    load: raw.load ?? { avg1: 0, avg5: 0, avg15: 0, running: null, avg30: null, avg30WindowSeconds: 0 },
     security: raw.security ?? EMPTY_SECURITY,
     history: raw.history ?? EMPTY_HISTORY,
     alerts: raw.alerts ?? [],
