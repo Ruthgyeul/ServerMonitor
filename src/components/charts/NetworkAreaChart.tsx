@@ -1,4 +1,6 @@
-import React from 'react';
+'use client';
+
+import React, { useRef, useState } from 'react';
 
 import { NetworkHistoryEntry } from '@/types/system';
 import { rateUnit } from '@/utils/format';
@@ -12,6 +14,12 @@ const PAD_RIGHT = 10;
 const PAD_TOP = 8;
 const PAD_BOTTOM = 16;
 const TICK_COUNT = 4;
+
+// 크로스헤어 말풍선. 모노스페이스라 글자폭이 일정해서 폭을 글자 수로 계산할 수 있다.
+const READOUT_FONT = 9;
+const READOUT_CHAR_W = READOUT_FONT * 0.62;
+const READOUT_PAD = 6;
+const READOUT_LINE = 11;
 
 // 축 최댓값을 1/2/5 배수로 올려 눈금 숫자가 지저분해지지 않게 한다.
 function niceMax(value: number): number {
@@ -28,6 +36,22 @@ interface NetworkAreaChartProps {
 }
 
 export const NetworkAreaChart: React.FC<NetworkAreaChartProps> = ({ data }) => {
+  const svgRef = useRef<SVGSVGElement>(null);
+  const [active, setActive] = useState<number | null>(null);
+
+  // 화면 좌표 → viewBox 좌표. preserveAspectRatio 로 레터박스가 생길 수 있어
+  // 폭 비율로 어림하지 않고 CTM 역행렬을 쓴다.
+  const indexAt = (clientX: number, clientY: number, count: number): number | null => {
+    const svg = svgRef.current;
+    const ctm = svg?.getScreenCTM();
+    if (!svg || !ctm) return null;
+
+    const point = new DOMPoint(clientX, clientY).matrixTransform(ctm.inverse());
+    const span = WIDTH - PAD_LEFT - PAD_RIGHT;
+    const ratio = (point.x - PAD_LEFT) / span;
+    return Math.max(0, Math.min(count - 1, Math.round(ratio * (count - 1))));
+  };
+
   if (data.length < 2) {
     return (
       <div className="flex h-full w-full items-center justify-center text-[10px] text-gray-500">
@@ -55,8 +79,21 @@ export const NetworkAreaChart: React.FC<NetworkAreaChartProps> = ({ data }) => {
 
   const ticks = Array.from({ length: TICK_COUNT + 1 }, (_, index) => (max / TICK_COUNT) * index);
 
+  const activeEntry = active === null ? null : data[active];
+
   return (
-    <svg width="100%" height="100%" viewBox={`0 0 ${WIDTH} ${HEIGHT}`} preserveAspectRatio="xMidYMid meet">
+    <svg
+      ref={svgRef}
+      width="100%"
+      height="100%"
+      viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
+      preserveAspectRatio="xMidYMid meet"
+      // 마우스는 hover, 터치는 탭/드래그로 같은 지점을 집는다. touch-action 은
+      // 건드리지 않는다 — 차트 위에서 페이지 세로 스크롤이 막히면 손해가 더 크다.
+      onPointerMove={event => setActive(indexAt(event.clientX, event.clientY, data.length))}
+      onPointerDown={event => setActive(indexAt(event.clientX, event.clientY, data.length))}
+      onPointerLeave={() => setActive(null)}
+    >
       <defs>
         <linearGradient id="downloadArea" x1="0" y1="0" x2="0" y2="1">
           <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.35} />
@@ -95,6 +132,50 @@ export const NetworkAreaChart: React.FC<NetworkAreaChartProps> = ({ data }) => {
       <text x={PAD_LEFT + innerWidth} y={PAD_TOP + innerHeight + 14} fontSize={9} fill="#6b7280" textAnchor="end">
         now
       </text>
+
+      {activeEntry && active !== null && (() => {
+        const cx = x(active);
+        const lines = [
+          activeEntry.time,
+          `↓ ${(activeEntry.download / divisor).toFixed(1)} ${unit}`,
+          `↑ ${(activeEntry.upload / divisor).toFixed(1)} ${unit}`
+        ];
+        const boxWidth = Math.max(...lines.map(text => text.length)) * READOUT_CHAR_W + READOUT_PAD * 2;
+        const boxHeight = lines.length * READOUT_LINE + READOUT_PAD * 2 - 3;
+        // 오른쪽 끝에서는 말풍선이 축 밖으로 나가므로 커서 왼쪽에 붙인다.
+        const flip = cx + 10 + boxWidth > PAD_LEFT + innerWidth;
+        const boxX = flip ? cx - 10 - boxWidth : cx + 10;
+
+        return (
+          <g pointerEvents="none">
+            <line x1={cx} y1={PAD_TOP} x2={cx} y2={PAD_TOP + innerHeight} stroke="rgba(255,255,255,0.28)" strokeWidth={1} />
+            <circle cx={cx} cy={y(activeEntry.download)} r={3} fill="#3b82f6" stroke="#0a0d13" strokeWidth={1.5} />
+            <circle cx={cx} cy={y(activeEntry.upload)} r={3} fill="#10b981" stroke="#0a0d13" strokeWidth={1.5} />
+
+            <rect
+              x={boxX}
+              y={PAD_TOP + 4}
+              width={boxWidth}
+              height={boxHeight}
+              rx={4}
+              fill="#111621"
+              stroke="rgba(255,255,255,0.14)"
+              strokeWidth={1}
+            />
+            {lines.map((text, row) => (
+              <text
+                key={text}
+                x={boxX + READOUT_PAD}
+                y={PAD_TOP + 4 + READOUT_PAD + READOUT_LINE * row + READOUT_FONT - 2}
+                fontSize={READOUT_FONT}
+                fill={row === 0 ? '#8b93a7' : row === 1 ? '#54a2ff' : '#00d294'}
+              >
+                {text}
+              </text>
+            ))}
+          </g>
+        );
+      })()}
     </svg>
   );
 };

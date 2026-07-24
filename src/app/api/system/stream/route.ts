@@ -1,4 +1,5 @@
 import { ServerData } from '@/types/system';
+import { corsHeaders } from '@/utils/cors';
 import { subscribe } from '@/utils/systemStream';
 
 // 이 라우트는 연결을 열어둔 채 서버가 데이터를 밀어주는 SSE 스트림이다.
@@ -8,11 +9,6 @@ import { subscribe } from '@/utils/systemStream';
 // 장기 연결 + Node 전용 수집(fs/os/child_process)이므로 정적 최적화를 끈다.
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
-
-const allowedOrigins = (process.env.ALLOWED_ORIGINS || 'http://localhost:3000')
-    .split(',')
-    .map((origin) => origin.trim().replace(/\/+$/, ''))
-    .filter(Boolean);
 
 // 유휴 연결이 프록시/방화벽에 끊기지 않도록 주기적으로 보내는 keep-alive.
 const KEEPALIVE_MS = 15000;
@@ -65,16 +61,13 @@ export async function GET(request: Request) {
         }
     });
 
-    const headers: Record<string, string> = {
+    const headers = corsHeaders(origin, {
         'Content-Type': 'text/event-stream; charset=utf-8',
         'Cache-Control': 'no-cache, no-transform',
         Connection: 'keep-alive',
         // nginx 리버스 프록시가 응답을 버퍼링해 실시간성이 깨지는 것을 막는다.
         'X-Accel-Buffering': 'no'
-    };
-    if (origin && allowedOrigins.includes(origin)) {
-        headers['Access-Control-Allow-Origin'] = origin;
-    }
+    });
 
     return new Response(stream, { headers });
 }

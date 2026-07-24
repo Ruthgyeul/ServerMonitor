@@ -60,6 +60,9 @@ const MAX_INTERFACES = 4;
 // 이보다 많으면 코어 막대를 두 줄로 접는다.
 const CORE_SPLIT_THRESHOLD = 8;
 const LOAD_CELLS = 48;
+// 30분 이동평균의 창 길이. history.ts 의 ROLLING_WINDOW_MS 와 같은 값이며,
+// 여기서는 "창이 다 찼는가" 를 판정하는 데만 쓴다.
+const ROLLING_30M_SECONDS = 30 * 60;
 
 interface DashboardProps {
   data: DashboardData;
@@ -261,10 +264,13 @@ interface GaugeTileProps {
   label: string;
   percentage: number | null;
   caption: string;
+  // 게이지에 마우스를 올리거나 손으로 눌렀을 때 보여줄 한 줄. caption 은 칸에
+  // 맞춰 잘리지만 이쪽은 잘리지 않은 전체 수치를 담는다.
+  detail: string;
 }
 
 // 시안에서는 게이지 네 개가 각각 독립된 카드다.
-const GaugeCard: React.FC<GaugeTileProps> = ({ icon: Icon, iconColor, label, percentage, caption }) => {
+const GaugeCard: React.FC<GaugeTileProps> = ({ icon: Icon, iconColor, label, percentage, caption, detail }) => {
   const color = percentage === null ? COLORS.muted : statusColor(percentage);
 
   return (
@@ -273,9 +279,13 @@ const GaugeCard: React.FC<GaugeTileProps> = ({ icon: Icon, iconColor, label, per
         <Icon className="dash-icon shrink-0" color={iconColor} strokeWidth={2} />
         <span className="t-micro truncate text-gray-300">{label}</span>
       </div>
-      <Gauge percentage={percentage ?? 0} color={color} className="my-1" />
-      <div className="t-value font-bold" style={{ color }}>
-        {percentage === null ? 'N/A' : `${percentage.toFixed(1)}%`}
+      {/* 툴팁은 게이지+수치 묶음이 진다. 카드 전체가 아니라 그림 위에서만 떠야
+          이웃 카드로 넘어갈 때 깜빡이지 않는다. */}
+      <div className="dash-tip flex flex-col items-center" tabIndex={-1} data-tip={detail}>
+        <Gauge percentage={percentage ?? 0} color={color} className="my-1" />
+        <div className="t-value font-bold" style={{ color }}>
+          {percentage === null ? 'N/A' : `${percentage.toFixed(1)}%`}
+        </div>
       </div>
       <div className="t-micro w-full truncate text-center text-gray-400">{caption}</div>
     </section>
@@ -295,6 +305,7 @@ const GaugeRow: React.FC<{ data: DashboardData }> = ({ data }) => {
         label="CPU"
         percentage={data.cpu.usage}
         caption={`${data.cpu.cores} cores`}
+        detail={`${data.cpu.usage.toFixed(1)}% across ${data.cpu.cores} cores · load 1m ${data.load.avg1.toFixed(2)}`}
       />
       <GaugeCard
         icon={Monitor}
@@ -302,6 +313,13 @@ const GaugeRow: React.FC<{ data: DashboardData }> = ({ data }) => {
         label="GPU"
         percentage={data.gpu.usage === 'N/A' ? null : data.gpu.usage}
         caption={data.gpu.temperature === 'N/A' ? 'no sensor' : `${data.gpu.temperature.toFixed(1)}°C`}
+        detail={
+          data.gpu.usage === 'N/A'
+            ? 'no GPU sensor detected on this host'
+            : `${data.gpu.usage.toFixed(1)}% used${
+                data.gpu.temperature === 'N/A' ? '' : ` · ${data.gpu.temperature.toFixed(1)}°C`
+              }`
+        }
       />
       <GaugeCard
         icon={MemoryStick}
@@ -309,6 +327,9 @@ const GaugeRow: React.FC<{ data: DashboardData }> = ({ data }) => {
         label="RAM"
         percentage={data.memory.percentage}
         caption={`${toGb(data.memory.used)}/${toGb(data.memory.total)}G`}
+        detail={`${toGb(data.memory.used)}G used of ${toGb(data.memory.total)}G · ${toGb(
+          Math.max(0, data.memory.total - data.memory.used)
+        )}G free`}
       />
       <GaugeCard
         icon={HardDrive}
@@ -316,6 +337,10 @@ const GaugeRow: React.FC<{ data: DashboardData }> = ({ data }) => {
         label="DISK"
         percentage={data.disk.percentage}
         caption={`${data.disk.used.toFixed(0)}/${data.disk.total.toFixed(0)}G`}
+        detail={`${data.disk.used.toFixed(1)}G used of ${data.disk.total.toFixed(1)}G · ${Math.max(
+          0,
+          data.disk.total - data.disk.used
+        ).toFixed(1)}G free`}
       />
     </div>
   );
@@ -347,32 +372,72 @@ const LoadCard: React.FC<{ data: DashboardData }> = ({ data }) => {
     ...history.load.slice(-LOAD_CELLS)
   ];
 
+  // 순간값은 실행 대기 태스크 수다. /proc 가 없는 OS 에서는 못 읽으므로 1분 평균으로
+  // 물러난다 — 색을 고를 기준값도 같이 따라간다.
+  const liveLoad = load.running ?? load.avg1;
+
+  // 30분은 커널이 주지 않아 우리 샘플로 낸다. 창이 아직 덜 찼으면 별표로 알리고,
+  // 툴팁에 실제로 덮은 구간을 적는다 — 시작 직후 "0분 평균" 이 되지 않도록 초로 받는다.
+  const partial30m = load.avg30 !== null && load.avg30WindowSeconds < ROLLING_30M_SECONDS;
+  const window30m =
+    load.avg30WindowSeconds < 60
+      ? `${load.avg30WindowSeconds}s`
+      : `${Math.floor(load.avg30WindowSeconds / 60)}min`;
+  const avg30Tip =
+    load.avg30 === null
+      ? 'collecting — no samples since start yet'
+      : partial30m
+        ? `average over the last ${window30m} so far, filling to 30min`
+        : 'average over the last 30min';
+
   return (
     <Card
       icon={Activity}
       color="#f472b6"
       title="LOAD AVG"
       right={
-        <span className="t-micro shrink-0 whitespace-nowrap" style={{ color: loadColor(load.avg1, cpu.cores) }}>
-          1m {load.avg1.toFixed(2)}
+        <span
+          className="dash-tip t-micro shrink-0 whitespace-nowrap"
+          tabIndex={-1}
+          style={{ color: loadColor(liveLoad, cpu.cores) }}
+          data-tip={
+            load.running === null
+              ? 'live run queue unavailable on this OS — showing 1m average'
+              : `${load.running} task${load.running === 1 ? '' : 's'} running or waiting right now`
+          }
+        >
+          {load.running === null ? `now ${load.avg1.toFixed(2)}` : `now ${load.running}`}
         </span>
       }
     >
       <div className="t-micro mb-1 flex items-center justify-between gap-2 text-gray-500">
         <span>Last 48h</span>
         <span className="truncate">
-          5m {load.avg5.toFixed(2)} · 15m {load.avg15.toFixed(2)}
+          1m {load.avg1.toFixed(2)} · 15m {load.avg15.toFixed(2)} ·{' '}
+          <span className="dash-tip" tabIndex={-1} data-tip={avg30Tip}>
+            30m {load.avg30 === null ? '—' : load.avg30.toFixed(2)}
+            {partial30m ? '*' : ''}
+          </span>
         </span>
       </div>
-      <div className="dash-loadgrid grid grid-cols-12">
-        {cells.map((cell, index) => (
-          <div
-            key={cell ? cell.at : `empty-${index}`}
-            className="dash-loadcell rounded-[2px]"
-            style={{ background: loadCellColor(cell?.avg1 ?? null, cpu.cores) }}
-            title={cell?.avg1 != null ? `${formatShortDateTime(cell.at)} · load ${cell.avg1.toFixed(2)}` : 'no data'}
-          />
-        ))}
+      <div className="dash-loadgrid grid grid-cols-12" role="list" aria-label="Load average, one cell per hour over the last 48 hours">
+        {cells.map((cell, index) => {
+          const label =
+            cell?.avg1 != null ? `${formatShortDateTime(cell.at)} · load ${cell.avg1.toFixed(2)}` : 'no data';
+          return (
+            <div
+              key={cell ? cell.at : `empty-${index}`}
+              role="listitem"
+              // 탭 순서에는 넣지 않되(48칸이다) 눌렀을 때 포커스는 받게 한다.
+              // 터치에서 툴팁이 뜨는 경로가 이것뿐이다.
+              tabIndex={-1}
+              className="dash-loadcell dash-tip rounded-[2px]"
+              style={{ background: loadCellColor(cell?.avg1 ?? null, cpu.cores) }}
+              data-tip={label}
+              aria-label={label}
+            />
+          );
+        })}
       </div>
     </Card>
   );
@@ -393,7 +458,13 @@ const CoresCard: React.FC<{ data: DashboardData }> = ({ data }) => {
       {/* 가로 막대라 코어가 몇 개든, 열이 얼마나 좁든 읽힌다. */}
       <ul className={cn('dash-corelist', cores.length > CORE_SPLIT_THRESHOLD && 'dash-corelist--split')}>
         {cores.map((usage, index) => (
-          <li key={index} className="flex items-center gap-1.5">
+          <li
+            key={index}
+            className="dash-tip flex items-center gap-1.5"
+            tabIndex={-1}
+            // 막대 옆 숫자는 자리를 아끼려 정수로 줄여 놨다. 소수점은 여기서 준다.
+            data-tip={`core ${index} · ${usage.toFixed(1)}%`}
+          >
             {/* 폭을 ch 로 잡아야 글자 배율(--dash-scale)을 따라 같이 넓어진다.
                 px 로 고정하면 큰 화면에서 숫자가 칸을 넘어 서로 붙는다. */}
             <span className="t-micro w-[3ch] shrink-0 text-gray-500">C{index}</span>
@@ -460,19 +531,26 @@ const CpuDayCard: React.FC<{ data: DashboardData }> = ({ data }) => (
       <Empty>collecting hourly averages…</Empty>
     ) : (
       <>
-        <div className="flex gap-[2px]">
-          {data.history.cpuHourly.map(sample => (
-            <div
-              key={sample.at}
-              className="dash-heat flex-1 rounded-[2px]"
-              style={{ background: sample.usage === null ? COLORS.empty : heatColor(sample.usage / 100) }}
-              title={
-                sample.usage === null
-                  ? `${new Date(sample.at).getHours()}:00 — no data`
-                  : `${new Date(sample.at).getHours()}:00 — ${sample.usage.toFixed(0)}%`
-              }
-            />
-          ))}
+        <div
+          className="dash-heatrow flex gap-[2px]"
+          role="list"
+          aria-label="CPU usage, one cell per hour over the last 24 hours"
+        >
+          {data.history.cpuHourly.map(sample => {
+            const hour = `${new Date(sample.at).getHours()}:00`;
+            const label = sample.usage === null ? `${hour} — no data` : `${hour} — ${sample.usage.toFixed(0)}%`;
+            return (
+              <div
+                key={sample.at}
+                role="listitem"
+                tabIndex={-1}
+                className="dash-heat dash-tip flex-1 rounded-[2px]"
+                style={{ background: sample.usage === null ? COLORS.empty : heatColor(sample.usage / 100) }}
+                data-tip={label}
+                aria-label={label}
+              />
+            );
+          })}
         </div>
         <div className="t-micro mt-1 flex justify-between text-gray-500">
           <span>{new Date(data.history.cpuHourly[0].at).getHours()}:00</span>
@@ -498,7 +576,20 @@ const SwapCard: React.FC<{ data: DashboardData }> = ({ data }) => {
         </span>
       }
     >
-      <Bar percentage={swap.percentage} color={color} />
+      <div
+        className="dash-tip"
+        tabIndex={-1}
+        data-tip={
+          swap.total > 0
+            ? `${swap.used.toFixed(2)}GB used of ${swap.total.toFixed(1)}GB · ${Math.max(
+                0,
+                swap.total - swap.used
+              ).toFixed(2)}GB free`
+            : 'no swap configured on this host'
+        }
+      >
+        <Bar percentage={swap.percentage} color={color} />
+      </div>
       <p className="t-micro mt-1 text-gray-400">
         {swap.total > 0 ? `${swap.used.toFixed(2)}/${swap.total.toFixed(1)}GB` : 'no swap configured'}
       </p>
@@ -678,8 +769,11 @@ const ProcessesCard: React.FC<{ data: DashboardData }> = ({ data }) => {
       <ul className="dash-rows">
         {processes.map(process => (
           <li key={process.id} className="t-body flex items-center justify-between gap-2">
-            <span className="min-w-0 truncate text-gray-400" title={process.name}>
-              {process.name}
+            {/* 툴팁을 truncate 한 요소에 직접 걸면 그 요소의 overflow:hidden 에
+                잘린다. 그래서 자르지 않는 바깥 span 이 툴팁을 진다. 전체 이름은
+                DOM 텍스트에 그대로 있어 스크린리더는 잘린 것과 무관하게 읽는다. */}
+            <span className="dash-tip min-w-0" tabIndex={-1} data-tip={process.name}>
+              <span className="block truncate text-gray-400">{process.name}</span>
             </span>
             <div className="flex shrink-0 gap-2 font-mono">
               <span className="w-[5ch] text-right text-yellow-400">{process.cpu.toFixed(1)}</span>

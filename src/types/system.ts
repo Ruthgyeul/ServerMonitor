@@ -50,6 +50,15 @@ export interface LoadInfo {
     avg1: number;
     avg5: number;
     avg15: number;
+    // 지금 이 순간 실행 중이거나 실행을 기다리는 커널 엔티티 수.
+    // /proc/loadavg 4번째 필드(running/total)의 앞쪽 값으로, 부하 평균과 같은
+    // 단위의 "순간값" 이다. /proc 가 없는 OS 에서는 null.
+    running: number | null;
+    // 커널은 1/5/15분 평균만 준다. 30분은 우리가 매초 남기는 샘플로 직접 낸다.
+    // 아직 30분이 안 찼으면 모인 만큼의 평균이고, 샘플이 없으면 null.
+    avg30: number | null;
+    // avg30 이 실제로 덮는 구간(초). 1800 보다 작으면 아직 창이 덜 찬 것이다.
+    avg30WindowSeconds: number;
 }
 
 export interface SwapInfo {
@@ -113,10 +122,10 @@ export interface AlertEntry {
     at: string; // ISO 8601
 }
 
-// 히스토리는 프로세스 메모리에만 쌓인다. 서버를 재시작하면 비고, UI 는 빈 구간을
-// "수집 중" 으로 표시한다.
+// 히스토리는 프로세스 메모리에 쌓이고 data/history.json 으로 영속화된다. 재시작해도
+// 복구되지만, 서버가 꺼져 있던 구간은 값이 없어 UI 가 "수집 중" 으로 표시한다.
 export interface LoadSample {
-    at: string; // ISO 8601, 15분 버킷의 시작
+    at: string; // ISO 8601, 1시간 버킷의 시작
     // 서버가 그 시간대에 켜져 있지 않았으면 null.
     avg1: number | null;
 }
@@ -127,7 +136,7 @@ export interface CpuHourSample {
 }
 
 export interface HistoryInfo {
-    load: LoadSample[];      // 최근 12시간, 15분 버킷
+    load: LoadSample[];      // 최근 48시간, 1시간 버킷
     cpuHourly: CpuHourSample[]; // 최근 24시간, 1시간 버킷
 }
 

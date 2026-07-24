@@ -45,8 +45,9 @@ const TEXT_HEAT_FLOOR = 0.35;
 
 // ratio 는 0(유휴)~1(포화)로 정규화된 부하. 범위를 벗어나면 양 끝 색으로 고정된다.
 export function heatColor(ratio: number): string {
-  // NaN 이 들어오면 clamp 를 통과해 rgb(NaN,…) 가 되므로 먼저 막는다.
-  if (!Number.isFinite(ratio)) return COLORS.muted;
+  // NaN 은 clamp 를 그대로 통과해 rgb(NaN,…) 가 되므로 먼저 막는다. ±Infinity 는
+  // 막지 않는다 — 아래 clamp 가 양 끝(유휴/포화)으로 접어 주는 편이 자연스럽다.
+  if (Number.isNaN(ratio)) return COLORS.muted;
   const t = Math.min(1, Math.max(0, ratio));
   for (let i = 1; i < HEAT_STOPS.length; i++) {
     const [prevAt, prev] = HEAT_STOPS[i - 1];

@@ -33,6 +33,46 @@ interface Bucket {
 const loadBuckets = new Map<number, Bucket>();
 const cpuBuckets = new Map<number, Bucket>();
 
+// --- 30분 이동평균 -------------------------------------------------------
+// 커널이 주는 부하 평균은 1/5/15분뿐이라, 30분은 매 샘플을 짧은 창에 담아 직접
+// 낸다. 1초 간격(유휴 시 15초)이라 창에 최대 1800개가 들어간다 — 메모리 부담이
+// 없고, 버킷과 달리 디스크에 남기지 않는다(재시작하면 다시 차오른다).
+const ROLLING_WINDOW_MS = 30 * 60 * 1000;
+
+interface Sample {
+  at: number;
+  value: number;
+}
+
+const recentLoad: Sample[] = [];
+
+export interface RollingAverage {
+  value: number | null;
+  // 실제로 덮은 구간(초). 창이 덜 찼는지 호출부가 알 수 있어야 한다.
+  // 분으로 주면 시작 직후 "0분 평균" 이 되어버려 초로 준다.
+  windowSeconds: number;
+}
+
+// 창 밖으로 나간 샘플을 앞에서 덜어낸다. 시간순으로 들어오므로 앞쪽만 보면 된다.
+function pruneRecent(now: number): void {
+  const oldest = now - ROLLING_WINDOW_MS;
+  let drop = 0;
+  while (drop < recentLoad.length && recentLoad[drop].at < oldest) drop += 1;
+  if (drop > 0) recentLoad.splice(0, drop);
+}
+
+export function getLoad30mAverage(now: number = Date.now()): RollingAverage {
+  pruneRecent(now);
+  if (recentLoad.length === 0) return { value: null, windowSeconds: 0 };
+
+  const sum = recentLoad.reduce((total, sample) => total + sample.value, 0);
+  const spanMs = now - recentLoad[0].at;
+  return {
+    value: round(sum / recentLoad.length, 2),
+    windowSeconds: Math.min(ROLLING_WINDOW_MS / 1000, Math.round(spanMs / 1000))
+  };
+}
+
 function add(buckets: Map<number, Bucket>, key: number, value: number): void {
   const bucket = buckets.get(key);
   if (bucket) {
@@ -169,6 +209,9 @@ export function recordSample(cpuUsage: number, load1: number, at: number = Date.
 
   add(loadBuckets, loadKey, load1);
   add(cpuBuckets, hourKey, cpuUsage);
+
+  recentLoad.push({ at, value: load1 });
+  pruneRecent(at);
 
   prune(loadBuckets, loadKey - (LOAD_BUCKETS - 1) * LOAD_BUCKET_MS);
   prune(cpuBuckets, hourKey - (HOUR_BUCKETS - 1) * HOUR_BUCKET_MS);
