@@ -260,7 +260,11 @@ body {
   left: 50%;
   transform: translateX(-50%);
   z-index: 30;
-  white-space: nowrap;
+  /* max-content 라 짧은 라벨(격자 셀)은 그대로 한 줄이고, 게이지처럼 문장이 긴
+     것만 max-width 에 걸려 접힌다. nowrap 으로 고정하면 카드 밖까지 뻗는다. */
+  width: max-content;
+  max-width: min(220px, 60vw);
+  white-space: normal;
   padding: 3px 6px;
   border-radius: 4px;
   background: var(--term-panel);
@@ -292,7 +296,9 @@ body {
 .dash-loadgrid > .dash-tip:nth-child(12n)::after,
 .dash-loadgrid > .dash-tip:nth-child(12n + 11)::after,
 .dash-loadgrid > .dash-tip:nth-child(12n + 10)::after,
-.dash-heatrow > .dash-tip:nth-last-child(-n + 3)::after {
+.dash-heatrow > .dash-tip:nth-last-child(-n + 3)::after,
+/* 게이지는 데스크톱 4열/모바일 2열 모두에서 짝수 번째가 오른쪽 열이다. */
+.gauge-card:nth-child(2n) .dash-tip::after {
   left: auto;
   right: 0;
   transform: none;

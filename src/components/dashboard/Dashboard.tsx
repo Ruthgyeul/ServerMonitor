@@ -264,10 +264,13 @@ interface GaugeTileProps {
   label: string;
   percentage: number | null;
   caption: string;
+  // 게이지에 마우스를 올리거나 손으로 눌렀을 때 보여줄 한 줄. caption 은 칸에
+  // 맞춰 잘리지만 이쪽은 잘리지 않은 전체 수치를 담는다.
+  detail: string;
 }
 
 // 시안에서는 게이지 네 개가 각각 독립된 카드다.
-const GaugeCard: React.FC<GaugeTileProps> = ({ icon: Icon, iconColor, label, percentage, caption }) => {
+const GaugeCard: React.FC<GaugeTileProps> = ({ icon: Icon, iconColor, label, percentage, caption, detail }) => {
   const color = percentage === null ? COLORS.muted : statusColor(percentage);
 
   return (
@@ -276,9 +279,13 @@ const GaugeCard: React.FC<GaugeTileProps> = ({ icon: Icon, iconColor, label, per
         <Icon className="dash-icon shrink-0" color={iconColor} strokeWidth={2} />
         <span className="t-micro truncate text-gray-300">{label}</span>
       </div>
-      <Gauge percentage={percentage ?? 0} color={color} className="my-1" />
-      <div className="t-value font-bold" style={{ color }}>
-        {percentage === null ? 'N/A' : `${percentage.toFixed(1)}%`}
+      {/* 툴팁은 게이지+수치 묶음이 진다. 카드 전체가 아니라 그림 위에서만 떠야
+          이웃 카드로 넘어갈 때 깜빡이지 않는다. */}
+      <div className="dash-tip flex flex-col items-center" tabIndex={-1} data-tip={detail}>
+        <Gauge percentage={percentage ?? 0} color={color} className="my-1" />
+        <div className="t-value font-bold" style={{ color }}>
+          {percentage === null ? 'N/A' : `${percentage.toFixed(1)}%`}
+        </div>
       </div>
       <div className="t-micro w-full truncate text-center text-gray-400">{caption}</div>
     </section>
@@ -298,6 +305,7 @@ const GaugeRow: React.FC<{ data: DashboardData }> = ({ data }) => {
         label="CPU"
         percentage={data.cpu.usage}
         caption={`${data.cpu.cores} cores`}
+        detail={`${data.cpu.usage.toFixed(1)}% across ${data.cpu.cores} cores · load 1m ${data.load.avg1.toFixed(2)}`}
       />
       <GaugeCard
         icon={Monitor}
@@ -305,6 +313,13 @@ const GaugeRow: React.FC<{ data: DashboardData }> = ({ data }) => {
         label="GPU"
         percentage={data.gpu.usage === 'N/A' ? null : data.gpu.usage}
         caption={data.gpu.temperature === 'N/A' ? 'no sensor' : `${data.gpu.temperature.toFixed(1)}°C`}
+        detail={
+          data.gpu.usage === 'N/A'
+            ? 'no GPU sensor detected on this host'
+            : `${data.gpu.usage.toFixed(1)}% used${
+                data.gpu.temperature === 'N/A' ? '' : ` · ${data.gpu.temperature.toFixed(1)}°C`
+              }`
+        }
       />
       <GaugeCard
         icon={MemoryStick}
@@ -312,6 +327,9 @@ const GaugeRow: React.FC<{ data: DashboardData }> = ({ data }) => {
         label="RAM"
         percentage={data.memory.percentage}
         caption={`${toGb(data.memory.used)}/${toGb(data.memory.total)}G`}
+        detail={`${toGb(data.memory.used)}G used of ${toGb(data.memory.total)}G · ${toGb(
+          Math.max(0, data.memory.total - data.memory.used)
+        )}G free`}
       />
       <GaugeCard
         icon={HardDrive}
@@ -319,6 +337,10 @@ const GaugeRow: React.FC<{ data: DashboardData }> = ({ data }) => {
         label="DISK"
         percentage={data.disk.percentage}
         caption={`${data.disk.used.toFixed(0)}/${data.disk.total.toFixed(0)}G`}
+        detail={`${data.disk.used.toFixed(1)}G used of ${data.disk.total.toFixed(1)}G · ${Math.max(
+          0,
+          data.disk.total - data.disk.used
+        ).toFixed(1)}G free`}
       />
     </div>
   );
@@ -436,7 +458,13 @@ const CoresCard: React.FC<{ data: DashboardData }> = ({ data }) => {
       {/* 가로 막대라 코어가 몇 개든, 열이 얼마나 좁든 읽힌다. */}
       <ul className={cn('dash-corelist', cores.length > CORE_SPLIT_THRESHOLD && 'dash-corelist--split')}>
         {cores.map((usage, index) => (
-          <li key={index} className="flex items-center gap-1.5">
+          <li
+            key={index}
+            className="dash-tip flex items-center gap-1.5"
+            tabIndex={-1}
+            // 막대 옆 숫자는 자리를 아끼려 정수로 줄여 놨다. 소수점은 여기서 준다.
+            data-tip={`core ${index} · ${usage.toFixed(1)}%`}
+          >
             {/* 폭을 ch 로 잡아야 글자 배율(--dash-scale)을 따라 같이 넓어진다.
                 px 로 고정하면 큰 화면에서 숫자가 칸을 넘어 서로 붙는다. */}
             <span className="t-micro w-[3ch] shrink-0 text-gray-500">C{index}</span>
@@ -548,7 +576,20 @@ const SwapCard: React.FC<{ data: DashboardData }> = ({ data }) => {
         </span>
       }
     >
-      <Bar percentage={swap.percentage} color={color} />
+      <div
+        className="dash-tip"
+        tabIndex={-1}
+        data-tip={
+          swap.total > 0
+            ? `${swap.used.toFixed(2)}GB used of ${swap.total.toFixed(1)}GB · ${Math.max(
+                0,
+                swap.total - swap.used
+              ).toFixed(2)}GB free`
+            : 'no swap configured on this host'
+        }
+      >
+        <Bar percentage={swap.percentage} color={color} />
+      </div>
       <p className="t-micro mt-1 text-gray-400">
         {swap.total > 0 ? `${swap.used.toFixed(2)}/${swap.total.toFixed(1)}GB` : 'no swap configured'}
       </p>
