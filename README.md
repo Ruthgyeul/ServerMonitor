@@ -11,15 +11,16 @@ that aggregates several nodes on one screen.
 ## Features
 
 - **Live dashboard** (`/`) — one responsive layout, from a phone to a 7-inch
-  kiosk panel (see [Layout](#layout)), polling `/api/system` every second:
+  kiosk panel (see [Layout](#layout)), fed once a second over a single
+  Server-Sent Events stream (`/api/system/stream`):
   - CPU/GPU/RAM/disk gauges, per-core bars, and a 24-hour hourly load heatmap
-  - load average with a 12-hour history grid, swap, and disk I/O throughput
+  - load average with a 48-hour history grid, swap, and disk I/O throughput
   - network throughput chart, interfaces, link utilisation, ping, error
     rates, established connections and listening ports
   - temperature against its alert threshold, fan RPM, uptime and last reboot
   - alert log, top processes, SSH sessions, top traffic peers, firewall state
-  - keeps the last known values on screen when a poll fails, and says so in
-    the header instead of blanking the display
+  - keeps the last known values on screen when the stream drops, and says so
+    in the header instead of blanking the display
 - **Cluster view** (`/cluster`) — a compact grid that polls multiple
   ServerMonitor instances (e.g. an x86 server plus several Raspberry Pi
   nodes) and shows their status side by side.
@@ -36,7 +37,7 @@ reshuffles the cards:
 
 | Column | Cards, in order |
 | --- | --- |
-| Left | uptime · load average + 12h grid · CPU cores · swap · disk I/O · fan + CPU temp |
+| Left | uptime · load average + 48h grid · CPU cores · swap · disk I/O · fan + CPU temp |
 | Centre | CPU/GPU/RAM/disk gauges · 24h CPU heatmap · network chart · interfaces + bandwidth · ping/err/conns/ports |
 | Right | alerts log · top processes · SSH sessions · top traffic IPs · firewall |
 
@@ -101,8 +102,10 @@ missing. A few need more than `/proc` to show real numbers:
 | Last reboot reason | readable `/var/log/wtmp` and a `last` binary; reports whether the previous shutdown was clean. |
 | SSH sessions | detected from sshd session processes (`/proc/<pid>/comm` + cmdline) and established connections on the SSH port(s), so it works without utmp and catches PTY-less sessions (scp/sftp). The remote IP is filled in from the socket when `/proc/<pid>/fd` is readable (own user, or root); otherwise it may read `—`. `who` is merged in as a fallback. Set `SSH_PORTS` if sshd listens somewhere other than 22 and can't read `sshd_config`. |
 
-The 12-hour load grid and 24-hour CPU heatmap are kept in memory by the
-running process, so they start empty after a restart and fill in over time.
+The 48-hour load grid and 24-hour CPU heatmap are kept in memory by the
+running process and persisted to `data/history.json`, so they survive a
+restart or redeploy. Any stretch the server was actually down stays empty and
+fills in again over time.
 
 If a metric looks wrong on a real host, `./scripts/diagnose.sh` prints what
 each of those sources actually returns, and `curl localhost:3000/api/system`
