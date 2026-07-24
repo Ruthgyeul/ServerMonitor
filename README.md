@@ -146,6 +146,18 @@ npm run start
 Open [http://localhost:3000](http://localhost:3000) for the single-server
 dashboard, or `/cluster` for the multi-node view.
 
+### Test
+
+```bash
+npm test
+```
+
+Vitest covers the pure logic that is easy to break silently and hard to notice
+on a running host: the history buckets and their on-disk recovery, the 30-minute
+rolling average, the colour scale, the CORS header rules, and the
+`/proc/loadavg` parser (which cannot run on a non-Linux dev machine at all).
+The shell-output collectors are not covered — they need a real host.
+
 ## Environment variables
 
 `.env.example` documents every supported variable. `NEXT_PUBLIC_*` values are

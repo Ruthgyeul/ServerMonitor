@@ -7,13 +7,16 @@ import { round } from '@/utils/collectors/shell';
 // /proc/loadavg 는 "0.42 0.38 0.35 2/1234 5678" 꼴이다. 4번째 필드 앞쪽 숫자가
 // 지금 실행 중이거나 실행 대기 중인 커널 엔티티 수 — 부하 평균의 순간값에 해당한다.
 // os.loadavg() 로는 얻을 수 없어 파일을 직접 읽는다.
+export function parseRunningEntities(contents: string): number | null {
+  const match = contents.match(/^\S+\s+\S+\s+\S+\s+(\d+)\/\d+/);
+  if (!match) return null;
+  const running = parseInt(match[1], 10);
+  return Number.isFinite(running) ? running : null;
+}
+
 async function getRunningEntities(): Promise<number | null> {
   try {
-    const contents = await readFile('/proc/loadavg', 'utf-8');
-    const match = contents.match(/^\S+\s+\S+\s+\S+\s+(\d+)\/\d+/);
-    if (!match) return null;
-    const running = parseInt(match[1], 10);
-    return Number.isFinite(running) ? running : null;
+    return parseRunningEntities(await readFile('/proc/loadavg', 'utf-8'));
   } catch {
     // /proc 가 없는 OS(macOS 등)이거나 읽을 수 없다. 순간값만 비운다.
     return null;
