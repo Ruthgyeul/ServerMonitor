@@ -241,6 +241,73 @@ body {
 .dash-loadcell { aspect-ratio: 1; }
 
 /* ---------------------------------------------------------------------------
+   툴팁
+
+   여기 쓰이던 title 속성은 터치 기기에서 아예 뜨지 않는다. 이 대시보드의 주
+   사용처가 7인치 키오스크 패널이라, 로드 격자와 히트맵의 시각/수치를 확인할
+   방법이 사실상 없었다. hover 와 focus 양쪽에 반응하는 CSS 툴팁으로 바꾼다.
+
+   :focus-visible 이 아니라 :focus 를 쓰는 이유 — 탭으로 포커스가 들어간 게
+   아니라 손가락/마우스로 눌러서 들어간 포커스에는 :focus-visible 이 매칭되지
+   않는다. 터치에서 뜨게 하는 게 목적이므로 :focus 여야 한다.
+--------------------------------------------------------------------------- */
+.dash-tip { position: relative; }
+
+.dash-tip::after {
+  content: attr(data-tip);
+  position: absolute;
+  bottom: calc(100% + 5px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 30;
+  white-space: nowrap;
+  padding: 3px 6px;
+  border-radius: 4px;
+  background: var(--term-panel);
+  border: 1px solid var(--term-border);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
+  color: var(--foreground);
+  font-size: calc(11px * var(--dash-scale));
+  line-height: 1.4;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s ease;
+}
+
+.dash-tip:hover::after,
+.dash-tip:focus::after {
+  opacity: 1;
+}
+
+/* 가장자리 칸은 가운데 정렬하면 말풍선이 카드/화면 밖으로 잘린다. 양 끝 세 칸만
+   바깥쪽 모서리에 맞춰 안쪽으로 펼친다. 로드 격자는 12열, 히트맵은 24칸이다. */
+.dash-loadgrid > .dash-tip:nth-child(12n + 1)::after,
+.dash-loadgrid > .dash-tip:nth-child(12n + 2)::after,
+.dash-loadgrid > .dash-tip:nth-child(12n + 3)::after,
+.dash-heatrow > .dash-tip:nth-child(-n + 3)::after {
+  left: 0;
+  transform: none;
+}
+
+.dash-loadgrid > .dash-tip:nth-child(12n)::after,
+.dash-loadgrid > .dash-tip:nth-child(12n + 11)::after,
+.dash-loadgrid > .dash-tip:nth-child(12n + 10)::after,
+.dash-heatrow > .dash-tip:nth-last-child(-n + 3)::after {
+  left: auto;
+  right: 0;
+  transform: none;
+}
+
+/* 탭 순서를 72개(격자 48 + 히트맵 24)로 늘리지 않으려고 셀은 tabindex="-1" 이다.
+   눌러서 들어간 포커스에 기본 아웃라인까지 그리면 툴팁과 겹쳐 지저분하므로 끈다.
+   스크린리더는 탭이 아니라 목록(role=list)으로 훑는다. */
+.dash-tip:focus { outline: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  .dash-tip::after { transition: none; }
+}
+
+/* ---------------------------------------------------------------------------
    7인치 키오스크(1024x600)
 
    이 패널에서는 17개 카드가 스크롤 없이 한 화면에 들어가야 한다. 배치는

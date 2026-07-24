@@ -364,15 +364,24 @@ const LoadCard: React.FC<{ data: DashboardData }> = ({ data }) => {
           5m {load.avg5.toFixed(2)} · 15m {load.avg15.toFixed(2)}
         </span>
       </div>
-      <div className="dash-loadgrid grid grid-cols-12">
-        {cells.map((cell, index) => (
-          <div
-            key={cell ? cell.at : `empty-${index}`}
-            className="dash-loadcell rounded-[2px]"
-            style={{ background: loadCellColor(cell?.avg1 ?? null, cpu.cores) }}
-            title={cell?.avg1 != null ? `${formatShortDateTime(cell.at)} · load ${cell.avg1.toFixed(2)}` : 'no data'}
-          />
-        ))}
+      <div className="dash-loadgrid grid grid-cols-12" role="list" aria-label="Load average, one cell per hour over the last 48 hours">
+        {cells.map((cell, index) => {
+          const label =
+            cell?.avg1 != null ? `${formatShortDateTime(cell.at)} · load ${cell.avg1.toFixed(2)}` : 'no data';
+          return (
+            <div
+              key={cell ? cell.at : `empty-${index}`}
+              role="listitem"
+              // 탭 순서에는 넣지 않되(48칸이다) 눌렀을 때 포커스는 받게 한다.
+              // 터치에서 툴팁이 뜨는 경로가 이것뿐이다.
+              tabIndex={-1}
+              className="dash-loadcell dash-tip rounded-[2px]"
+              style={{ background: loadCellColor(cell?.avg1 ?? null, cpu.cores) }}
+              data-tip={label}
+              aria-label={label}
+            />
+          );
+        })}
       </div>
     </Card>
   );
@@ -460,19 +469,26 @@ const CpuDayCard: React.FC<{ data: DashboardData }> = ({ data }) => (
       <Empty>collecting hourly averages…</Empty>
     ) : (
       <>
-        <div className="flex gap-[2px]">
-          {data.history.cpuHourly.map(sample => (
-            <div
-              key={sample.at}
-              className="dash-heat flex-1 rounded-[2px]"
-              style={{ background: sample.usage === null ? COLORS.empty : heatColor(sample.usage / 100) }}
-              title={
-                sample.usage === null
-                  ? `${new Date(sample.at).getHours()}:00 — no data`
-                  : `${new Date(sample.at).getHours()}:00 — ${sample.usage.toFixed(0)}%`
-              }
-            />
-          ))}
+        <div
+          className="dash-heatrow flex gap-[2px]"
+          role="list"
+          aria-label="CPU usage, one cell per hour over the last 24 hours"
+        >
+          {data.history.cpuHourly.map(sample => {
+            const hour = `${new Date(sample.at).getHours()}:00`;
+            const label = sample.usage === null ? `${hour} — no data` : `${hour} — ${sample.usage.toFixed(0)}%`;
+            return (
+              <div
+                key={sample.at}
+                role="listitem"
+                tabIndex={-1}
+                className="dash-heat dash-tip flex-1 rounded-[2px]"
+                style={{ background: sample.usage === null ? COLORS.empty : heatColor(sample.usage / 100) }}
+                data-tip={label}
+                aria-label={label}
+              />
+            );
+          })}
         </div>
         <div className="t-micro mt-1 flex justify-between text-gray-500">
           <span>{new Date(data.history.cpuHourly[0].at).getHours()}:00</span>
@@ -678,8 +694,11 @@ const ProcessesCard: React.FC<{ data: DashboardData }> = ({ data }) => {
       <ul className="dash-rows">
         {processes.map(process => (
           <li key={process.id} className="t-body flex items-center justify-between gap-2">
-            <span className="min-w-0 truncate text-gray-400" title={process.name}>
-              {process.name}
+            {/* 툴팁을 truncate 한 요소에 직접 걸면 그 요소의 overflow:hidden 에
+                잘린다. 그래서 자르지 않는 바깥 span 이 툴팁을 진다. 전체 이름은
+                DOM 텍스트에 그대로 있어 스크린리더는 잘린 것과 무관하게 읽는다. */}
+            <span className="dash-tip min-w-0" tabIndex={-1} data-tip={process.name}>
+              <span className="block truncate text-gray-400">{process.name}</span>
             </span>
             <div className="flex shrink-0 gap-2 font-mono">
               <span className="w-[5ch] text-right text-yellow-400">{process.cpu.toFixed(1)}</span>
