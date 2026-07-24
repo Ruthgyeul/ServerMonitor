@@ -5,11 +5,12 @@ import { CpuHourSample, HistoryInfo, LoadSample } from '@/types/system';
 import { round } from '@/utils/collectors/shell';
 
 // 히스토리 버킷은 프로세스 메모리에 두되, 디스크에도 영속화한다. 그래야
-// 배포(git pull) 후 재시작이나 크래시로 서버가 다시 떠도 최근 12/24시간 그래프가
+// 배포(git pull) 후 재시작이나 크래시로 서버가 다시 떠도 최근 48/24시간 그래프가
 // 리셋되지 않는다. 저장 파일은 gitignore 된 data 디렉터리에 있어 pull/build 가
 // 건드리지 않는다.
-const LOAD_BUCKET_MS = 15 * 60 * 1000;
-const LOAD_BUCKETS = 48; // 12시간
+// 로드는 칸 수(48)를 유지한 채 버킷을 1시간으로 넓혀 48시간을 덮는다.
+const LOAD_BUCKET_MS = 60 * 60 * 1000;
+const LOAD_BUCKETS = 48; // 48시간
 const HOUR_BUCKET_MS = 60 * 60 * 1000;
 const HOUR_BUCKETS = 24;
 
