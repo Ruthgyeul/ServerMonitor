@@ -28,17 +28,17 @@ describe('load history buckets', () => {
     delete process.env.HISTORY_FILE;
   });
 
-  it('48시간을 1시간 버킷 48칸으로 돌려준다', async () => {
+  it('7일을 1시간 버킷 168칸으로 돌려준다', async () => {
     const { recordSample, getHistory } = await freshHistory();
     const now = Date.UTC(2026, 0, 2, 12, 0, 0);
 
     recordSample(10, 1.5, now);
     const { load } = getHistory(now);
 
-    expect(load).toHaveLength(48);
-    // 가장 오래된 칸과 최신 칸이 정확히 47시간 떨어져 있어야 48시간을 덮는다.
+    expect(load).toHaveLength(168);
+    // 가장 오래된 칸과 최신 칸이 정확히 167시간 떨어져 있어야 7일(168칸)을 덮는다.
     const span = new Date(load.at(-1)!.at).getTime() - new Date(load[0].at).getTime();
-    expect(span).toBe(47 * HOUR);
+    expect(span).toBe(167 * HOUR);
   });
 
   it('같은 시간대의 샘플은 평균으로 합쳐진다', async () => {
@@ -65,11 +65,11 @@ describe('load history buckets', () => {
     expect(load.at(-4)!.avg1).toBe(1);
   });
 
-  it('48시간보다 오래된 버킷은 버린다', async () => {
+  it('7일보다 오래된 버킷은 버린다', async () => {
     const { recordSample, getHistory } = await freshHistory();
-    const now = Date.UTC(2026, 0, 3, 12, 0, 0);
+    const now = Date.UTC(2026, 0, 10, 12, 0, 0);
 
-    recordSample(0, 9, now - 60 * HOUR);
+    recordSample(0, 9, now - 200 * HOUR);
     recordSample(0, 1, now);
 
     const { load } = getHistory(now);
