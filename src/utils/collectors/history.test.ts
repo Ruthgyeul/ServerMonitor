@@ -28,17 +28,17 @@ describe('load history buckets', () => {
     delete process.env.HISTORY_FILE;
   });
 
-  it('7일을 1시간 버킷 168칸으로 돌려준다', async () => {
+  it('48시간을 1시간 버킷 48칸으로 돌려준다', async () => {
     const { recordSample, getHistory } = await freshHistory();
     const now = Date.UTC(2026, 0, 2, 12, 0, 0);
 
     recordSample(10, 1.5, now);
     const { load } = getHistory(now);
 
-    expect(load).toHaveLength(168);
-    // 가장 오래된 칸과 최신 칸이 정확히 167시간 떨어져 있어야 7일(168칸)을 덮는다.
+    expect(load).toHaveLength(48);
+    // 가장 오래된 칸과 최신 칸이 정확히 47시간 떨어져 있어야 48시간을 덮는다.
     const span = new Date(load.at(-1)!.at).getTime() - new Date(load[0].at).getTime();
-    expect(span).toBe(167 * HOUR);
+    expect(span).toBe(47 * HOUR);
   });
 
   it('같은 시간대의 샘플은 평균으로 합쳐진다', async () => {
@@ -65,15 +65,35 @@ describe('load history buckets', () => {
     expect(load.at(-4)!.avg1).toBe(1);
   });
 
+  it('표시 창(48h) 밖이라도 7일 안의 데이터는 보관한다', async () => {
+    const first = await freshHistory();
+    // prune 은 마지막 샘플 시각 기준으로 자르므로 실제 시계에 맞춘다.
+    const now = Math.floor(Date.now() / HOUR) * HOUR;
+
+    // 48시간 표시 창보다는 오래됐지만 7일 보관 창 안이다.
+    first.recordSample(0, 7, now - 100 * HOUR);
+    first.recordSample(0, 1, now);
+
+    process.emit('SIGTERM');
+    const saved = JSON.parse(readFileSync(first.file, 'utf-8'));
+    const keys = saved.loadBuckets.map((row: [number, number, number]) => row[0]);
+    // 100시간 전 버킷이 디스크에 남아 있어야 한다(prune 되지 않았다).
+    expect(keys).toContain(now - 100 * HOUR);
+    // 그래프는 예전처럼 48칸만 그린다 — 오래된 데이터는 보관만 되고 표시되지 않는다.
+    expect(first.getHistory(now).load).toHaveLength(48);
+  });
+
   it('7일보다 오래된 버킷은 버린다', async () => {
-    const { recordSample, getHistory } = await freshHistory();
-    const now = Date.UTC(2026, 0, 10, 12, 0, 0);
+    const first = await freshHistory();
+    const now = Math.floor(Date.now() / HOUR) * HOUR;
 
-    recordSample(0, 9, now - 200 * HOUR);
-    recordSample(0, 1, now);
+    first.recordSample(0, 9, now - 200 * HOUR); // 7일(168h) 밖
+    first.recordSample(0, 1, now);
 
-    const { load } = getHistory(now);
-    expect(load.filter(sample => sample.avg1 === 9)).toHaveLength(0);
+    process.emit('SIGTERM');
+    const saved = JSON.parse(readFileSync(first.file, 'utf-8'));
+    const keys = saved.loadBuckets.map((row: [number, number, number]) => row[0]);
+    expect(keys).not.toContain(now - 200 * HOUR);
   });
 
   it('재시작해도 디스크에서 복구된다', async () => {

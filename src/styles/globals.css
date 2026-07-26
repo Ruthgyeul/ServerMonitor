@@ -236,6 +236,7 @@ body {
 }
 .dash-chart { height: calc(176px * var(--dash-scale)); }
 .dash-spark { height: calc(64px * var(--dash-scale)); }
+.dash-heat  { height: calc(28px * var(--dash-scale)); }
 .dash-loadgrid { gap: calc(4px * var(--dash-scale)); }
 .dash-loadcell { aspect-ratio: 1; }
 
@@ -283,10 +284,11 @@ body {
 }
 
 /* 가장자리 칸은 가운데 정렬하면 말풍선이 카드/화면 밖으로 잘린다. 양 끝 세 칸만
-   바깥쪽 모서리에 맞춰 안쪽으로 펼친다. 로드 격자와 CPU 격자 모두 12열이다. */
+   바깥쪽 모서리에 맞춰 안쪽으로 펼친다. 로드 격자는 12열, 히트맵은 24칸이다. */
 .dash-loadgrid > .dash-tip:nth-child(12n + 1)::after,
 .dash-loadgrid > .dash-tip:nth-child(12n + 2)::after,
-.dash-loadgrid > .dash-tip:nth-child(12n + 3)::after {
+.dash-loadgrid > .dash-tip:nth-child(12n + 3)::after,
+.dash-heatrow > .dash-tip:nth-child(-n + 3)::after {
   left: 0;
   transform: none;
 }
@@ -294,6 +296,7 @@ body {
 .dash-loadgrid > .dash-tip:nth-child(12n)::after,
 .dash-loadgrid > .dash-tip:nth-child(12n + 11)::after,
 .dash-loadgrid > .dash-tip:nth-child(12n + 10)::after,
+.dash-heatrow > .dash-tip:nth-last-child(-n + 3)::after,
 /* 게이지는 데스크톱 4열/모바일 2열 모두에서 짝수 번째가 오른쪽 열이다. */
 .gauge-card:nth-child(2n) .dash-tip::after {
   left: auto;
@@ -351,6 +354,7 @@ body {
   .dash-gauge { width: 36px; height: 36px; }
   .dash-chart { height: 158px; }
   .dash-spark { height: 24px; }
+  .dash-heat  { height: 16px; }
   .dash-loadgrid { gap: 3px; }
   /* 열 폭이 넓어 정사각형을 유지하면 격자만 커진다. 높이를 고정해 납작하게. */
   .dash-loadcell { aspect-ratio: auto; height: 12px; }
