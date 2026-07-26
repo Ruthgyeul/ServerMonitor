@@ -59,7 +59,7 @@ const MAX_PEERS = 4;
 const MAX_INTERFACES = 4;
 // 이보다 많으면 코어 막대를 두 줄로 접는다.
 const CORE_SPLIT_THRESHOLD = 8;
-const LOAD_CELLS = 48;
+const LOAD_CELLS = 7 * 24;
 // 30분 이동평균의 창 길이. history.ts 의 ROLLING_WINDOW_MS 와 같은 값이며,
 // 여기서는 "창이 다 찼는가" 를 판정하는 데만 쓴다.
 const ROLLING_30M_SECONDS = 30 * 60;
@@ -365,7 +365,7 @@ const UptimeCard: React.FC<{ data: DashboardData }> = ({ data }) => (
 const LoadCard: React.FC<{ data: DashboardData }> = ({ data }) => {
   const { load, cpu, history } = data;
 
-  // 한 칸이 1시간이라 48칸이면 48시간이다. 아직 다 못 채웠으면 앞쪽을 빈 칸으로
+  // 한 칸이 1시간이라 168칸이면 7일이다. 아직 다 못 채웠으면 앞쪽을 빈 칸으로
   // 메워 격자 모양을 유지한다.
   const cells = [
     ...Array(Math.max(0, LOAD_CELLS - history.load.length)).fill(null),
@@ -411,7 +411,7 @@ const LoadCard: React.FC<{ data: DashboardData }> = ({ data }) => {
       }
     >
       <div className="t-micro mb-1 flex items-center justify-between gap-2 text-gray-500">
-        <span>Last 48h</span>
+        <span>Last 7d</span>
         <span className="truncate">
           1m {load.avg1.toFixed(2)} · 15m {load.avg15.toFixed(2)} ·{' '}
           <span className="dash-tip" tabIndex={-1} data-tip={avg30Tip}>
@@ -420,7 +420,7 @@ const LoadCard: React.FC<{ data: DashboardData }> = ({ data }) => {
           </span>
         </span>
       </div>
-      <div className="dash-loadgrid grid grid-cols-12" role="list" aria-label="Load average, one cell per hour over the last 48 hours">
+      <div className="dash-loadgrid grid grid-cols-12" role="list" aria-label="Load average, one cell per hour over the last 7 days">
         {cells.map((cell, index) => {
           const label =
             cell?.avg1 != null ? `${formatShortDateTime(cell.at)} · load ${cell.avg1.toFixed(2)}` : 'no data';
@@ -428,7 +428,7 @@ const LoadCard: React.FC<{ data: DashboardData }> = ({ data }) => {
             <div
               key={cell ? cell.at : `empty-${index}`}
               role="listitem"
-              // 탭 순서에는 넣지 않되(48칸이다) 눌렀을 때 포커스는 받게 한다.
+              // 탭 순서에는 넣지 않되(168칸이다) 눌렀을 때 포커스는 받게 한다.
               // 터치에서 툴팁이 뜨는 경로가 이것뿐이다.
               tabIndex={-1}
               className="dash-loadcell dash-tip rounded-[2px]"
@@ -525,41 +525,47 @@ const FanCard: React.FC<{ data: DashboardData }> = ({ data }) => {
   );
 };
 
-const CpuDayCard: React.FC<{ data: DashboardData }> = ({ data }) => (
-  <Card icon={Activity} color="#fb923c" title="CPU LOAD — LAST 24H">
-    {data.history.cpuHourly.length === 0 ? (
-      <Empty>collecting hourly averages…</Empty>
-    ) : (
-      <>
-        <div
-          className="dash-heatrow flex gap-[2px]"
-          role="list"
-          aria-label="CPU usage, one cell per hour over the last 24 hours"
-        >
-          {data.history.cpuHourly.map(sample => {
-            const hour = `${new Date(sample.at).getHours()}:00`;
-            const label = sample.usage === null ? `${hour} — no data` : `${hour} — ${sample.usage.toFixed(0)}%`;
-            return (
-              <div
-                key={sample.at}
-                role="listitem"
-                tabIndex={-1}
-                className="dash-heat dash-tip flex-1 rounded-[2px]"
-                style={{ background: sample.usage === null ? COLORS.empty : heatColor(sample.usage / 100) }}
-                data-tip={label}
-                aria-label={label}
-              />
-            );
-          })}
-        </div>
-        <div className="t-micro mt-1 flex justify-between text-gray-500">
-          <span>{new Date(data.history.cpuHourly[0].at).getHours()}:00</span>
-          <span>now</span>
-        </div>
-      </>
-    )}
-  </Card>
-);
+const CpuDayCard: React.FC<{ data: DashboardData }> = ({ data }) => {
+  const cells = data.history.cpuHourly;
+
+  return (
+    <Card icon={Activity} color="#fb923c" title="CPU LOAD — LAST 7D">
+      {cells.length === 0 ? (
+        <Empty>collecting hourly averages…</Empty>
+      ) : (
+        <>
+          {/* 7일치(168칸)를 한 줄에 못 담아 로드 격자와 같은 12열 그리드로 접는다. */}
+          <div
+            className="dash-loadgrid grid grid-cols-12"
+            role="list"
+            aria-label="CPU usage, one cell per hour over the last 7 days"
+          >
+            {cells.map(sample => {
+              const when = formatShortDateTime(sample.at);
+              const label =
+                sample.usage === null ? `${when} — no data` : `${when} — ${sample.usage.toFixed(0)}%`;
+              return (
+                <div
+                  key={sample.at}
+                  role="listitem"
+                  tabIndex={-1}
+                  className="dash-loadcell dash-tip rounded-[2px]"
+                  style={{ background: sample.usage === null ? COLORS.empty : heatColor(sample.usage / 100) }}
+                  data-tip={label}
+                  aria-label={label}
+                />
+              );
+            })}
+          </div>
+          <div className="t-micro mt-1 flex justify-between text-gray-500">
+            <span>{formatShortDateTime(cells[0].at)}</span>
+            <span>now</span>
+          </div>
+        </>
+      )}
+    </Card>
+  );
+};
 
 const SwapCard: React.FC<{ data: DashboardData }> = ({ data }) => {
   const { swap } = data;
