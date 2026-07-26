@@ -20,10 +20,13 @@ const geistMono = Geist_Mono({
 });
 
 // 모바일에서 CSS 픽셀이 기기 폭을 따라가야 반응형 레이아웃이 의도대로 접힌다.
-// 키오스크 배치는 자체 배율로 맞추므로 확대/축소는 막지 않는다.
+// 사용자가 핀치/더블탭으로 화면을 확대·축소하지 못하도록 배율을 1로 고정한다.
 export const viewport: Viewport = {
     width: "device-width",
     initialScale: 1,
+    maximumScale: 1,
+    minimumScale: 1,
+    userScalable: false,
     themeColor: "#0a0d13"
 };
 
