@@ -136,8 +136,8 @@ export interface CpuHourSample {
 }
 
 export interface HistoryInfo {
-    load: LoadSample[];      // 최근 7일, 1시간 버킷
-    cpuHourly: CpuHourSample[]; // 최근 7일, 1시간 버킷
+    load: LoadSample[];      // 최근 48시간, 1시간 버킷
+    cpuHourly: CpuHourSample[]; // 최근 24시간, 1시간 버킷
 }
 
 export interface ServerData {

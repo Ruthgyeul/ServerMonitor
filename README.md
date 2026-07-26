@@ -13,8 +13,8 @@ that aggregates several nodes on one screen.
 - **Live dashboard** (`/`) — one responsive layout, from a phone to a 7-inch
   kiosk panel (see [Layout](#layout)), fed once a second over a single
   Server-Sent Events stream (`/api/system/stream`):
-  - CPU/GPU/RAM/disk gauges, per-core bars, and a 7-day hourly load heatmap
-  - load average with a 7-day history grid, swap, and disk I/O throughput
+  - CPU/GPU/RAM/disk gauges, per-core bars, and a 24-hour hourly load heatmap
+  - load average with a 48-hour history grid, swap, and disk I/O throughput
   - network throughput chart, interfaces, link utilisation, ping, error
     rates, established connections and listening ports
   - temperature against its alert threshold, fan RPM, uptime and last reboot
@@ -37,8 +37,8 @@ reshuffles the cards:
 
 | Column | Cards, in order |
 | --- | --- |
-| Left | uptime · load average + 7d grid · CPU cores · swap · disk I/O · fan + CPU temp |
-| Centre | CPU/GPU/RAM/disk gauges · 7d CPU heatmap · network chart · interfaces + bandwidth · ping/err/conns/ports |
+| Left | uptime · load average + 48h grid · CPU cores · swap · disk I/O · fan + CPU temp |
+| Centre | CPU/GPU/RAM/disk gauges · 24h CPU heatmap · network chart · interfaces + bandwidth · ping/err/conns/ports |
 | Right | alerts log · top processes · SSH sessions · top traffic IPs · firewall |
 
 Only how many columns stand side by side changes with the viewport:
@@ -102,7 +102,7 @@ missing. A few need more than `/proc` to show real numbers:
 | Last reboot reason | readable `/var/log/wtmp` and a `last` binary; reports whether the previous shutdown was clean. |
 | SSH sessions | detected from sshd session processes (`/proc/<pid>/comm` + cmdline) and established connections on the SSH port(s), so it works without utmp and catches PTY-less sessions (scp/sftp). The remote IP is filled in from the socket when `/proc/<pid>/fd` is readable (own user, or root); otherwise it may read `—`. `who` is merged in as a fallback. Set `SSH_PORTS` if sshd listens somewhere other than 22 and can't read `sshd_config`. |
 
-The 7-day load grid and 7-day CPU heatmap are kept in memory by the
+The 48-hour load grid and 24-hour CPU heatmap are kept in memory by the
 running process and persisted to `data/history.json`, so they survive a
 restart or redeploy. Any stretch the server was actually down stays empty and
 fills in again over time.

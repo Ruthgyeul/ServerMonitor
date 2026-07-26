@@ -5,17 +5,25 @@ import { CpuHourSample, HistoryInfo, LoadSample } from '@/types/system';
 import { round } from '@/utils/collectors/shell';
 
 // 히스토리 버킷은 프로세스 메모리에 두되, 디스크에도 영속화한다. 그래야
-// 배포(git pull) 후 재시작이나 크래시로 서버가 다시 떠도 최근 7일 그래프가
-// 리셋되지 않는다. 저장 파일은 gitignore 된 data 디렉터리에 있어 pull/build 가
-// 건드리지 않는다.
-// 로드/CPU 모두 1시간 버킷을 7일치(168칸) 유지한다. 창을 넘어간 데이터만
-// 앞에서 하나씩 밀려 나가고(리셋이 아니다), 그 안의 값은 재시작해도 디스크에서
-// 복구된다.
-const RETENTION_HOURS = 7 * 24; // 7일
+// 배포(git pull) 후 재시작이나 크래시로 서버가 다시 떠도 그래프가 리셋되지
+// 않는다. 저장 파일은 gitignore 된 data 디렉터리에 있어 pull/build 가 건드리지
+// 않는다.
+//
+// 보관과 표시를 분리한다. 버킷은 1시간 단위로 7일치(168칸)를 남기지만(prune·
+// 디스크 복구의 창), 그래프는 예전 그대로 로드 48시간·CPU 24시간만 그린다.
+// getHistory 가 표시 창만큼만 잘라 돌려주므로, 데이터는 7일치 쌓여도 화면은
+// 바뀌지 않는다.
 const LOAD_BUCKET_MS = 60 * 60 * 1000;
-const LOAD_BUCKETS = RETENTION_HOURS;
 const HOUR_BUCKET_MS = 60 * 60 * 1000;
-const HOUR_BUCKETS = RETENTION_HOURS;
+
+// 보관(prune·디스크 복구)의 창 — 두 버킷 모두 7일치를 남긴다.
+const RETENTION_HOURS = 7 * 24;
+const LOAD_RETENTION = RETENTION_HOURS;
+const CPU_RETENTION = RETENTION_HOURS;
+
+// 그래프에 실제로 그리는 창 — 예전과 동일하다.
+const LOAD_DISPLAY = 48; // 48시간
+const CPU_DISPLAY = 24; // 24시간
 
 // 디스크에 너무 자주 쓰지 않도록 최소 저장 간격을 둔다. 버킷은 작아서(수십 개)
 // 손실되는 최악의 구간도 이 간격만큼뿐이다.
@@ -129,8 +137,8 @@ function ensureLoaded(): void {
     const raw = fs.readFileSync(/*turbopackIgnore: true*/ STORE_FILE, 'utf-8');
     const parsed = JSON.parse(raw) as StoreShape;
     if (parsed && parsed.v === STORE_VERSION) {
-      hydrate(loadBuckets, parsed.loadBuckets, LOAD_BUCKET_MS, LOAD_BUCKETS);
-      hydrate(cpuBuckets, parsed.cpuBuckets, HOUR_BUCKET_MS, HOUR_BUCKETS);
+      hydrate(loadBuckets, parsed.loadBuckets, LOAD_BUCKET_MS, LOAD_RETENTION);
+      hydrate(cpuBuckets, parsed.cpuBuckets, HOUR_BUCKET_MS, CPU_RETENTION);
     }
   } catch {
     // 파일이 없거나(첫 실행) 읽을 수 없으면 빈 상태로 시작한다.
@@ -216,8 +224,8 @@ export function recordSample(cpuUsage: number, load1: number, at: number = Date.
   recentLoad.push({ at, value: load1 });
   pruneRecent(at);
 
-  prune(loadBuckets, loadKey - (LOAD_BUCKETS - 1) * LOAD_BUCKET_MS);
-  prune(cpuBuckets, hourKey - (HOUR_BUCKETS - 1) * HOUR_BUCKET_MS);
+  prune(loadBuckets, loadKey - (LOAD_RETENTION - 1) * LOAD_BUCKET_MS);
+  prune(cpuBuckets, hourKey - (CPU_RETENTION - 1) * HOUR_BUCKET_MS);
 
   scheduleSave();
 }
@@ -236,10 +244,10 @@ function series(buckets: Map<number, Bucket>, bucketMs: number, count: number, n
 
 export function getHistory(now: number = Date.now()): HistoryInfo {
   ensureLoaded();
-  const load: LoadSample[] = series(loadBuckets, LOAD_BUCKET_MS, LOAD_BUCKETS, now, 2).map(
+  const load: LoadSample[] = series(loadBuckets, LOAD_BUCKET_MS, LOAD_DISPLAY, now, 2).map(
     ({ at, value }) => ({ at, avg1: value })
   );
-  const cpuHourly: CpuHourSample[] = series(cpuBuckets, HOUR_BUCKET_MS, HOUR_BUCKETS, now, 1).map(
+  const cpuHourly: CpuHourSample[] = series(cpuBuckets, HOUR_BUCKET_MS, CPU_DISPLAY, now, 1).map(
     ({ at, value }) => ({ at, usage: value })
   );
   return { load, cpuHourly };
