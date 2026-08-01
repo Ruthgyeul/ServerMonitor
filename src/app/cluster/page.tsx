@@ -1,515 +1,399 @@
 'use client';
 
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { Cpu, HardDrive, MemoryStick, Network, Thermometer, Fan, Clock, Activity } from 'lucide-react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import {
+  Activity,
+  Clock,
+  Cpu,
+  Fan,
+  HardDrive,
+  LucideIcon,
+  MemoryStick,
+  Network,
+  Server,
+  Thermometer,
+  TriangleAlert
+} from 'lucide-react';
 
-import { Header } from '@/components/common/Header';
-import Loading from '@/app/loading';
-import { NetworkChart } from '@/components/charts/NetworkChart';
-import { getClusterServers, CLUSTER_PORT, CLUSTER_PROTOCOL, ClusterServer } from '@/config/clusterConfig';
+import { Gauge, Sparkline } from '@/components/dashboard/primitives';
+import { useNow } from '@/hooks/useNow';
+import { cn } from '@/lib/utils';
+import {
+  CLUSTER_PORT,
+  CLUSTER_PROTOCOL,
+  ClusterServer,
+  getClusterServers
+} from '@/config/clusterConfig';
+import { NetworkHistoryEntry, ServerData } from '@/types/system';
+import { formatClock, formatRate } from '@/utils/format';
+import { COLORS, statusColor, tempColor } from '@/utils/statusColors';
 
-type Server = ClusterServer;
+// 이 페이지는 메인 대시보드(src/app/page.tsx)와 같은 터미널 디자인을 그대로 쓰되,
+// 한 호스트가 아니라 클러스터의 여러 노드를 한 화면에 나란히 띄운다. 각 노드는
+// 자기 /api/system 을 그대로 내주므로(같은 API), 여기서는 그 응답에서 핵심 지표만
+// 추려 노드당 카드 하나로 압축한다.
 
-interface Uptime {
-    days: number;
-    hours: number;
-    minutes: number;
-}
+// 노드마다 매초 갱신한다 — 메인 대시보드의 폴링 주기와 같다.
+const POLL_INTERVAL_MS = 1000;
+// 응답이 없는 노드가 요청 전체를 붙잡지 않도록 노드별로 끊는다.
+const FETCH_TIMEOUT_MS = 5000;
+// 스파크라인이 덮는 구간. 노드 하나당 최근 30초.
+const MAX_NETWORK_POINTS = 30;
 
-interface Memory {
-    used: number;
-    total: number;
-    percentage: number;
-}
+type ServerResult =
+  | { ok: true; data: ServerData }
+  | { ok: false; error: string };
 
-interface Disk {
-    used: number;
-    total: number;
-    percentage: number;
-}
+// 노드 하나를 가져온다. 컴포넌트 상태에 기대지 않는 순수 함수라 모듈 스코프에 둔다.
+async function fetchServer(server: ClusterServer): Promise<[string, ServerResult]> {
+  const url = `${CLUSTER_PROTOCOL}://${server.ip}:${CLUSTER_PORT}/api/system`;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
 
-interface NetworkData {
-    ping: number;
-    download: number;
-    upload: number;
-    errorRates: {
-        rx: string;
-        tx: string;
-    };
-}
-
-interface Temperature {
-    cpu?: number;
-    rp1?: number;
-    ssd?: number;
-}
-
-interface Fan {
-    cpu: number;
-    case1: number;
-    case2: number;
-}
-
-interface Process {
-    name: string;
-}
-
-interface ServerData {
-    cpu?: {
-        usage: number;
-        cores: number;
-    };
-    memory?: Memory;
-    disk?: Disk;
-    network?: NetworkData;
-    temperature?: Temperature;
-    fan?: Fan;
-    uptime?: Uptime;
-    processes?: Process[];
-    error?: string;
-}
-
-interface ServersData {
-    [key: string]: ServerData;
-}
-
-interface NetworkHistoryEntry {
-    time: string;
-    download: number;
-    upload: number;
-}
-
-interface PieChartProps {
-    percentage: number;
-    size?: number;
-    strokeWidth?: number;
-    color: string;
-}
-
-interface ServerCardProps {
-    server: Server;
-    data: ServerData | undefined;
-}
-
-const ClusterPage = () => {
-    const [serversData, setServersData] = useState<ServersData>({});
-    const [loading, setLoading] = useState(true);
-    const [networkHistory, setNetworkHistory] = useState<{ [key: string]: NetworkHistoryEntry[] }>({});
-
-    // 메모이제이션된 서버 목록 (.env의 NEXT_PUBLIC_CLUSTER_SERVERS로 설정)
-    const servers = useMemo(() => getClusterServers(), []);
-
-    // 메모리 관리를 위한 cleanup 함수
-    const cleanupNetworkHistory = useCallback(() => {
-        setNetworkHistory(prev => {
-            const newHistory = { ...prev };
-            for (const serverIp in newHistory) {
-                if (newHistory[serverIp].length > 30) {
-                    newHistory[serverIp] = newHistory[serverIp].slice(-30);
-                }
-            }
-            return newHistory;
-        });
-    }, []);
-
-    const updateNetworkHistory = useCallback((serverIp: string, networkData: NetworkData | undefined) => {
-        const now = new Date();
-        const time = now.toLocaleTimeString('ko-KR', { 
-            hour: '2-digit', 
-            minute: '2-digit', 
-            second: '2-digit',
-            hour12: false 
-        });
-        
-        setNetworkHistory(prev => {
-            const serverHistory = prev[serverIp] || [];
-            const newHistory = [
-                ...serverHistory,
-                {
-                    time,
-                    download: networkData?.download || 0,
-                    upload: networkData?.upload || 0
-                }
-            ];
-            return {
-                ...prev,
-                [serverIp]: newHistory.slice(-30)
-            };
-        });
-    }, []);
-
-    const fetchServerData = useCallback(async () => {
-        const newData: ServersData = {};
-
-        for (const server of servers) {
-            try {
-                const url = `${CLUSTER_PROTOCOL}://${server.ip}:${CLUSTER_PORT}/api/system`;
-                const controller = new AbortController();
-                const timeoutId = setTimeout(() => controller.abort(), 5000);
-
-                const response = await fetch(url, {
-                    signal: controller.signal
-                });
-                clearTimeout(timeoutId);
-
-                if (response.ok) {
-                    const serverData = await response.json();
-                    newData[server.ip] = serverData;
-                    updateNetworkHistory(server.ip, serverData.network);
-                } else {
-                    newData[server.ip] = { error: 'Failed to fetch' };
-                }
-            } catch {
-                newData[server.ip] = { error: 'Connection failed' };
-            }
-        }
-
-        setServersData(newData);
-        setLoading(false);
-    }, [servers, updateNetworkHistory]);
-
-    // 컴포넌트 마운트/언마운트 관리
-    useEffect(() => {
-        let isMounted = true;
-        let mainInterval: NodeJS.Timeout;
-        let cleanupInterval: NodeJS.Timeout;
-
-        const initializeData = async () => {
-            if (isMounted) {
-                await fetchServerData();
-                mainInterval = setInterval(fetchServerData, 1000);
-                cleanupInterval = setInterval(cleanupNetworkHistory, 60000);
-            }
-        };
-
-        initializeData();
-
-        return () => {
-            isMounted = false;
-            clearInterval(mainInterval);
-            clearInterval(cleanupInterval);
-            setNetworkHistory({});
-            setServersData({});
-        };
-    }, [fetchServerData, cleanupNetworkHistory]);
-
-    // 메모이제이션된 상태 업데이트 함수들
-    const getStatusColor = useCallback((percentage: number): string => {
-        if (percentage > 80) return '#ef4444';
-        if (percentage > 60) return '#f59e0b';
-        return '#10b981';
-    }, []);
-
-    const formatUptime = useCallback((uptime: Uptime | undefined): string => {
-        if (!uptime) return 'N/A';
-        const { days, hours, minutes } = uptime;
-        if (days > 0) return `${days}d ${hours}h`;
-        if (hours > 0) return `${hours}h ${minutes}m`;
-        return `${minutes}m`;
-    }, []);
-
-    const formatMemory = useCallback((memory: Memory | undefined): string => {
-        if (!memory) return 'N/A';
-        const usedGB = (memory.used / 1024).toFixed(1);
-        const totalGB = (memory.total / 1024).toFixed(1);
-        return `${usedGB}/${totalGB}GB`;
-    }, []);
-
-    const formatDisk = useCallback((disk: Disk | undefined): string => {
-        if (!disk) return 'N/A';
-        const usedGB = disk.used;
-        const totalGB = disk.total;
-        return `${usedGB}/${totalGB}GB`;
-    }, []);
-
-    const getTemperatureDisplay = useCallback((temperature: Temperature | undefined, type: string): string | null => {
-        if (!temperature) return null;
-
-        if (type === 'n95') {
-            return temperature.cpu ? `${temperature.cpu}°C` : 'N/A';
-        } else {
-            if (temperature.cpu) return `${temperature.cpu}°C`;
-            if (temperature.rp1) return `${temperature.rp1}°C`;
-            if (temperature.ssd) return `${temperature.ssd}°C`;
-            return 'N/A';
-        }
-    }, []);
-
-    const getFanSpeed = useCallback((fan: Fan | undefined): string | null => {
-        if (!fan) return null;
-        if (fan.cpu > 0) return `${fan.cpu}RPM`;
-        if (fan.case1 > 0) return `${fan.case1}RPM`;
-        if (fan.case2 > 0) return `${fan.case2}RPM`;
-        return null;
-    }, []);
-
-    const getTempColor = useCallback((temp: number | undefined): string => {
-        if (temp === undefined || temp === null) return 'text-gray-400';
-        if (temp <= 50) return 'text-green-400';
-        if (temp <= 65) return 'text-yellow-400';
-        if (temp <= 74) return 'text-orange-400';
-        return 'text-red-400';
-    }, []);
-
-    // 메모이제이션된 PieChart 컴포넌트
-    const PieChart = useMemo(() => {
-        function PieChartComponent({ percentage, size = 36, strokeWidth = 3, color }: PieChartProps) {
-            const radius = (size - strokeWidth) / 2;
-            const circumference = 2 * Math.PI * radius;
-            const strokeDasharray = circumference;
-            const strokeDashoffset = circumference - (percentage / 100) * circumference;
-
-            return (
-                <div className="relative" style={{ width: size, height: size }}>
-                    <svg
-                        width={size}
-                        height={size}
-                        className="-rotate-90"
-                    >
-                        <circle
-                            cx={size / 2}
-                            cy={size / 2}
-                            r={radius}
-                            stroke="#374151"
-                            strokeWidth={strokeWidth}
-                            fill="transparent"
-                        />
-                        <circle
-                            cx={size / 2}
-                            cy={size / 2}
-                            r={radius}
-                            stroke={color}
-                            strokeWidth={strokeWidth}
-                            fill="transparent"
-                            strokeDasharray={strokeDasharray}
-                            strokeDashoffset={strokeDashoffset}
-                            strokeLinecap="round"
-                            className="transition-all duration-300"
-                        />
-                    </svg>
-                    <div className="absolute inset-0 flex items-center justify-center">
-                        <span className="text-lg font-mono" style={{ color }}>
-                            {percentage.toFixed(0)}%
-                        </span>
-                    </div>
-                </div>
-            );
-        }
-
-        return PieChartComponent;
-    }, []);
-
-    // 메모이제이션된 ServerCard 컴포넌트
-    const ServerCard = useMemo(() => {
-        function ServerCardComponent({ server, data }: ServerCardProps) {
-            if (!data || data.error) {
-                return (
-                    <div className="bg-gray-800 rounded-lg p-2 border border-gray-700 h-full flex flex-col">
-                        <div className="flex items-center justify-between mb-2">
-                            <h3 className="text-sm font-semibold text-white truncate">{server.name}</h3>
-                            <div className="w-2 h-2 bg-red-500 rounded-full"></div>
-                        </div>
-                        <div className="text-red-400 text-xs flex-1 flex items-center">
-                            {data?.error || 'Offline'}
-                        </div>
-                    </div>
-                );
-            }
-
-            const { cpu, memory, disk, network, temperature, fan, uptime, processes } = data;
-            const topProcess = processes?.[0];
-
-            return (
-                <div className="bg-gray-800 rounded-lg p-2 border border-gray-700 hover:border-gray-600 transition-colors h-full flex flex-col">
-                    {/* Header */}
-                    <div className="flex items-center justify-between mb-2">
-                        <h3 className="text-sm font-semibold text-white truncate">{server.name}</h3>
-                        <div className="flex items-center space-x-1">
-                            <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-                            <span className="text-xs text-gray-400">{server.ip.split(':')[0]}</span>
-                        </div>
-                    </div>
-
-                    {/* Main Stats Grid */}
-                    <div className="grid grid-cols-2 gap-1 mb-2 flex-1">
-                        {/* CPU */}
-                        <div className="bg-gray-900 rounded p-1.5 flex flex-col">
-                            <div className="flex items-center justify-between mb-1">
-                                <div className="flex items-center space-x-2">
-                                    <Cpu className="w-4 h-4 text-blue-400" />
-                                    <span className="text-sm text-gray-400">CPU</span>
-                                </div>
-                            </div>
-                            <div className="flex-1 flex flex-col justify-center items-center">
-                                <div className="flex items-center justify-center">
-                                    <PieChart
-                                        percentage={cpu?.usage || 0}
-                                        size={64}
-                                        strokeWidth={3}
-                                        color={getStatusColor(cpu?.usage || 0)}
-                                    />
-                                </div>
-                                <div className="text-base text-center text-gray-500 mt-1">
-                                    {cpu?.cores || 0} cores
-                                </div>
-                            </div>
-                        </div>
-
-                        {/* Memory */}
-                        <div className="bg-gray-900 rounded p-1.5 flex flex-col">
-                            <div className="flex items-center justify-between mb-1">
-                                <div className="flex items-center space-x-2">
-                                    <MemoryStick className="w-4 h-4 text-purple-400" />
-                                    <span className="text-sm text-gray-400">RAM</span>
-                                </div>
-                            </div>
-                            <div className="flex-1 flex flex-col justify-center items-center">
-                                <div className="flex items-center justify-center">
-                                    <PieChart
-                                        percentage={memory?.percentage || 0}
-                                        size={64}
-                                        strokeWidth={3}
-                                        color={getStatusColor(memory?.percentage || 0)}
-                                    />
-                                </div>
-                                <div className="text-base text-center text-gray-500 mt-1">
-                                    {formatMemory(memory)}
-                                </div>
-                            </div>
-                        </div>
-
-                        {/* Disk */}
-                        <div className="bg-gray-900 rounded p-1.5 flex flex-col">
-                            <div className="flex items-center justify-between mb-1">
-                                <div className="flex items-center space-x-2">
-                                    <HardDrive className="w-4 h-4 text-green-400" />
-                                    <span className="text-sm text-gray-400">Disk</span>
-                                </div>
-                            </div>
-                            <div className="flex-1 flex flex-col justify-center items-center">
-                                <div className="flex items-center justify-center">
-                                    <PieChart
-                                        percentage={disk?.percentage || 0}
-                                        size={64}
-                                        strokeWidth={3}
-                                        color={getStatusColor(disk?.percentage || 0)}
-                                    />
-                                </div>
-                                <div className="text-base text-center text-gray-500 mt-1">
-                                    {formatDisk(disk)}
-                                </div>
-                            </div>
-                        </div>
-
-                        {/* Network */}
-                        <div className="bg-gray-900 rounded p-1.5 flex flex-col">
-                            <div className="flex items-center justify-between mb-1">
-                                <div className="flex items-center space-x-2">
-                                    <Network className="w-4 h-4 text-cyan-400" />
-                                    <span className="text-sm text-gray-400">Net</span>
-                                </div>
-                            </div>
-                            <div className="flex-1 flex flex-col justify-center items-center">
-                                <div className="text-base">
-                                    <div className="text-blue-400">↓ {(data.network?.download || 0).toFixed(1)} MB/s</div>
-                                    <div className="text-green-400">↑ {(data.network?.upload || 0).toFixed(1)} MB/s</div>
-                                </div>
-                                <div className="text-base text-gray-600">
-                                    <div>RX: {network?.errorRates?.rx || '0.00'}%</div>
-                                    <div>TX: {network?.errorRates?.tx || '0.00'}%</div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    {/* Bottom Info */}
-                    <div className="flex flex-col text-xs pt-1 border-t border-gray-700 gap-1">
-                        <div className="flex items-center space-x-2">
-                            {getTemperatureDisplay(temperature, server.type) && (
-                                <div className="flex items-center space-x-1">
-                                    <Thermometer className="w-3 h-3 text-red-400" />
-                                    <span className={getTempColor(
-                                        server.type === 'intel' ? temperature?.cpu :
-                                        temperature?.cpu || temperature?.rp1 || temperature?.ssd
-                                    )}>{getTemperatureDisplay(temperature, server.type)}</span>
-                                </div>
-                            )}
-                            {getFanSpeed(fan) && (
-                                <div className="flex items-center space-x-1">
-                                    <Fan className="w-3 h-3 text-blue-400" />
-                                    <span className="text-gray-400">{getFanSpeed(fan)}</span>
-                                </div>
-                            )}
-                        </div>
-                        {uptime && (
-                            <div className="flex items-center space-x-1">
-                                <Clock className="w-3 h-3 text-yellow-400" />
-                                <span className="text-gray-400">{formatUptime(uptime)}</span>
-                            </div>
-                        )}
-                        {topProcess && (
-                            <div className="flex items-center space-x-1 max-w-20">
-                                <Activity className="w-3 h-3 text-orange-400" />
-                                <span className="text-gray-400 truncate text-xs">
-                                    {topProcess.name.split(' ')[0].split('/').pop()}
-                                </span>
-                            </div>
-                        )}
-                    </div>
-                </div>
-            );
-        }
-
-        return ServerCardComponent;
-    }, [getStatusColor, formatMemory, formatDisk, getTemperatureDisplay, getFanSpeed, getTempColor, formatUptime, PieChart]);
-
-    if (loading) {
-        return <Loading />;
+  try {
+    const response = await fetch(url, { signal: controller.signal });
+    if (!response.ok) {
+      return [server.ip, { ok: false, error: `HTTP ${response.status}` }];
     }
+    const data = (await response.json()) as ServerData;
+    return [server.ip, { ok: true, data }];
+  } catch {
+    return [server.ip, { ok: false, error: 'Connection failed' }];
+  } finally {
+    clearTimeout(timeout);
+  }
+}
 
-    return (
-        <div className="min-h-screen bg-gray-900 text-gray-100">
-            <Header error={null} />
-            <div className="p-1 sm:p-2">
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-1 sm:gap-2 mb-1 sm:mb-2">
-                    {servers.map((server) => (
-                        <ServerCard
-                            key={server.ip}
-                            server={server}
-                            data={serversData[server.ip]}
-                        />
-                    ))}
-                </div>
+export default function ClusterPage() {
+  // .env 의 NEXT_PUBLIC_CLUSTER_SERVERS 로 정해진 노드 목록. 렌더마다 다시 파싱하지 않는다.
+  const servers = useMemo(() => getClusterServers(), []);
+  const [results, setResults] = useState<Record<string, ServerResult>>({});
+  const [networkHistory, setNetworkHistory] = useState<Record<string, NetworkHistoryEntry[]>>({});
+  const now = useNow();
 
-                <div className="bg-gray-800 rounded-lg p-1 sm:p-2">
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-1 sm:gap-2 text-center">
-                        {servers.map((server) => {
-                            const data = serversData[server.ip];
-                            const history = networkHistory[server.ip] || [];
-                            if (!data || data.error) {
-                                return (
-                                    <div key={server.ip} className="text-xs">
-                                        <div className="text-gray-500 truncate">{server.name}</div>
-                                        <div className="text-red-400">Offline</div>
-                                    </div>
-                                );
-                            }
+  const refresh = useCallback(async () => {
+    if (servers.length === 0) return;
 
-                            return (
-                                <div key={server.ip} className="text-xs">
-                                    <div className="text-gray-400 truncate mb-1">{server.name}</div>
-                                    <NetworkChart data={history} minimal />
-                                    <div className="text-gray-500 text-xs mt-1">
-                                        {data.network?.ping?.toFixed(0) || 0}ms
-                                    </div>
-                                </div>
-                            );
-                        })}
-                    </div>
-                </div>
-            </div>
+    const entries = await Promise.all(servers.map(fetchServer));
+
+    const next: Record<string, ServerResult> = {};
+    for (const [ip, result] of entries) next[ip] = result;
+    setResults(next);
+
+    // 스파크라인에 쓸 순간 처리량을 노드별 히스토리에 이어 붙인다. 넣을 때 잘라
+    // 두므로 별도 정리 타이머가 필요 없다.
+    const time = new Date().toLocaleTimeString('ko-KR', {
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false
+    });
+    setNetworkHistory(prev => {
+      const updated = { ...prev };
+      for (const [ip, result] of entries) {
+        if (!result.ok) continue;
+        const point: NetworkHistoryEntry = {
+          time,
+          download: result.data.network?.download ?? 0,
+          upload: result.data.network?.upload ?? 0
+        };
+        updated[ip] = [...(updated[ip] ?? []), point].slice(-MAX_NETWORK_POINTS);
+      }
+      return updated;
+    });
+  }, [servers]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const start = async () => {
+      if (!cancelled) await refresh();
+    };
+    start();
+
+    const timer = setInterval(refresh, POLL_INTERVAL_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [refresh]);
+
+  const onlineCount = servers.filter(server => results[server.ip]?.ok).length;
+
+  return (
+    <div className="terminal-bg min-h-screen text-gray-100">
+      <TerminalTitleBar />
+      <ClusterHeader online={onlineCount} total={servers.length} now={now} />
+
+      {servers.length === 0 ? (
+        <EmptyCluster />
+      ) : (
+        <div className="grid grid-cols-1 gap-3 p-3 sm:grid-cols-2 lg:grid-cols-4">
+          {servers.map(server => (
+            <ServerCard
+              key={server.ip}
+              server={server}
+              result={results[server.ip]}
+              history={networkHistory[server.ip] ?? []}
+            />
+          ))}
         </div>
-    );
+      )}
+    </div>
+  );
+}
+
+// --- 상단 크롬 / 헤더 ------------------------------------------------------
+
+// 메인 대시보드와 똑같은 터미널 창 크롬. 경로만 클러스터 쪽으로 바꾼다.
+const TerminalTitleBar: React.FC = () => (
+  <div className="term-titlebar">
+    <div className="flex shrink-0 items-center gap-[7px]">
+      <span className="term-dot" style={{ background: '#ff5f56' }} />
+      <span className="term-dot" style={{ background: '#ffbd2e' }} />
+      <span className="term-dot" style={{ background: '#27c93f' }} />
+    </div>
+    <span className="min-w-0 flex-1 truncate text-center font-mono">
+      <span style={{ color: '#34d399' }}>root@cluster</span>
+      <span style={{ color: '#5c6478' }}> — ~/monitor/cluster — </span>
+      <span style={{ color: '#8b93a7' }}>zsh</span>
+    </span>
+    <span className="shrink-0 font-mono text-gray-500">⎇ main</span>
+  </div>
+);
+
+interface ClusterHeaderProps {
+  online: number;
+  total: number;
+  now: number | null;
+}
+
+const ClusterHeader: React.FC<ClusterHeaderProps> = ({ online, total, now }) => {
+  const allUp = total > 0 && online === total;
+
+  return (
+    <header className="dash-head sticky top-0 z-10 flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-gray-700 bg-gray-800/95 backdrop-blur">
+      <div className="flex min-w-0 flex-1 items-center gap-2">
+        <Server size={16} color="#38bdf8" strokeWidth={2} className="shrink-0" />
+        <span className="t-value shrink-0 font-bold text-emerald-400 select-none">❯</span>
+        <h1 className="t-value truncate font-bold">Cluster Monitor</h1>
+        <div className="h-[7px] w-[7px] shrink-0 animate-[pulseDot_2s_ease-in-out_infinite] rounded-full bg-green-400" />
+      </div>
+
+      {/* 마운트 전에는 시각을 그리지 않는다(하이드레이션 불일치 방지). */}
+      <span className="t-body order-1 whitespace-nowrap font-mono text-gray-300 md:order-3">
+        {now === null ? ' ' : formatClock(new Date(now))}
+      </span>
+
+      <div className="order-2 flex w-full items-center justify-between gap-3 md:order-2 md:w-auto md:justify-end">
+        <div className="flex shrink-0 items-center gap-1">
+          <div
+            className={cn(
+              'h-1.5 w-1.5 rounded-full',
+              allUp
+                ? 'animate-[pulseDot_2s_ease-in-out_infinite] bg-green-400'
+                : 'animate-[pulseDot_0.6s_ease-in-out_infinite] bg-red-400'
+            )}
+          />
+          <span className={cn('t-label', allUp ? 'text-gray-400' : 'text-red-400')}>
+            {online}/{total} nodes online
+          </span>
+        </div>
+      </div>
+    </header>
+  );
 };
 
-export default React.memo(ClusterPage);
+const EmptyCluster: React.FC = () => (
+  <div className="flex flex-col items-center justify-center gap-2 p-16 text-center">
+    <TriangleAlert size={20} color={COLORS.warn} strokeWidth={2} />
+    <p className="t-body text-gray-300">No cluster nodes configured</p>
+    <p className="t-micro max-w-[420px] text-gray-500">
+      Set NEXT_PUBLIC_CLUSTER_SERVERS in your environment to list the nodes to monitor.
+    </p>
+  </div>
+);
+
+// --- 노드 카드 -------------------------------------------------------------
+
+interface ServerCardProps {
+  server: ClusterServer;
+  result: ServerResult | undefined;
+  history: NetworkHistoryEntry[];
+}
+
+const ServerCard: React.FC<ServerCardProps> = ({ server, result, history }) => {
+  // 첫 응답 전(undefined)과 연결 실패(ok=false)를 나눠, 처음엔 "연결 중", 실패엔
+  // 그 이유를 보여 준다. 메인 대시보드가 마지막 값을 유지하듯 여기도 프레임은 늘 그린다.
+  if (!result) {
+    return (
+      <ServerShell server={server} status="connecting">
+        <Empty>connecting…</Empty>
+      </ServerShell>
+    );
+  }
+
+  if (!result.ok) {
+    return (
+      <ServerShell server={server} status="offline">
+        <p className="t-body text-red-400">{result.error}</p>
+      </ServerShell>
+    );
+  }
+
+  const { cpu, memory, disk, network, uptime, fan } = result.data;
+  const toGb = (mb: number) => (mb / 1024).toFixed(1);
+
+  // 팬은 값이 잡히는 첫 커넥터를 쓴다(메인보드마다 위치가 다르다).
+  const rpm = [fan.cpu, fan.case1, fan.case2].find(value => value > 0) ?? 0;
+  // cpu.temperature 는 아키텍처와 무관하게 채워지는 대표 CPU 온도다.
+  const temperature = cpu.temperature;
+  const topProcess = result.data.processes.find(process => process.cpu > 0 || process.memory > 0);
+
+  return (
+    <ServerShell server={server} status="online">
+      <div className="grid grid-cols-3 gap-2">
+        <MiniGauge icon={Cpu} iconColor="#60a5fa" label="CPU" percentage={cpu.usage} caption={`${cpu.cores}c`} />
+        <MiniGauge
+          icon={MemoryStick}
+          iconColor="#4ade80"
+          label="RAM"
+          percentage={memory.percentage}
+          caption={`${toGb(memory.used)}/${toGb(memory.total)}G`}
+        />
+        <MiniGauge
+          icon={HardDrive}
+          iconColor="#facc15"
+          label="DISK"
+          percentage={disk.percentage}
+          caption={`${disk.used.toFixed(0)}/${disk.total.toFixed(0)}G`}
+        />
+      </div>
+
+      <div className="mt-2">
+        <div className="t-micro mb-0.5 flex items-center justify-between gap-2 text-gray-400">
+          <span className="flex items-center gap-1">
+            <Network className="dash-icon shrink-0" color="#22d3ee" strokeWidth={2} />
+            NET
+          </span>
+          <span className="whitespace-nowrap font-mono">
+            <span className="text-blue-400">↓ {formatRate(network.download)}</span>{' '}
+            <span className="text-emerald-400">↑ {formatRate(network.upload)}</span>
+          </span>
+        </div>
+        <div className="dash-spark">
+          <Sparkline
+            series={[
+              { key: 'download', values: history.map(point => point.download), color: '#60a5fa' },
+              { key: 'upload', values: history.map(point => point.upload), color: '#34d399' }
+            ]}
+          />
+        </div>
+      </div>
+
+      <div className="t-micro mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-gray-700 pt-1.5">
+        <InfoItem
+          icon={Thermometer}
+          color={tempColor(temperature)}
+          value={temperature === 'N/A' ? 'N/A' : `${temperature.toFixed(0)}°C`}
+        />
+        <InfoItem icon={Fan} color="#c084fc" value={rpm > 0 ? `${rpm.toLocaleString()}rpm` : '—'} />
+        <InfoItem icon={Clock} color="#4ade80" value={formatUptime(uptime)} />
+        <InfoItem icon={Network} color="#22d3ee" value={`${network.ping.toFixed(0)}ms`} />
+        {topProcess && <InfoItem icon={Activity} color="#fb923c" value={shortProcessName(topProcess.name)} />}
+      </div>
+    </ServerShell>
+  );
+};
+
+type ServerStatus = 'online' | 'offline' | 'connecting';
+
+const STATUS_COLOR: Record<ServerStatus, string> = {
+  online: '#34d399',
+  offline: '#f87171',
+  connecting: '#8b93a7'
+};
+
+// 노드 카드의 공통 껍데기 — 메인 대시보드의 Card 와 같은 결(보더/배경/헤더)이다.
+const ServerShell: React.FC<{
+  server: ClusterServer;
+  status: ServerStatus;
+  children: React.ReactNode;
+}> = ({ server, status, children }) => (
+  <section className="dash-card flex flex-col rounded-lg border border-gray-700 bg-gray-800">
+    <div className="dash-card-head flex items-center justify-between gap-2">
+      <div className="flex min-w-0 items-center gap-1.5">
+        <Server className="dash-icon shrink-0" color={STATUS_COLOR[status]} strokeWidth={2} />
+        <h2 className="t-label truncate font-bold tracking-[0.04em] text-gray-100">{server.name}</h2>
+      </div>
+      <span className="flex shrink-0 items-center gap-1">
+        <span
+          className={cn(
+            'h-1.5 w-1.5 rounded-full',
+            status === 'online' && 'animate-[pulseDot_2s_ease-in-out_infinite] bg-green-400',
+            status === 'offline' && 'animate-[pulseDot_0.6s_ease-in-out_infinite] bg-red-400',
+            status === 'connecting' && 'bg-gray-500'
+          )}
+        />
+        <span className="t-micro font-mono text-gray-500">{server.ip.split(':')[0]}</span>
+      </span>
+    </div>
+    {children}
+  </section>
+);
+
+// --- 카드 안 조각 ----------------------------------------------------------
+
+interface MiniGaugeProps {
+  icon: LucideIcon;
+  iconColor: string;
+  label: string;
+  percentage: number;
+  caption: string;
+}
+
+// 메인 대시보드 GaugeRow 의 게이지 타일을, 카드 안에 3개 나란히 넣도록 압축한 판.
+const MiniGauge: React.FC<MiniGaugeProps> = ({ icon: Icon, iconColor, label, percentage, caption }) => {
+  const color = statusColor(percentage);
+
+  return (
+    <div className="flex min-w-0 flex-col items-center">
+      <div className="flex items-center gap-1">
+        <Icon className="dash-icon shrink-0" color={iconColor} strokeWidth={2} />
+        <span className="t-micro truncate text-gray-300">{label}</span>
+      </div>
+      <Gauge percentage={percentage} color={color} className="my-1" />
+      <div className="t-value font-bold" style={{ color }}>
+        {percentage.toFixed(0)}%
+      </div>
+      <div className="t-micro w-full truncate text-center text-gray-400">{caption}</div>
+    </div>
+  );
+};
+
+const InfoItem: React.FC<{ icon: LucideIcon; color: string; value: string }> = ({ icon: Icon, color, value }) => (
+  <span className="flex items-center gap-1">
+    <Icon className="dash-icon shrink-0" color={color} strokeWidth={2} />
+    <span className="truncate font-mono" style={{ color }}>
+      {value}
+    </span>
+  </span>
+);
+
+const Empty: React.FC<{ children: React.ReactNode }> = ({ children }) => (
+  <p className="t-body text-gray-500">{children}</p>
+);
+
+// --- 표기 헬퍼 -------------------------------------------------------------
+
+function formatUptime(uptime: ServerData['uptime']): string {
+  const { days, hours, minutes } = uptime;
+  if (days > 0) return `${days}d ${hours}h`;
+  if (hours > 0) return `${hours}h ${minutes}m`;
+  return `${minutes}m`;
+}
+
+// `comm` 은 대개 실행 파일명뿐이지만, 경로/인자가 섞여 들어오는 노드도 있어 첫 토큰의
+// 파일명만 남긴다. 좁은 칸에 이름이 넘치지 않게 하기 위한 표기용 정리다.
+function shortProcessName(name: string): string {
+  return name.split(' ')[0].split('/').pop() ?? name;
+}
