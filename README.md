@@ -167,9 +167,9 @@ read on the server.
 
 | Variable | Used in | Description |
 | --- | --- | --- |
-| `NEXT_PUBLIC_CLUSTER_SERVERS` | `src/config/clusterConfig.ts` | JSON array of `{ "name", "ip", "type" }` objects rendered on `/cluster`. `type` is `"intel"` or `"rpi"` and controls which sensors are read. |
-| `NEXT_PUBLIC_CLUSTER_PORT` | `src/config/clusterConfig.ts` | Port each cluster node's `/api/system` listens on (default `3000`). |
-| `NEXT_PUBLIC_CLUSTER_PROTOCOL` | `src/config/clusterConfig.ts` | Scheme (`http`/`https`) used to reach cluster nodes from the browser (default `http`). |
+| `NEXT_PUBLIC_CLUSTER_SERVERS` | `src/config/clusterConfig.ts` | JSON array of `{ "name", "ip", "type" }` objects rendered on `/cluster`. `type` is `"intel"` or `"rpi"` and controls which sensors are read. `ip` is a base URL the dashboard appends `/api/system` to: a full URL with scheme (e.g. `https://status.example.com`, used as-is) or a bare host/IP (expanded with `NEXT_PUBLIC_CLUSTER_PROTOCOL`/`NEXT_PUBLIC_CLUSTER_PORT`). |
+| `NEXT_PUBLIC_CLUSTER_PORT` | `src/config/clusterConfig.ts` | Port for **bare-host** cluster nodes' `/api/system` (default `3000`). Ignored for `ip` entries that already include a scheme. |
+| `NEXT_PUBLIC_CLUSTER_PROTOCOL` | `src/config/clusterConfig.ts` | Scheme (`http`/`https`) for **bare-host** cluster nodes (default `http`). Ignored for `ip` entries that already include a scheme. |
 | `ALLOWED_ORIGINS` | `src/app/api/system/route.ts` | Comma-separated list of origins allowed to call `/api/system` (CORS allow-list). CORS only limits cross-origin browser reads — it does not authenticate. See [Securing the API](#securing-the-api). |
 | `API_AUTH_TOKEN` | `src/proxy.ts` | Optional shared secret. When set, every `/api/system*` request must present it as `Authorization: Bearer <token>` or an `api_auth_token` cookie. Unset by default. Enabling it breaks the built-in browser dashboard — see [Securing the API](#securing-the-api). |
 | `NEXT_PUBLIC_SITE_URL` | `src/config/siteConfig.ts` | Canonical site URL used for metadata, Open Graph tags, `robots.txt` and `sitemap.xml`. |
@@ -224,9 +224,12 @@ secrets passed as CLI arguments are never exposed.
 ## Deploying a cluster
 
 Each node in `NEXT_PUBLIC_CLUSTER_SERVERS` should run its own instance of
-this app (so its `/api/system` endpoint is reachable at
-`http://<ip>:<NEXT_PUBLIC_CLUSTER_PORT>`), and each node's `ALLOWED_ORIGINS`
-should include the origin of whichever instance is displaying `/cluster`.
+this app so its `/api/system` endpoint is reachable at the node's base URL.
+Give each node either a full base URL (`"ip": "https://status.example.com"`,
+appended with `/api/system` as-is) or a bare host/IP (`"ip": "192.168.0.100"`,
+reached at `<NEXT_PUBLIC_CLUSTER_PROTOCOL>://<ip>:<NEXT_PUBLIC_CLUSTER_PORT>`).
+Each node's `ALLOWED_ORIGINS` should include the origin of whichever instance
+is displaying `/cluster`.
 
 ## Learn more
 

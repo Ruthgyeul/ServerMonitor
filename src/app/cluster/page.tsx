@@ -19,10 +19,10 @@ import { Gauge, Sparkline } from '@/components/dashboard/primitives';
 import { useNow } from '@/hooks/useNow';
 import { cn } from '@/lib/utils';
 import {
-  CLUSTER_PORT,
-  CLUSTER_PROTOCOL,
   ClusterServer,
-  getClusterServers
+  getClusterHost,
+  getClusterServers,
+  getClusterUrl
 } from '@/config/clusterConfig';
 import { NetworkHistoryEntry, ServerData } from '@/types/system';
 import { formatClock, formatRate } from '@/utils/format';
@@ -46,7 +46,7 @@ type ServerResult =
 
 // 노드 하나를 가져온다. 컴포넌트 상태에 기대지 않는 순수 함수라 모듈 스코프에 둔다.
 async function fetchServer(server: ClusterServer): Promise<[string, ServerResult]> {
-  const url = `${CLUSTER_PROTOCOL}://${server.ip}:${CLUSTER_PORT}/api/system`;
+  const url = getClusterUrl(server, '/api/system');
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
 
@@ -334,7 +334,7 @@ const ServerShell: React.FC<{
             status === 'connecting' && 'bg-gray-500'
           )}
         />
-        <span className="t-micro font-mono text-gray-500">{server.ip.split(':')[0]}</span>
+        <span className="t-micro font-mono text-gray-500">{getClusterHost(server)}</span>
       </span>
     </div>
     {children}
