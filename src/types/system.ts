@@ -188,6 +188,8 @@ export interface ServerData {
     used: number;
     total: number;
     percentage: number;
+    // 최근 추세로 추정한 100% 도달까지 남은 시간(시간). 채워지는 중이 아니면 null.
+    hoursToFull?: number | null;
   };
   // 루트 외 마운트를 포함한 전체 파일시스템 목록(선택적: 구버전 노드 호환).
   disks?: DiskMount[];

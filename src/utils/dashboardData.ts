@@ -30,7 +30,7 @@ export interface DashboardData {
     frequencyMhz: number | 'N/A';
   };
   memory: { used: number; total: number; percentage: number };
-  disk: { used: number; total: number; percentage: number };
+  disk: { used: number; total: number; percentage: number; hoursToFull: number | null };
   disks: DiskMount[];
   swap: SwapInfo;
   diskIO: DiskIoInfo;
@@ -84,7 +84,7 @@ export function toDashboardData(raw: ServerData): DashboardData {
       frequencyMhz: raw.cpu.frequencyMhz ?? 'N/A'
     },
     memory: raw.memory,
-    disk: raw.disk,
+    disk: { ...raw.disk, hoursToFull: raw.disk.hoursToFull ?? null },
     disks: raw.disks ?? [],
     swap: raw.swap ?? { used: 0, total: 0, percentage: 0 },
     diskIO: raw.diskIO ?? { read: 0, write: 0 },

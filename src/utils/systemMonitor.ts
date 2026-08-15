@@ -17,6 +17,7 @@ import {
 import { collect, readSys, round, run } from '@/utils/collectors/shell';
 import { parseDf } from '@/utils/collectors/df';
 import { getBatteryInfo } from '@/utils/collectors/battery';
+import { getHoursToFull, recordDiskSample } from '@/utils/collectors/diskTrend';
 import { getCpuUsage } from '@/utils/collectors/cpu';
 import { getHostInfo } from '@/utils/collectors/host';
 import { getLoadAverage, getSwapInfo } from '@/utils/collectors/load';
@@ -572,6 +573,8 @@ export async function getSystemInfo(): Promise<ServerData> {
   const security = await getSecurityInfo(sockets.peers, warnings);
 
   recordSample(cpu.usage, loadBase.avg1, now);
+  recordDiskSample(disk.percentage, now);
+  const diskHoursToFull = getHoursToFull(now);
 
   // 창은 방금 넣은 샘플까지 포함해야 하므로 recordSample 뒤에 읽는다.
   const rolling30m = getLoad30mAverage(now);
@@ -598,7 +601,12 @@ export async function getSystemInfo(): Promise<ServerData> {
   const data: ServerData = {
     cpu,
     memory,
-    disk: { used: disk.used, total: disk.total, percentage: disk.percentage },
+    disk: {
+      used: disk.used,
+      total: disk.total,
+      percentage: disk.percentage,
+      hoursToFull: diskHoursToFull
+    },
     disks: disk.mounts,
     network,
     temperature,

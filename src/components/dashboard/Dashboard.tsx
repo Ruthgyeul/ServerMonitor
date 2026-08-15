@@ -339,11 +339,15 @@ const GaugeRow: React.FC<{ data: DashboardData }> = ({ data }) => {
     2
   )}${cpuFreq} · iowait ${data.cpu.iowait.toFixed(1)}%${cpuSteal}`;
 
-  // DISK 툴팁에 루트 외 마운트의 사용률을 덧붙인다.
+  // DISK 툴팁에 루트 외 마운트의 사용률과, 채워지는 중이면 가득 참 예측을 덧붙인다.
   const extraMounts = data.disks.filter(mount => mount.mount !== '/');
   const mountDetail =
     extraMounts.length > 0
       ? ' · ' + extraMounts.map(mount => `${mount.mount} ${mount.percentage.toFixed(0)}%`).join(' · ')
+      : '';
+  const fillDetail =
+    data.disk.hoursToFull !== null && data.disk.hoursToFull !== undefined
+      ? ` · full in ~${data.disk.hoursToFull < 48 ? `${data.disk.hoursToFull.toFixed(1)}h` : `${Math.round(data.disk.hoursToFull / 24)}d`}`
       : '';
 
   // 시안은 네 개를 한 줄에 놓는다. 휴대폰 폭에서는 게이지 지름보다 칸이 좁아져
@@ -391,7 +395,7 @@ const GaugeRow: React.FC<{ data: DashboardData }> = ({ data }) => {
         detail={`${data.disk.used.toFixed(1)}G used of ${data.disk.total.toFixed(1)}G · ${Math.max(
           0,
           data.disk.total - data.disk.used
-        ).toFixed(1)}G free${mountDetail}`}
+        ).toFixed(1)}G free${mountDetail}${fillDetail}`}
       />
     </div>
   );

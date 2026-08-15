@@ -59,6 +59,11 @@ export async function GET() {
   g('server_disk_percent', 'Disk usage percentage.', data.disk.percentage, { mount: '/' });
   g('server_disk_used_gb', 'Used disk in GB.', data.disk.used, { mount: '/' });
   g('server_disk_total_gb', 'Total disk in GB.', data.disk.total, { mount: '/' });
+  g(
+    'server_disk_hours_to_full',
+    'Estimated hours until root fills at the current rate.',
+    data.disk.hoursToFull
+  );
   if (data.disks) {
     const rowsPct: string[] = [];
     const rowsUsed: string[] = [];
