@@ -510,7 +510,7 @@ export async function getSystemInfo(): Promise<ServerData> {
       temperature: cpu.temperature,
       firewall: security.firewall.status,
       sshSessions: security.sshSessions,
-      interfaces: network.interfaces.map(({ name, state }) => ({ name, state }))
+      interfaces: (network.interfaces ?? []).map(({ name, state }) => ({ name, state }))
     },
     now
   );

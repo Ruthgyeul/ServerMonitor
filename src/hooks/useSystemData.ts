@@ -61,7 +61,7 @@ export function useSystemData(): SystemDataState {
         assertServerData(payload);
 
         const data = toDashboardData(payload);
-        const time = new Date().toLocaleTimeString('ko-KR', {
+        const time = new Date().toLocaleTimeString('en-US', {
           hour: '2-digit',
           minute: '2-digit',
           second: '2-digit',

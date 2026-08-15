@@ -95,9 +95,9 @@ describe('evaluateAlerts', () => {
     evaluateAlerts(baseInput({ cpu: 95 }), t0 + 1000);
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    const [url, options] = fetchMock.mock.calls[0];
+    const [url, options] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
     expect(url).toBe('https://example.test/hook');
-    expect(JSON.parse((options as RequestInit).body as string).message).toContain('CPU usage 95%');
+    expect(JSON.parse(options.body as string).message).toContain('CPU usage 95%');
   });
 
   it('새 SSH 세션은 통지하고, 이미 있던 세션은 통지하지 않는다', async () => {

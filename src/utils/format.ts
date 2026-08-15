@@ -52,8 +52,8 @@ export function formatRelativeTime(iso: string, now: number): string {
 }
 
 export function formatClock(date: Date): string {
-  const day = date.toLocaleDateString('ko-KR', { year: 'numeric', month: '2-digit', day: '2-digit' });
-  const time = date.toLocaleTimeString('ko-KR', {
+  const day = date.toLocaleDateString('en-US', { year: 'numeric', month: '2-digit', day: '2-digit' });
+  const time = date.toLocaleTimeString('en-US', {
     hour: '2-digit',
     minute: '2-digit',
     second: '2-digit',

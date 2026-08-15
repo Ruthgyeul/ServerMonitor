@@ -20,10 +20,33 @@ let running = false;
 let handle: ReturnType<typeof setTimeout> | null = null;
 let lastData: ServerData | null = null;
 
+// 수집 루프 자체의 건강 상태. /api/health 가 읽어, 루프가 멈췄거나 계속 실패하는
+// 상황을 스케줄러/모니터가 감지할 수 있게 한다.
+let lastTickAt = 0;
+let consecutiveFailures = 0;
+
+export interface LoopHealth {
+  running: boolean;
+  subscribers: number;
+  lastTickAgeMs: number | null;
+  consecutiveFailures: number;
+}
+
+export function getLoopHealth(): LoopHealth {
+  return {
+    running,
+    subscribers: listeners.size,
+    lastTickAgeMs: lastTickAt === 0 ? null : Date.now() - lastTickAt,
+    consecutiveFailures
+  };
+}
+
 async function tick(): Promise<void> {
   try {
     const data = await getSystemInfo();
     lastData = data;
+    lastTickAt = Date.now();
+    consecutiveFailures = 0;
     for (const listener of listeners) {
       // 한 구독자의 예외가 다른 구독자에게 번지지 않게 격리한다.
       try {
@@ -35,6 +58,7 @@ async function tick(): Promise<void> {
   } catch (error) {
     // 수집 자체가 실패해도 루프는 살려둔다. 이번 틱만 건너뛰고,
     // 구독자는 마지막으로 받은 값을 그대로 들고 있는다.
+    consecutiveFailures += 1;
     console.error('system collection loop failed:', error);
   }
 }

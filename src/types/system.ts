@@ -113,6 +113,15 @@ export interface SecurityInfo {
     topTraffic: TrafficPeer[];
 }
 
+// 개별 마운트된 파일시스템의 사용량. 루트(/) 외에 데이터 볼륨이 따로 붙은
+// 서버에서도 실제 사용량을 볼 수 있게 한다.
+export interface DiskMount {
+    mount: string;
+    used: number;  // GB
+    total: number; // GB
+    percentage: number;
+}
+
 export type AlertLevel = 'ok' | 'info' | 'warning' | 'critical';
 
 export interface AlertEntry {
@@ -158,6 +167,8 @@ export interface ServerData {
         total: number;
         percentage: number;
     };
+    // 루트 외 마운트를 포함한 전체 파일시스템 목록(선택적: 구버전 노드 호환).
+    disks?: DiskMount[];
     network: {
         download: number;
         upload: number;

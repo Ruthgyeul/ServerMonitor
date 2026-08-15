@@ -82,7 +82,7 @@ export default function ClusterPage() {
 
     // 스파크라인에 쓸 순간 처리량을 노드별 히스토리에 이어 붙인다. 넣을 때 잘라
     // 두므로 별도 정리 타이머가 필요 없다.
-    const time = new Date().toLocaleTimeString('ko-KR', {
+    const time = new Date().toLocaleTimeString('en-US', {
       hour: '2-digit',
       minute: '2-digit',
       second: '2-digit',
