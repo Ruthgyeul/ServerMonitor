@@ -9,6 +9,9 @@ interface GaugeProps {
   percentage: number;
   color: string;
   className?: string;
+  // 스크린리더용 라벨. 손수 그린 SVG 는 기본적으로 아무 것도 안 읽히므로,
+  // role="img" 와 함께 준다. 미지정 시 퍼센트만이라도 읽어 준다.
+  ariaLabel?: string;
 }
 
 // 크기는 CSS(.dash-gauge)가 정한다. viewBox 로 그리면 화면 밀도에 따라
@@ -18,11 +21,16 @@ const GAUGE_STROKE = 3.5;
 const GAUGE_RADIUS = GAUGE_BOX / 2 - GAUGE_STROKE / 2 - 1.25;
 const GAUGE_CIRCUMFERENCE = 2 * Math.PI * GAUGE_RADIUS;
 
-export const Gauge: React.FC<GaugeProps> = ({ percentage, color, className }) => {
+export const Gauge: React.FC<GaugeProps> = ({ percentage, color, className, ariaLabel }) => {
   const filled = Math.max(0, Math.min(100, percentage));
 
   return (
-    <svg viewBox={`0 0 ${GAUGE_BOX} ${GAUGE_BOX}`} className={cn('dash-gauge shrink-0 -rotate-90', className)}>
+    <svg
+      viewBox={`0 0 ${GAUGE_BOX} ${GAUGE_BOX}`}
+      className={cn('dash-gauge shrink-0 -rotate-90', className)}
+      role="img"
+      aria-label={ariaLabel ?? `${Math.round(filled)}%`}
+    >
       <circle
         cx={GAUGE_BOX / 2}
         cy={GAUGE_BOX / 2}
@@ -104,6 +112,8 @@ export const Sparkline: React.FC<SparklineProps> = ({ series, className, emptyLa
       viewBox={`0 0 ${width} ${height}`}
       preserveAspectRatio="none"
       className={cn('h-full w-full', className)}
+      role="img"
+      aria-label={`trend of ${series.map(entry => entry.key).join(', ')}`}
     >
       {series.map(entry => (
         <path key={entry.key} d={path(entry.values)} fill="none" stroke={entry.color} strokeWidth={1.5} />

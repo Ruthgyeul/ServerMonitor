@@ -193,7 +193,14 @@ const TerminalTitleBar: React.FC<{ data: DashboardData }> = ({ data }) => {
 type HeaderProps = Omit<DashboardProps, 'networkHistory' | 'diskIoHistory'>;
 
 const Header: React.FC<HeaderProps> = ({ data, connected, lastUpdate, now }) => {
-  const secondsAgo = now !== null && lastUpdate !== null ? Math.max(0, Math.round((now - lastUpdate) / 1000)) : 0;
+  const secondsAgo =
+    now !== null && lastUpdate !== null ? Math.max(0, Math.round((now - lastUpdate) / 1000)) : 0;
+  // 연결은 살아 있는데 값이 멎었을 수 있다(수집 루프 정지 등). SSE connected 와
+  // 별개로, 마지막 성공 샘플이 오래됐으면 amber 로 알린다.
+  const stale = connected && secondsAgo > 5;
+  // API 가 돌려주는 warnings 는 어떤 수집기가 실패했는지 담는다. 지금까지 화면엔
+  // 안 보였다 — 몇 개가 degrade 됐는지 뱃지로 띄우고, 목록은 호버 툴팁에 담는다.
+  const degraded = data.warnings.length;
 
   return (
     <header className="dash-head sticky top-0 z-10 flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-gray-700 bg-gray-800/95 backdrop-blur">
@@ -221,14 +228,31 @@ const Header: React.FC<HeaderProps> = ({ data, connected, lastUpdate, now }) => 
                 : 'animate-[pulseDot_0.6s_ease-in-out_infinite] bg-red-400'
             )}
           />
-          <span className={cn('t-label', connected ? 'text-gray-400' : 'text-red-400')}>
+          <span
+            className={cn(
+              't-label',
+              !connected ? 'text-red-400' : stale ? 'text-amber-400' : 'text-gray-400'
+            )}
+          >
             {connected ? `Live · updated ${secondsAgo}s ago` : 'Reconnecting…'}
           </span>
         </div>
 
+        {degraded > 0 && (
+          <span
+            className="dash-tip t-label flex shrink-0 items-center gap-1 text-amber-400"
+            tabIndex={-1}
+            data-tip={data.warnings.join(' · ')}
+          >
+            <TriangleAlert className="dash-icon shrink-0" color={COLORS.warn} strokeWidth={2} />
+            {degraded} degraded
+          </span>
+        )}
+
         <span className="t-micro min-w-0 truncate font-mono text-gray-500">
           {data.host.hostname} · {data.host.os}
           {data.host.os.includes(shortKernel(data.host.kernel)) ? '' : ` · ${shortKernel(data.host.kernel)}`}
+          {data.host.virtualization ? ` · ${data.host.virtualization}` : ''}
         </span>
       </div>
     </header>
@@ -270,7 +294,14 @@ interface GaugeTileProps {
 }
 
 // 시안에서는 게이지 네 개가 각각 독립된 카드다.
-const GaugeCard: React.FC<GaugeTileProps> = ({ icon: Icon, iconColor, label, percentage, caption, detail }) => {
+const GaugeCard: React.FC<GaugeTileProps> = ({
+  icon: Icon,
+  iconColor,
+  label,
+  percentage,
+  caption,
+  detail
+}) => {
   const color = percentage === null ? COLORS.muted : statusColor(percentage);
 
   return (
@@ -282,7 +313,12 @@ const GaugeCard: React.FC<GaugeTileProps> = ({ icon: Icon, iconColor, label, per
       {/* 툴팁은 게이지+수치 묶음이 진다. 카드 전체가 아니라 그림 위에서만 떠야
           이웃 카드로 넘어갈 때 깜빡이지 않는다. */}
       <div className="dash-tip flex flex-col items-center" tabIndex={-1} data-tip={detail}>
-        <Gauge percentage={percentage ?? 0} color={color} className="my-1" />
+        <Gauge
+          percentage={percentage ?? 0}
+          color={color}
+          className="my-1"
+          ariaLabel={percentage === null ? `${label} unavailable` : `${label} ${percentage.toFixed(0)}%`}
+        />
         <div className="t-value font-bold" style={{ color }}>
           {percentage === null ? 'N/A' : `${percentage.toFixed(1)}%`}
         </div>
@@ -295,6 +331,25 @@ const GaugeCard: React.FC<GaugeTileProps> = ({ icon: Icon, iconColor, label, per
 const GaugeRow: React.FC<{ data: DashboardData }> = ({ data }) => {
   const toGb = (mb: number) => (mb / 1024).toFixed(1);
 
+  // CPU 툴팁에 새 지표들을 덧붙인다(레이아웃은 그대로, 호버 시에만 보인다):
+  // 현재 클럭·I/O 대기, 그리고 스틸이 0보다 크면(과판매 VPS) 스틸까지.
+  const cpuFreq = data.cpu.frequencyMhz === 'N/A' ? '' : ` · ${(data.cpu.frequencyMhz / 1000).toFixed(2)}GHz`;
+  const cpuSteal = data.cpu.steal > 0 ? ` · steal ${data.cpu.steal.toFixed(1)}%` : '';
+  const cpuDetail = `${data.cpu.usage.toFixed(1)}% across ${data.cpu.cores} cores · load 1m ${data.load.avg1.toFixed(
+    2
+  )}${cpuFreq} · iowait ${data.cpu.iowait.toFixed(1)}%${cpuSteal}`;
+
+  // DISK 툴팁에 루트 외 마운트의 사용률과, 채워지는 중이면 가득 참 예측을 덧붙인다.
+  const extraMounts = data.disks.filter(mount => mount.mount !== '/');
+  const mountDetail =
+    extraMounts.length > 0
+      ? ' · ' + extraMounts.map(mount => `${mount.mount} ${mount.percentage.toFixed(0)}%`).join(' · ')
+      : '';
+  const fillDetail =
+    data.disk.hoursToFull !== null && data.disk.hoursToFull !== undefined
+      ? ` · full in ~${data.disk.hoursToFull < 48 ? `${data.disk.hoursToFull.toFixed(1)}h` : `${Math.round(data.disk.hoursToFull / 24)}d`}`
+      : '';
+
   // 시안은 네 개를 한 줄에 놓는다. 휴대폰 폭에서는 게이지 지름보다 칸이 좁아져
   // 넘치므로, 그때만 2x2 로 접는다.
   return (
@@ -305,7 +360,7 @@ const GaugeRow: React.FC<{ data: DashboardData }> = ({ data }) => {
         label="CPU"
         percentage={data.cpu.usage}
         caption={`${data.cpu.cores} cores`}
-        detail={`${data.cpu.usage.toFixed(1)}% across ${data.cpu.cores} cores · load 1m ${data.load.avg1.toFixed(2)}`}
+        detail={cpuDetail}
       />
       <GaugeCard
         icon={Monitor}
@@ -340,7 +395,7 @@ const GaugeRow: React.FC<{ data: DashboardData }> = ({ data }) => {
         detail={`${data.disk.used.toFixed(1)}G used of ${data.disk.total.toFixed(1)}G · ${Math.max(
           0,
           data.disk.total - data.disk.used
-        ).toFixed(1)}G free`}
+        ).toFixed(1)}G free${mountDetail}${fillDetail}`}
       />
     </div>
   );
@@ -358,6 +413,12 @@ const UptimeCard: React.FC<{ data: DashboardData }> = ({ data }) => (
       Last reboot: {formatShortDateTime(data.host.bootTime)}
       <br />
       reason: {data.host.rebootReason ?? 'unknown'}
+      {data.battery && (
+        <>
+          <br />
+          battery: {data.battery.percentage}% ({data.battery.status})
+        </>
+      )}
     </div>
   </Card>
 );
@@ -420,7 +481,11 @@ const LoadCard: React.FC<{ data: DashboardData }> = ({ data }) => {
           </span>
         </span>
       </div>
-      <div className="dash-loadgrid grid grid-cols-12" role="list" aria-label="Load average, one cell per hour over the last 48 hours">
+      <div
+        className="dash-loadgrid grid grid-cols-12"
+        role="list"
+        aria-label="Load average, one cell per hour over the last 48 hours"
+      >
         {cells.map((cell, index) => {
           const label =
             cell?.avg1 != null ? `${formatShortDateTime(cell.at)} · load ${cell.avg1.toFixed(2)}` : 'no data';
@@ -469,7 +534,10 @@ const CoresCard: React.FC<{ data: DashboardData }> = ({ data }) => {
                 px 로 고정하면 큰 화면에서 숫자가 칸을 넘어 서로 붙는다. */}
             <span className="t-micro w-[3ch] shrink-0 text-gray-500">C{index}</span>
             <div className="h-1.5 min-w-0 flex-1 overflow-hidden rounded bg-gray-900">
-              <div className="h-full rounded" style={{ width: `${usage}%`, background: statusColor(usage) }} />
+              <div
+                className="h-full rounded"
+                style={{ width: `${usage}%`, background: statusColor(usage) }}
+              />
             </div>
             <span className="t-micro w-[4ch] shrink-0 text-right text-gray-400">{usage.toFixed(0)}%</span>
           </li>
@@ -538,7 +606,8 @@ const CpuDayCard: React.FC<{ data: DashboardData }> = ({ data }) => (
         >
           {data.history.cpuHourly.map(sample => {
             const hour = `${new Date(sample.at).getHours()}:00`;
-            const label = sample.usage === null ? `${hour} — no data` : `${hour} — ${sample.usage.toFixed(0)}%`;
+            const label =
+              sample.usage === null ? `${hour} — no data` : `${hour} — ${sample.usage.toFixed(0)}%`;
             return (
               <div
                 key={sample.at}
@@ -601,33 +670,35 @@ const DiskIoCard: React.FC<{ data: DashboardData; history: DiskIoPoint[] }> = ({
   const io = formatMbPair(data.diskIO.read, data.diskIO.write);
 
   return (
-  <Card
-    icon={HardDriveDownload}
-    color="#38bdf8"
-    title="DISK I/O"
-    right={
-      <span className="t-micro shrink-0 whitespace-nowrap font-mono">
-        <span className="text-blue-400">R {io.read}</span>{' '}
-        <span className="text-pink-400">W {io.write}</span>{' '}
-        <span className="text-gray-500">{io.unit}</span>
-      </span>
-    }
-  >
-    <div className="dash-spark">
-      <Sparkline
-        series={[
-          { key: 'read', values: history.map(point => point.read), color: '#60a5fa' },
-          { key: 'write', values: history.map(point => point.write), color: '#f472b6' }
-        ]}
-      />
-    </div>
-  </Card>
+    <Card
+      icon={HardDriveDownload}
+      color="#38bdf8"
+      title="DISK I/O"
+      right={
+        <span className="t-micro shrink-0 whitespace-nowrap font-mono">
+          <span className="text-blue-400">R {io.read}</span>{' '}
+          <span className="text-pink-400">W {io.write}</span> <span className="text-gray-500">{io.unit}</span>
+        </span>
+      }
+    >
+      <div className="dash-spark">
+        <Sparkline
+          series={[
+            { key: 'read', values: history.map(point => point.read), color: '#60a5fa' },
+            { key: 'write', values: history.map(point => point.write), color: '#f472b6' }
+          ]}
+        />
+      </div>
+    </Card>
   );
 };
 
 // --- 네트워크 --------------------------------------------------------------
 
-const NetworkCard: React.FC<{ data: DashboardData; history: NetworkHistoryEntry[] }> = ({ data, history }) => (
+const NetworkCard: React.FC<{ data: DashboardData; history: NetworkHistoryEntry[] }> = ({
+  data,
+  history
+}) => (
   <Card
     icon={Network}
     color="#22d3ee"
@@ -639,14 +710,16 @@ const NetworkCard: React.FC<{ data: DashboardData; history: NetworkHistoryEntry[
       </span>
     }
   >
+    {/* 범례에 부팅 이후 누적 총량을 함께 적어(순간 속도만으로는 알 수 없는) 대역폭
+        사용량을 한눈에 보게 한다. */}
     <div className="t-micro flex items-center justify-center gap-4 text-gray-400">
       <span className="flex items-center gap-1">
         <span className="h-[7px] w-[7px] rounded-full bg-blue-500" />
-        Download
+        Download · {formatBytes(data.network.totalRxBytes)}
       </span>
       <span className="flex items-center gap-1">
         <span className="h-[7px] w-[7px] rounded-full bg-emerald-500" />
-        Upload
+        Upload · {formatBytes(data.network.totalTxBytes)}
       </span>
     </div>
     <div className="dash-chart">
@@ -693,7 +766,9 @@ const InterfacesCard: React.FC<{ data: DashboardData }> = ({ data }) => {
             <span className="min-w-0 truncate text-gray-400">
               {entry.name} <span className="text-gray-500">{entry.ip ?? '—'}</span>
             </span>
-            <span className={cn('shrink-0 font-mono', entry.state === 'up' ? 'text-green-400' : 'text-gray-500')}>
+            <span
+              className={cn('shrink-0 font-mono', entry.state === 'up' ? 'text-green-400' : 'text-gray-500')}
+            >
               {entry.state !== 'up'
                 ? entry.state
                 : entry.speedMbps === null
@@ -746,7 +821,9 @@ const AlertsCard: React.FC<{ data: DashboardData; now: number | null }> = ({ dat
           <span className="truncate" style={{ color: ALERT_LEVEL_COLORS[alert.level] ?? '#9ca3af' }}>
             {alert.message}
           </span>
-          <span className="shrink-0 text-gray-500">{now === null ? '' : formatRelativeTime(alert.at, now)}</span>
+          <span className="shrink-0 text-gray-500">
+            {now === null ? '' : formatRelativeTime(alert.at, now)}
+          </span>
         </li>
       ))}
     </ul>
@@ -755,9 +832,19 @@ const AlertsCard: React.FC<{ data: DashboardData; now: number | null }> = ({ dat
 
 const ProcessesCard: React.FC<{ data: DashboardData }> = ({ data }) => {
   const processes = data.processes.filter(p => p.cpu > 0 || p.memory > 0).slice(0, MAX_PROCESSES);
+  const { total, zombie } = data.processSummary;
+
+  // 전체 프로세스 규모를 카드 헤더에 요약한다(상위 목록은 그대로). 좀비가 있으면
+  // 빨갛게 — 프로세스 리크의 신호다.
+  const summary =
+    total > 0 ? (
+      <span className="t-micro shrink-0 font-mono text-gray-500">
+        {total} proc{zombie > 0 && <span className="text-red-400"> · {zombie}Z</span>}
+      </span>
+    ) : undefined;
 
   return (
-    <Card icon={AlignLeft} color="#fb923c" title="TOP PROCESSES">
+    <Card icon={AlignLeft} color="#fb923c" title="TOP PROCESSES" right={summary}>
       <div className="t-micro mb-0.5 flex items-center justify-between text-gray-500">
         <span>Name</span>
         <div className="flex gap-2">
@@ -798,7 +885,9 @@ const SshCard: React.FC<{ data: DashboardData; now: number | null }> = ({ data, 
           <span className="min-w-0 truncate text-gray-400">
             {session.user}@{session.ip}
           </span>
-          <span className="shrink-0 text-gray-500">{now === null ? '' : formatRelativeTime(session.since, now)}</span>
+          <span className="shrink-0 text-gray-500">
+            {now === null ? '' : formatRelativeTime(session.since, now)}
+          </span>
         </li>
       ))}
     </ul>
@@ -824,7 +913,8 @@ const TrafficCard: React.FC<{ data: DashboardData }> = ({ data }) => (
 
 const FirewallCard: React.FC<{ data: DashboardData }> = ({ data }) => {
   const { firewall } = data.security;
-  const color = firewall.status === 'active' ? '#4ade80' : firewall.status === 'inactive' ? '#f87171' : '#9ca3af';
+  const color =
+    firewall.status === 'active' ? '#4ade80' : firewall.status === 'inactive' ? '#f87171' : '#9ca3af';
 
   return (
     <Card

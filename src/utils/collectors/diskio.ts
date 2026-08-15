@@ -25,7 +25,7 @@ async function readDiskTotals(): Promise<{ read: number; write: number }> {
     const name = fields[2];
     if (!WHOLE_DISK_PATTERN.test(name)) continue;
 
-    const read = Number(fields[5]);  // sectors read
+    const read = Number(fields[5]); // sectors read
     const written = Number(fields[9]); // sectors written
     if (Number.isNaN(read) || Number.isNaN(written)) continue;
 

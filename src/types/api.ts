@@ -8,4 +8,4 @@ export interface SystemDataResponse {
 export interface ApiError {
   message: string;
   code: string;
-} 
+}

@@ -18,7 +18,10 @@ const TCP_LISTEN = '0A';
 function hexToIpv4(hex: string): string {
   const bytes = hex.match(/../g);
   if (!bytes || bytes.length !== 4) return '0.0.0.0';
-  return bytes.reverse().map(byte => parseInt(byte, 16)).join('.');
+  return bytes
+    .reverse()
+    .map(byte => parseInt(byte, 16))
+    .join('.');
 }
 
 function hexToIpv6(hex: string): string {
@@ -188,9 +191,7 @@ export async function getDefaultInterface(): Promise<string> {
 }
 
 async function listInterfaceNames(): Promise<string[]> {
-  return (await readdir('/sys/class/net')).filter(
-    name => name !== 'lo' && INTERFACE_NAME_PATTERN.test(name)
-  );
+  return (await readdir('/sys/class/net')).filter(name => name !== 'lo' && INTERFACE_NAME_PATTERN.test(name));
 }
 
 export async function readInterfaceStat(interfaceName: string, stat: string): Promise<number> {

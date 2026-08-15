@@ -21,9 +21,11 @@ that aggregates several nodes on one screen.
   - alert log, top processes, SSH sessions, top traffic peers, firewall state
   - keeps the last known values on screen when the stream drops, and says so
     in the header instead of blanking the display
-- **Cluster view** (`/cluster`) — a compact grid that polls multiple
+- **Cluster view** (`/cluster`) — a compact grid that shows multiple
   ServerMonitor instances (e.g. an x86 server plus several Raspberry Pi
-  nodes) and shows their status side by side.
+  nodes) side by side. The browser polls a single same-origin endpoint
+  (`/api/cluster`); the server fans out to each node, so node IPs stay
+  server-side and nodes no longer need to CORS-allow the dashboard origin.
 - **JSON API** (`/api/system`) — returns the current metrics for the host,
   with a configurable CORS allow-list for cross-node requests.
 - **Kiosk launch script** — boots the dashboard full-screen in Firefox for
@@ -228,8 +230,13 @@ this app so its `/api/system` endpoint is reachable at the node's base URL.
 Give each node either a full base URL (`"ip": "https://status.example.com"`,
 appended with `/api/system` as-is) or a bare host/IP (`"ip": "192.168.0.100"`,
 reached at `<NEXT_PUBLIC_CLUSTER_PROTOCOL>://<ip>:<NEXT_PUBLIC_CLUSTER_PORT>`).
-Each node's `ALLOWED_ORIGINS` should include the origin of whichever instance
-is displaying `/cluster`.
+
+The `/cluster` page fetches a single same-origin endpoint (`/api/cluster`),
+and the dashboard **server** fetches each node's `/api/system`. Because those
+node requests are server-to-server, nodes no longer need to CORS-allow the
+dashboard origin for the cluster view, and node IPs never reach the browser.
+If a node has `API_AUTH_TOKEN` set, the dashboard forwards its own
+`API_AUTH_TOKEN` as the bearer token when polling that node.
 
 ## Learn more
 

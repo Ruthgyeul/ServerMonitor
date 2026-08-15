@@ -72,7 +72,9 @@ export const NetworkAreaChart: React.FC<NetworkAreaChartProps> = ({ data }) => {
     PAD_TOP + innerHeight - (Math.max(0, Math.min(max, value / divisor)) / max) * innerHeight;
 
   const line = (key: 'download' | 'upload') =>
-    data.map((entry, index) => `${index === 0 ? 'M' : 'L'}${x(index).toFixed(1)},${y(entry[key]).toFixed(1)}`).join(' ');
+    data
+      .map((entry, index) => `${index === 0 ? 'M' : 'L'}${x(index).toFixed(1)},${y(entry[key]).toFixed(1)}`)
+      .join(' ');
 
   const area = (key: 'download' | 'upload') =>
     `${line(key)} L${x(data.length - 1).toFixed(1)},${PAD_TOP + innerHeight} L${x(0).toFixed(1)},${PAD_TOP + innerHeight} Z`;
@@ -105,7 +107,14 @@ export const NetworkAreaChart: React.FC<NetworkAreaChartProps> = ({ data }) => {
         </linearGradient>
       </defs>
 
-      <line x1={PAD_LEFT} y1={PAD_TOP} x2={PAD_LEFT} y2={PAD_TOP + innerHeight} stroke="rgba(255,255,255,0.10)" strokeWidth={1} />
+      <line
+        x1={PAD_LEFT}
+        y1={PAD_TOP}
+        x2={PAD_LEFT}
+        y2={PAD_TOP + innerHeight}
+        stroke="rgba(255,255,255,0.10)"
+        strokeWidth={1}
+      />
       <line
         x1={PAD_LEFT}
         y1={PAD_TOP + innerHeight}
@@ -117,7 +126,14 @@ export const NetworkAreaChart: React.FC<NetworkAreaChartProps> = ({ data }) => {
 
       {ticks.map(tick => (
         <g key={tick}>
-          <line x1={PAD_LEFT - 4} y1={y(tick * divisor)} x2={PAD_LEFT} y2={y(tick * divisor)} stroke="rgba(255,255,255,0.14)" strokeWidth={1} />
+          <line
+            x1={PAD_LEFT - 4}
+            y1={y(tick * divisor)}
+            x2={PAD_LEFT}
+            y2={y(tick * divisor)}
+            stroke="rgba(255,255,255,0.14)"
+            strokeWidth={1}
+          />
           <text x={PAD_LEFT - 8} y={y(tick * divisor) + 3} fontSize={9} fill="#9ca3af" textAnchor="end">
             {`${tick.toFixed(tick < 2 ? 1 : 0)} ${unit}`}
           </text>
@@ -129,53 +145,82 @@ export const NetworkAreaChart: React.FC<NetworkAreaChartProps> = ({ data }) => {
       <path d={line('download')} fill="none" stroke="#3b82f6" strokeWidth={2} />
       <path d={line('upload')} fill="none" stroke="#10b981" strokeWidth={2} />
 
-      <text x={PAD_LEFT + innerWidth} y={PAD_TOP + innerHeight + 14} fontSize={9} fill="#6b7280" textAnchor="end">
+      <text
+        x={PAD_LEFT + innerWidth}
+        y={PAD_TOP + innerHeight + 14}
+        fontSize={9}
+        fill="#6b7280"
+        textAnchor="end"
+      >
         now
       </text>
 
-      {activeEntry && active !== null && (() => {
-        const cx = x(active);
-        const lines = [
-          activeEntry.time,
-          `↓ ${(activeEntry.download / divisor).toFixed(1)} ${unit}`,
-          `↑ ${(activeEntry.upload / divisor).toFixed(1)} ${unit}`
-        ];
-        const boxWidth = Math.max(...lines.map(text => text.length)) * READOUT_CHAR_W + READOUT_PAD * 2;
-        const boxHeight = lines.length * READOUT_LINE + READOUT_PAD * 2 - 3;
-        // 오른쪽 끝에서는 말풍선이 축 밖으로 나가므로 커서 왼쪽에 붙인다.
-        const flip = cx + 10 + boxWidth > PAD_LEFT + innerWidth;
-        const boxX = flip ? cx - 10 - boxWidth : cx + 10;
+      {activeEntry &&
+        active !== null &&
+        (() => {
+          const cx = x(active);
+          const lines = [
+            activeEntry.time,
+            `↓ ${(activeEntry.download / divisor).toFixed(1)} ${unit}`,
+            `↑ ${(activeEntry.upload / divisor).toFixed(1)} ${unit}`
+          ];
+          const boxWidth = Math.max(...lines.map(text => text.length)) * READOUT_CHAR_W + READOUT_PAD * 2;
+          const boxHeight = lines.length * READOUT_LINE + READOUT_PAD * 2 - 3;
+          // 오른쪽 끝에서는 말풍선이 축 밖으로 나가므로 커서 왼쪽에 붙인다.
+          const flip = cx + 10 + boxWidth > PAD_LEFT + innerWidth;
+          const boxX = flip ? cx - 10 - boxWidth : cx + 10;
 
-        return (
-          <g pointerEvents="none">
-            <line x1={cx} y1={PAD_TOP} x2={cx} y2={PAD_TOP + innerHeight} stroke="rgba(255,255,255,0.28)" strokeWidth={1} />
-            <circle cx={cx} cy={y(activeEntry.download)} r={3} fill="#3b82f6" stroke="#0a0d13" strokeWidth={1.5} />
-            <circle cx={cx} cy={y(activeEntry.upload)} r={3} fill="#10b981" stroke="#0a0d13" strokeWidth={1.5} />
+          return (
+            <g pointerEvents="none">
+              <line
+                x1={cx}
+                y1={PAD_TOP}
+                x2={cx}
+                y2={PAD_TOP + innerHeight}
+                stroke="rgba(255,255,255,0.28)"
+                strokeWidth={1}
+              />
+              <circle
+                cx={cx}
+                cy={y(activeEntry.download)}
+                r={3}
+                fill="#3b82f6"
+                stroke="#0a0d13"
+                strokeWidth={1.5}
+              />
+              <circle
+                cx={cx}
+                cy={y(activeEntry.upload)}
+                r={3}
+                fill="#10b981"
+                stroke="#0a0d13"
+                strokeWidth={1.5}
+              />
 
-            <rect
-              x={boxX}
-              y={PAD_TOP + 4}
-              width={boxWidth}
-              height={boxHeight}
-              rx={4}
-              fill="#111621"
-              stroke="rgba(255,255,255,0.14)"
-              strokeWidth={1}
-            />
-            {lines.map((text, row) => (
-              <text
-                key={text}
-                x={boxX + READOUT_PAD}
-                y={PAD_TOP + 4 + READOUT_PAD + READOUT_LINE * row + READOUT_FONT - 2}
-                fontSize={READOUT_FONT}
-                fill={row === 0 ? '#8b93a7' : row === 1 ? '#54a2ff' : '#00d294'}
-              >
-                {text}
-              </text>
-            ))}
-          </g>
-        );
-      })()}
+              <rect
+                x={boxX}
+                y={PAD_TOP + 4}
+                width={boxWidth}
+                height={boxHeight}
+                rx={4}
+                fill="#111621"
+                stroke="rgba(255,255,255,0.14)"
+                strokeWidth={1}
+              />
+              {lines.map((text, row) => (
+                <text
+                  key={text}
+                  x={boxX + READOUT_PAD}
+                  y={PAD_TOP + 4 + READOUT_PAD + READOUT_LINE * row + READOUT_FONT - 2}
+                  fontSize={READOUT_FONT}
+                  fill={row === 0 ? '#8b93a7' : row === 1 ? '#54a2ff' : '#00d294'}
+                >
+                  {text}
+                </text>
+              ))}
+            </g>
+          );
+        })()}
     </svg>
   );
 };

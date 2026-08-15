@@ -1,14 +1,48 @@
-"use client";
+'use client';
 
 import React, { useEffect } from 'react';
 
 import { Dashboard } from '@/components/dashboard/Dashboard';
 import { useNow } from '@/hooks/useNow';
 import { useSystemData } from '@/hooks/useSystemData';
+import type { DashboardData } from '@/utils/dashboardData';
+
+// 탭만 봐도 경보를 알 수 있도록, 지금 당장 문제가 있으면 문서 제목에 ⚠ 를 붙이고
+// 파비콘을 빨간 점으로 바꾼다. 벽에 여러 탭을 띄워 두는 운용에서 유용하다.
+const BASE_TITLE = 'Server Monitor';
+const ALERT_FAVICON =
+  'data:image/svg+xml,' +
+  encodeURIComponent(
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><circle cx="16" cy="16" r="14" fill="%23ef4444"/></svg>'
+  );
+
+function hasActiveAlert(data: DashboardData): boolean {
+  return (
+    data.cpu.usage > 85 ||
+    data.memory.percentage > 90 ||
+    data.disk.percentage > 90 ||
+    (data.cpu.temperature !== 'N/A' && data.cpu.temperature > 74) ||
+    (data.swap.total > 0 && data.swap.percentage > 80) ||
+    data.security.firewall.status === 'inactive'
+  );
+}
 
 export default function DisplayPage() {
   const { data, error, connected, lastUpdate, networkHistory, diskIoHistory } = useSystemData();
   const now = useNow();
+
+  const alerting = data !== null && hasActiveAlert(data);
+
+  useEffect(() => {
+    document.title = alerting ? `⚠ ${BASE_TITLE}` : BASE_TITLE;
+
+    const icon = document.querySelector<HTMLLinkElement>('link[rel="icon"]');
+    if (!icon) return;
+    // 원래 아이콘을 기억해 두었다가, 경보가 풀리면 되돌린다.
+    const original = icon.dataset.original ?? icon.getAttribute('href') ?? '/favicon.svg';
+    icon.dataset.original = original;
+    icon.setAttribute('href', alerting ? ALERT_FAVICON : original);
+  }, [alerting]);
 
   useEffect(() => {
     // 화면 잠김 방지

@@ -1,0 +1,19 @@
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      # 마이너/패치는 한 PR로 묶어 노이즈를 줄인다. major 는 회귀 위험이 있어
+      # 개별 PR 로 받아 따로 검토한다(예: Next/React).
+      minor-and-patch:
+        update-types:
+          - minor
+          - patch
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly

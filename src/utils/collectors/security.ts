@@ -60,7 +60,10 @@ const BOOT_MS = Date.now() - os.uptime() * 1000;
 async function processStart(pid: string): Promise<string> {
   try {
     const stat = await readFile(`/proc/${pid}/stat`, 'utf-8');
-    const afterComm = stat.slice(stat.lastIndexOf(')') + 2).trim().split(/\s+/);
+    const afterComm = stat
+      .slice(stat.lastIndexOf(')') + 2)
+      .trim()
+      .split(/\s+/);
     const startTicks = Number(afterComm[19]); // 필드22 = state(3) 기준 인덱스 19
     if (!Number.isFinite(startTicks)) return new Date().toISOString();
 

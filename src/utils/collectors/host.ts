@@ -35,7 +35,10 @@ const readRebootReason = withTtl(5 * 60 * 1000, async (): Promise<string | null>
     return null; // last 미설치(busybox 등) 또는 wtmp 권한 없음
   }
 
-  const lines = output.split('\n').map(line => line.trim()).filter(Boolean);
+  const lines = output
+    .split('\n')
+    .map(line => line.trim())
+    .filter(Boolean);
   const rebootIndex = lines.findIndex(line => line.startsWith('reboot'));
   if (rebootIndex === -1) return null;
 
@@ -44,8 +47,27 @@ const readRebootReason = withTtl(5 * 60 * 1000, async (): Promise<string | null>
   return previous.startsWith('shutdown') ? 'clean shutdown' : 'unexpected shutdown';
 });
 
+// 가상화/컨테이너 종류. 일부 지표(steal, 온도, 팬)의 해석이 베어메탈과 달라지므로
+// 어떤 환경에서 도는지 표기한다. systemd-detect-virt 는 없으면 exit 1 이라 || true.
+// 값은 부팅 중 바뀌지 않으니 오래 캐시한다.
+const readVirtualization = withTtl(60 * 60 * 1000, async (): Promise<string | null> => {
+  try {
+    const output = await run('systemd-detect-virt 2>/dev/null || true');
+    const value = output.trim();
+    // "none" 은 베어메탈. 빈 문자열은 도구 미설치 — 둘 다 표기하지 않는다.
+    if (!value || value === 'none') return null;
+    return value;
+  } catch {
+    return null;
+  }
+});
+
 export async function getHostInfo(): Promise<HostInfo> {
-  const [distro, rebootReason] = await Promise.all([readDistro(), readRebootReason()]);
+  const [distro, rebootReason, virtualization] = await Promise.all([
+    readDistro(),
+    readRebootReason(),
+    readVirtualization()
+  ]);
 
   return {
     hostname: os.hostname(),
@@ -53,6 +75,7 @@ export async function getHostInfo(): Promise<HostInfo> {
     kernel: os.release(),
     arch: os.arch(),
     bootTime: new Date(Date.now() - os.uptime() * 1000).toISOString(),
-    rebootReason
+    rebootReason,
+    virtualization
   };
 }

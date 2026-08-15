@@ -1,0 +1,40 @@
+# ServerMonitor — self-hosted, reads live host metrics.
+#
+# A monitor is only useful if it can see the HOST, not just its own container.
+# The settings below give the container that visibility:
+#
+#   pid: host          → the container's own /proc becomes the host's, so
+#                        /proc/stat, /proc/meminfo and the /proc/<pid> scans
+#                        (CPU, memory, SSH sessions, process list) read the
+#                        host. No /proc mount is needed with this.
+#   network_mode: host → interface stats, listening ports and connections are
+#                        the host's; the app is reachable on the host's :3000.
+#   /sys (ro)          → temperature/fan/cpufreq/power_supply/net link speed.
+#   /var/log (ro)      → optional; lets `last` read wtmp for the reboot reason.
+#   ./data             → history.json / alerts.json persist across restarts.
+#
+# This is a lot of host access by design — it is the point of a host monitor.
+# Keep the endpoint off the public internet (see README "Securing the API").
+
+services:
+  servermonitor:
+    build: .
+    # Or pull a prebuilt image instead of building:
+    # image: ghcr.io/ruthgyeul/servermonitor:latest
+    container_name: servermonitor
+    restart: unless-stopped
+    pid: host
+    network_mode: host
+    env_file:
+      - .env
+    volumes:
+      - /sys:/sys:ro
+      - /var/log:/var/log:ro
+      - ./data:/app/data
+    # network_mode: host means PORT from .env (default 3000) is the host port.
+    healthcheck:
+      test: ['CMD', 'wget', '-qO-', 'http://127.0.0.1:3000/api/health']
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s

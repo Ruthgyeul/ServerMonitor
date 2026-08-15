@@ -1,4 +1,4 @@
-@import "tailwindcss";
+@import 'tailwindcss';
 
 /* ---------------------------------------------------------------------------
    터미널 팔레트
@@ -9,7 +9,7 @@
    따라오므로 타일 배치나 정보는 건드리지 않는다.
 --------------------------------------------------------------------------- */
 @theme {
-  --color-gray-50:  #f4f6fb;
+  --color-gray-50: #f4f6fb;
   --color-gray-100: #e6e8ee; /* 본문 */
   --color-gray-200: #d5dae4;
   --color-gray-300: #c3c8d4; /* 흐린 본문 */
@@ -45,7 +45,7 @@
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: var(--font-geist-mono), ui-monospace, "SF Mono", "SFMono-Regular", Menlo, monospace;
+  font-family: var(--font-geist-mono), ui-monospace, 'SF Mono', 'SFMono-Regular', Menlo, monospace;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
 }
@@ -115,24 +115,39 @@ body {
 /* 카드 호버 리프트 — 포트폴리오의 .card 와 동일 결 */
 .dash-card,
 .gauge-card {
-  transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+  transition:
+    transform 0.15s ease,
+    box-shadow 0.15s ease,
+    border-color 0.15s ease;
 }
 .dash-card:hover,
 .gauge-card:hover {
   transform: translateY(-2px);
-  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.35), 0 0 0 1px rgba(56, 189, 248, 0.35);
+  box-shadow:
+    0 10px 28px rgba(0, 0, 0, 0.35),
+    0 0 0 1px rgba(56, 189, 248, 0.35);
   border-color: rgba(56, 189, 248, 0.35);
 }
 
 /* 대시보드 상태 표시용. Tailwind 의 animate-[pulseDot_...] 에서 참조한다. */
 @keyframes pulseDot {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.4; }
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.4;
+  }
 }
 
 @keyframes alertBlink {
-  0%, 100% { background-color: rgba(239, 68, 68, 0.12); }
-  50% { background-color: rgba(239, 68, 68, 0.32); }
+  0%,
+  100% {
+    background-color: rgba(239, 68, 68, 0.12);
+  }
+  50% {
+    background-color: rgba(239, 68, 68, 0.32);
+  }
 }
 
 /* ---------------------------------------------------------------------------
@@ -151,15 +166,33 @@ body {
    늘려 놓은 꼴이 된다. 배율을 올려 카드가 열 폭을 제대로 쓰게 한다.
 --------------------------------------------------------------------------- */
 
-:root { --dash-scale: 1; }
+:root {
+  --dash-scale: 1;
+}
 
 /* 휴대폰: 카드 하나가 가로를 통째로 쓰니 조금 키워도 넘치지 않는다. */
-@media (max-width: 639px) { :root { --dash-scale: 1.08; } }
+@media (max-width: 639px) {
+  :root {
+    --dash-scale: 1.08;
+  }
+}
 
 /* 넓어질수록 열이 넓어진다. 그만큼 카드 속 내용도 키운다. */
-@media (min-width: 1280px) { :root { --dash-scale: 1.15; } }
-@media (min-width: 1600px) { :root { --dash-scale: 1.3; } }
-@media (min-width: 2000px) { :root { --dash-scale: 1.5; } }
+@media (min-width: 1280px) {
+  :root {
+    --dash-scale: 1.15;
+  }
+}
+@media (min-width: 1600px) {
+  :root {
+    --dash-scale: 1.3;
+  }
+}
+@media (min-width: 2000px) {
+  :root {
+    --dash-scale: 1.5;
+  }
+}
 
 .dash-layout {
   display: grid;
@@ -170,7 +203,9 @@ body {
 }
 
 @media (min-width: 640px) {
-  .dash-layout { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .dash-layout {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 @media (min-width: 1024px) {
@@ -197,26 +232,48 @@ body {
 }
 
 @media (min-width: 640px) {
-  .dash-subgrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .dash-subgrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
-.dash-card { padding: calc(12px * var(--dash-scale)); }
+.dash-card {
+  padding: calc(12px * var(--dash-scale));
+}
 
-.dash-head { padding: calc(8px * var(--dash-scale)) calc(12px * var(--dash-scale)); }
-.dash-alertbar { padding: calc(8px * var(--dash-scale)) calc(12px * var(--dash-scale)); }
+.dash-head {
+  padding: calc(8px * var(--dash-scale)) calc(12px * var(--dash-scale));
+}
+.dash-alertbar {
+  padding: calc(8px * var(--dash-scale)) calc(12px * var(--dash-scale));
+}
 
-.t-micro { font-size: calc(10px * var(--dash-scale)); }
-.t-label { font-size: calc(11px * var(--dash-scale)); }
-.t-body  { font-size: calc(12px * var(--dash-scale)); }
-.t-value { font-size: calc(15px * var(--dash-scale)); }
-.t-hero  { font-size: calc(20px * var(--dash-scale)); }
+.t-micro {
+  font-size: calc(10px * var(--dash-scale));
+}
+.t-label {
+  font-size: calc(11px * var(--dash-scale));
+}
+.t-body {
+  font-size: calc(12px * var(--dash-scale));
+}
+.t-value {
+  font-size: calc(15px * var(--dash-scale));
+}
+.t-hero {
+  font-size: calc(20px * var(--dash-scale));
+}
 
 .dash-icon {
   width: calc(14px * var(--dash-scale));
   height: calc(14px * var(--dash-scale));
 }
-.dash-card-head { margin-bottom: calc(6px * var(--dash-scale)); }
-.dash-rows > * + * { margin-top: calc(6px * var(--dash-scale)); }
+.dash-card-head {
+  margin-bottom: calc(6px * var(--dash-scale));
+}
+.dash-rows > * + * {
+  margin-top: calc(6px * var(--dash-scale));
+}
 
 /* 코어가 많으면 한 줄에 하나씩 쌓기엔 너무 길어진다. 두 줄로 접는다.
    단 휴대폰에서는 세로가 넉넉하고 가로가 없으니 한 줄로 둔다. */
@@ -227,18 +284,30 @@ body {
 }
 
 @media (min-width: 640px) {
-  .dash-corelist--split { grid-template-columns: 1fr 1fr; }
+  .dash-corelist--split {
+    grid-template-columns: 1fr 1fr;
+  }
 }
 
 .dash-gauge {
   width: calc(64px * var(--dash-scale));
   height: calc(64px * var(--dash-scale));
 }
-.dash-chart { height: calc(176px * var(--dash-scale)); }
-.dash-spark { height: calc(64px * var(--dash-scale)); }
-.dash-heat  { height: calc(28px * var(--dash-scale)); }
-.dash-loadgrid { gap: calc(4px * var(--dash-scale)); }
-.dash-loadcell { aspect-ratio: 1; }
+.dash-chart {
+  height: calc(176px * var(--dash-scale));
+}
+.dash-spark {
+  height: calc(64px * var(--dash-scale));
+}
+.dash-heat {
+  height: calc(28px * var(--dash-scale));
+}
+.dash-loadgrid {
+  gap: calc(4px * var(--dash-scale));
+}
+.dash-loadcell {
+  aspect-ratio: 1;
+}
 
 /* ---------------------------------------------------------------------------
    툴팁
@@ -251,7 +320,9 @@ body {
    아니라 손가락/마우스로 눌러서 들어간 포커스에는 :focus-visible 이 매칭되지
    않는다. 터치에서 뜨게 하는 게 목적이므로 :focus 여야 한다.
 --------------------------------------------------------------------------- */
-.dash-tip { position: relative; }
+.dash-tip {
+  position: relative;
+}
 
 .dash-tip::after {
   content: attr(data-tip);
@@ -307,10 +378,14 @@ body {
 /* 탭 순서를 72개(격자 48 + 히트맵 24)로 늘리지 않으려고 셀은 tabindex="-1" 이다.
    눌러서 들어간 포커스에 기본 아웃라인까지 그리면 툴팁과 겹쳐 지저분하므로 끈다.
    스크린리더는 탭이 아니라 목록(role=list)으로 훑는다. */
-.dash-tip:focus { outline: none; }
+.dash-tip:focus {
+  outline: none;
+}
 
 @media (prefers-reduced-motion: reduce) {
-  .dash-tip::after { transition: none; }
+  .dash-tip::after {
+    transition: none;
+  }
 }
 
 /* ---------------------------------------------------------------------------
@@ -330,32 +405,77 @@ body {
     padding: 8px;
   }
 
-  .dash-col { gap: 8px; }
-  .dash-subgrid { gap: 8px; }
-  .dash-card { padding: 6px; }
+  .dash-col {
+    gap: 8px;
+  }
+  .dash-subgrid {
+    gap: 8px;
+  }
+  .dash-card {
+    padding: 6px;
+  }
 
-  .dash-head { padding: 5px 12px; }
-  .dash-alertbar { padding: 3px 12px; }
+  .dash-head {
+    padding: 5px 12px;
+  }
+  .dash-alertbar {
+    padding: 3px 12px;
+  }
 
-  .t-micro { font-size: 8px; }
-  .t-label { font-size: 9px; }
-  .t-body  { font-size: 9.5px; }
-  .t-value { font-size: 12px; }
-  .t-hero  { font-size: 15px; }
+  .t-micro {
+    font-size: 8px;
+  }
+  .t-label {
+    font-size: 9px;
+  }
+  .t-body {
+    font-size: 9.5px;
+  }
+  .t-value {
+    font-size: 12px;
+  }
+  .t-hero {
+    font-size: 15px;
+  }
 
-  .dash-icon { width: 12px; height: 12px; }
-  .dash-card-head { margin-bottom: 2px; }
-  .dash-rows > * + * { margin-top: 2px; }
+  .dash-icon {
+    width: 12px;
+    height: 12px;
+  }
+  .dash-card-head {
+    margin-bottom: 2px;
+  }
+  .dash-rows > * + * {
+    margin-top: 2px;
+  }
 
   /* 코어 16개면 두 줄로 접어도 8행이다. 행 높이를 글자 크기까지 붙인다. */
-  .dash-corelist { gap: 1px 8px; }
-  .dash-corelist > li { line-height: 1; }
+  .dash-corelist {
+    gap: 1px 8px;
+  }
+  .dash-corelist > li {
+    line-height: 1;
+  }
 
-  .dash-gauge { width: 36px; height: 36px; }
-  .dash-chart { height: 158px; }
-  .dash-spark { height: 24px; }
-  .dash-heat  { height: 16px; }
-  .dash-loadgrid { gap: 3px; }
+  .dash-gauge {
+    width: 36px;
+    height: 36px;
+  }
+  .dash-chart {
+    height: 158px;
+  }
+  .dash-spark {
+    height: 24px;
+  }
+  .dash-heat {
+    height: 16px;
+  }
+  .dash-loadgrid {
+    gap: 3px;
+  }
   /* 열 폭이 넓어 정사각형을 유지하면 격자만 커진다. 높이를 고정해 납작하게. */
-  .dash-loadcell { aspect-ratio: auto; height: 12px; }
+  .dash-loadcell {
+    aspect-ratio: auto;
+    height: 12px;
+  }
 }

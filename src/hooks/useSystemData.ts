@@ -8,7 +8,16 @@ import { DashboardData, toDashboardData } from '@/utils/dashboardData';
 const MAX_POINTS = 60;
 
 // 이 필드들이 없으면 응답이 /api/system 의 것이 아니거나 심하게 망가진 것이다.
-const REQUIRED_FIELDS = ['cpu', 'memory', 'disk', 'network', 'uptime', 'temperature', 'fan', 'processes'] as const;
+const REQUIRED_FIELDS = [
+  'cpu',
+  'memory',
+  'disk',
+  'network',
+  'uptime',
+  'temperature',
+  'fan',
+  'processes'
+] as const;
 
 export interface DiskIoPoint {
   read: number;
@@ -61,7 +70,7 @@ export function useSystemData(): SystemDataState {
         assertServerData(payload);
 
         const data = toDashboardData(payload);
-        const time = new Date().toLocaleTimeString('ko-KR', {
+        const time = new Date().toLocaleTimeString('en-US', {
           hour: '2-digit',
           minute: '2-digit',
           second: '2-digit',
