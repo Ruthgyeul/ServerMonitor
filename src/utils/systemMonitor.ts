@@ -35,10 +35,10 @@ import { getFirewallInfo, getSshSessions } from '@/utils/collectors/security';
 import { getHistory, getLoad30mAverage, recordSample } from '@/utils/collectors/history';
 import { evaluateAlerts } from '@/utils/collectors/alerts';
 
-// 캐시된 시스템 정보
+// Cached system info
 let cachedData: ServerData | null = null;
 let lastUpdateTime = 0;
-const UPDATE_INTERVAL = 1000; // 1초마다 업데이트
+const UPDATE_INTERVAL = 1000; // update once per second
 
 interface CpuInfo {
   usage: number;
@@ -75,7 +75,7 @@ interface NetworkInfo {
   interfaces: ServerData['network']['interfaces'];
   linkSpeedMbps: number | null;
   bandwidthPercentage: number;
-  // 부팅 이후 기본 인터페이스의 누적 수신/송신 바이트. 월 대역폭 관리에 쓴다.
+  // Cumulative rx/tx bytes on the default interface since boot. Used for monthly bandwidth budgeting.
   totalRxBytes: number;
   totalTxBytes: number;
 }
@@ -135,7 +135,7 @@ async function getMemoryInfo(): Promise<MemoryInfo> {
   const totalKb = field('MemTotal');
   if (!totalKb) throw new Error('MemTotal missing from /proc/meminfo');
 
-  // MemAvailable 이 커널에 없으면(3.14 미만) free + buffers + cached 로 근사한다.
+  // If the kernel lacks MemAvailable (< 3.14), approximate with free + buffers + cached.
   const availableKb =
     field('MemAvailable') ?? (field('MemFree') ?? 0) + (field('Buffers') ?? 0) + (field('Cached') ?? 0);
 
@@ -154,9 +154,9 @@ interface DiskReport extends DiskInfo {
 }
 
 async function getDiskInfo(): Promise<DiskReport> {
-  // -P 는 긴 장치명 때문에 줄이 두 줄로 접히는 것을 막고,
-  // -k 는 1K 블록으로 고정해 "20G"/"1.5T"/"800M" 단위 파싱을 없앤다.
-  // 경로 인자 없이 전체 마운트를 읽어 루트 외 파일시스템도 함께 돌려준다.
+  // -P stops long device names from wrapping a row onto two lines, and -k pins
+  // 1K blocks so we don't have to parse "20G"/"1.5T"/"800M" units.
+  // With no path argument it reads every mount, returning non-root filesystems too.
   const stdout = await run('df -Pk');
   const mounts = parseDf(stdout);
 
@@ -178,7 +178,7 @@ async function getPing(): Promise<number> {
     throw new Error(`invalid PING_HOST: ${host}`);
   }
 
-  // -W 1: 응답이 없을 때 기본 10초를 기다리며 요청 전체를 붙잡는 것을 막는다.
+  // -W 1: stops it from waiting the default 10s and holding up the whole request when there's no reply.
   const stdout = await run(`ping -c 1 -W 1 ${host} || true`);
   const match = stdout.match(/time[=<]\s*([\d.]+)\s*ms/);
   return match ? parseFloat(match[1]) : 0;
@@ -200,20 +200,20 @@ async function getNetworkInfo(warnings: string[], sockets: SocketSummary): Promi
   const previous = prevNetSample;
   prevNetSample = { rx: rxBytes, tx: txBytes, at: now };
 
-  // 이전 샘플과의 실제 경과 시간으로 나눈다. 폴링 간격이 정확히 1초라고
-  // 가정하면 요청이 밀릴 때마다 속도가 부풀려진다.
+  // Divide by the actual elapsed time since the previous sample. Assuming the
+  // polling interval is exactly 1s would inflate the rate whenever requests lag.
   let download = 0;
   let upload = 0;
   if (previous) {
     const elapsedSeconds = (now - previous.at) / 1000;
     if (elapsedSeconds > 0) {
-      // 카운터가 리셋(재부팅/인터페이스 교체)되면 음수가 나오므로 0으로 막는다.
+      // If the counter resets (reboot / interface swap) the result goes negative, so clamp to 0.
       download = Math.max(0, (rxBytes - previous.rx) / 1024 / elapsedSeconds);
       upload = Math.max(0, (txBytes - previous.tx) / 1024 / elapsedSeconds);
     }
   }
 
-  // 에러율은 바이트가 아니라 패킷 대비로 계산해야 의미가 있다.
+  // The error rate is only meaningful against packets, not bytes.
   const rate = (errors: number, packets: number) =>
     packets > 0 ? ((errors / packets) * 100).toFixed(2) : '0.00';
 
@@ -223,7 +223,7 @@ async function getNetworkInfo(warnings: string[], sockets: SocketSummary): Promi
   ]);
 
   const linkSpeedMbps = interfaces.find(entry => entry.isDefault)?.speedMbps ?? null;
-  // 링크 속도(Mbps)를 KB/s 로 바꿔 현재 처리량과 같은 단위로 비교한다.
+  // Convert the link speed (Mbps) to KB/s to compare against current throughput in the same unit.
   const linkCapacityKbps = linkSpeedMbps === null ? null : (linkSpeedMbps * 1000) / 8;
 
   return {
@@ -251,7 +251,7 @@ async function readSensors(): Promise<string> {
   return run('sensors');
 }
 
-// lm-sensors 가 없는 서버(대부분의 VPS/컨테이너)를 위한 sysfs 대체 경로.
+// The sysfs fallback path for servers without lm-sensors (most VPSes/containers).
 async function readThermalZone(): Promise<number | 'N/A'> {
   let entries: string[];
   try {
@@ -290,7 +290,7 @@ async function getCpuTemperature(): Promise<number | 'N/A'> {
         : sensors.match(/cpu_thermal[\s\S]*?temp1:\s*\+?([\d.]+)°C/);
     if (match) return parseFloat(match[1]);
   } catch {
-    // sensors 미설치. 아래 sysfs 경로로 넘어간다.
+    // sensors not installed. Fall through to the sysfs path below.
   }
 
   return readThermalZone();
@@ -329,7 +329,7 @@ async function getTemperature(): Promise<TemperatureInfo> {
   return arm;
 }
 
-// lm-sensors 가 없으면 hwmon 의 fan*_input 을 직접 읽는다.
+// Without lm-sensors, read hwmon's fan*_input directly.
 async function readHwmonFans(): Promise<number[]> {
   let hwmons: string[];
   try {
@@ -361,7 +361,7 @@ async function getFanSpeed(): Promise<FanInfo> {
     };
     if (fans.cpu || fans.case1 || fans.case2) return fans;
   } catch {
-    // sensors 미설치. hwmon 으로 넘어간다.
+    // sensors not installed. Fall through to hwmon.
   }
 
   const [cpu = 0, case1 = 0, case2 = 0] = await readHwmonFans();
@@ -370,14 +370,15 @@ async function getFanSpeed(): Promise<FanInfo> {
 
 // --- Processes / Uptime ------------------------------------------------
 
-// `args`(전체 명령줄) 대신 `comm`(실행 파일명)만 읽는다. 명령줄 인자에는
-// 비밀번호/토큰이 그대로 노출되는 경우가 많은데(예: `mysql -pSECRET`,
-// `--api-key=...`), 이 목록은 API 로도 나가므로 실행 파일명이면 충분하고 안전하다.
-// 파이프라인의 종료 코드는 head 의 것이라 ps 가 실패해도 0 이 된다.
-// 빈 출력을 그대로 넘기면 원인 없이 목록만 비므로 여기서 에러로 올린다.
+// Read only `comm` (the executable name), not `args` (the full command line).
+// Command-line arguments often expose passwords/tokens directly (e.g. `mysql
+// -pSECRET`, `--api-key=...`), and this list also goes out over the API, so the
+// executable name is enough and safe. The pipeline's exit code is head's, so it
+// stays 0 even if ps fails. Passing empty output through would leave the list
+// blank with no cause, so raise an error here.
 async function getProcessesBy(sort: '-pcpu' | '-pmem'): Promise<Process[]> {
   const stdout = await run(`ps -eo pid,pcpu,pmem,stat,comm --sort=${sort} | head -n 21`);
-  const lines = stdout.split('\n').slice(1); // 헤더 제거
+  const lines = stdout.split('\n').slice(1); // drop the header
   if (lines.length === 0) {
     throw new Error('ps returned no rows (does this ps support --sort?)');
   }
@@ -412,9 +413,10 @@ function getProcesses(): Promise<Process[]> {
   return getProcessesBy('-pcpu');
 }
 
-// 전체 프로세스 규모 요약. 상위 목록(top 20)과 달리 시스템 전체를 센다. 상태 한
-// 글자만 읽어(`stat=`) 가볍게, 좀비(Z) 급증 같은 이상 징후를 드러낸다. 스레드
-// 포함 태스크 수는 /proc/loadavg 분모에서 얻는다.
+// Whole-system process summary. Unlike the top list (top 20) it counts the
+// entire system. Reads just one state character (`stat=`) to stay light, and
+// surfaces anomalies like a zombie (Z) spike. The thread-inclusive task count
+// comes from the denominator in /proc/loadavg.
 async function getProcessSummary(): Promise<ProcessSummary> {
   const stdout = await run('ps -eo stat= 2>/dev/null');
   const states = stdout
@@ -439,14 +441,14 @@ async function getProcessSummary(): Promise<ProcessSummary> {
     const match = loadavg.match(/\d+\/(\d+)/);
     if (match) threads = parseInt(match[1], 10);
   } catch {
-    // /proc 없음(리눅스 아님). 스레드 수는 비운다.
+    // no /proc (not Linux). Leave the thread count empty.
   }
 
   return { total: states.length, running, sleeping, zombie, threads };
 }
 
 async function getUptime(): Promise<UptimeInfo> {
-  // `uptime -p` 는 busybox 에 없고 출력이 로케일을 탄다. os.uptime() 이 안전하다.
+  // `uptime -p` is missing on busybox and its output is locale-dependent. os.uptime() is safe.
   const seconds = os.uptime();
   return {
     days: Math.floor(seconds / 86400),
@@ -489,8 +491,8 @@ export async function getSystemInfo(): Promise<ServerData> {
 
   const warnings: string[] = [];
 
-  // 연결 수, 열린 포트, 상위 트래픽 피어는 모두 같은 소켓 목록에서 나온다.
-  // 한 번만 읽어 네트워크/보안 수집기가 나눠 쓴다.
+  // Connection count, open ports, and top traffic peers all come from the same
+  // socket list. Read it once and share it between the network/security collectors.
   const sockets = await collect(
     'network.sockets',
     getSocketSummary,
@@ -498,8 +500,8 @@ export async function getSystemInfo(): Promise<ServerData> {
     warnings
   );
 
-  // Promise.all 이 아니라 개별 fallback 으로 감싼다. 예전에는 수집기 하나만
-  // 실패해도 전체 응답이 0으로 떨어졌다.
+  // Wrap each with its own fallback rather than a bare Promise.all. Previously a
+  // single collector failure dropped the whole response to zeros.
   const [
     cpu,
     memory,
@@ -576,7 +578,7 @@ export async function getSystemInfo(): Promise<ServerData> {
   recordDiskSample(disk.percentage, now);
   const diskHoursToFull = getHoursToFull(now);
 
-  // 창은 방금 넣은 샘플까지 포함해야 하므로 recordSample 뒤에 읽는다.
+  // The window must include the sample we just added, so read it after recordSample.
   const rolling30m = getLoad30mAverage(now);
   const load: LoadInfo = {
     ...loadBase,

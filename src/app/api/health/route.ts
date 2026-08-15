@@ -3,12 +3,13 @@ import { NextResponse } from 'next/server';
 
 import { getLoopHealth } from '@/utils/systemStream';
 
-// 가벼운 헬스체크. /api/system 은 SSH IP·프로세스 목록 같은 무거운 정찰 정보를
-// 전부 수집하므로 컨테이너 orchestration/uptime 프로브에는 과하다. 이 라우트는
-// 수집을 트리거하지 않고 프로세스 생존과 수집 루프의 건강만 즉시 돌려준다.
+// Lightweight health check. /api/system collects heavy reconnaissance (SSH
+// IPs, the process list, ...), which is overkill for a container
+// orchestration/uptime probe. This route triggers no collection and returns
+// process liveness and the collection loop's health immediately.
 //
-// proxy.ts 의 토큰 게이트는 /api/system* 만 매칭하므로 이 경로는 게이트 밖 —
-// 오케스트레이터가 토큰 없이 프로브할 수 있다. 민감 정보는 노출하지 않는다.
+// proxy.ts's token gate only matches /api/system*, so this path is outside it
+// — an orchestrator can probe it without a token. It exposes no sensitive data.
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -16,8 +17,8 @@ export const dynamic = 'force-dynamic';
 export function GET() {
   const loop = getLoopHealth();
 
-  // 루프가 돌고 있는데도 마지막 틱이 너무 오래됐거나 연속 실패가 쌓이면
-  // degraded 로 보고한다(HTTP 는 여전히 200 — 프로브가 프로세스를 죽이지 않도록).
+  // If the loop is running but the last tick is too old, or failures are
+  // piling up, report degraded (HTTP stays 200 so a probe doesn't kill the process).
   const stalled = loop.running && loop.lastTickAgeMs !== null && loop.lastTickAgeMs > 60_000;
   const failing = loop.consecutiveFailures >= 5;
   const status = stalled || failing ? 'degraded' : 'ok';

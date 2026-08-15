@@ -2,20 +2,20 @@ import React from 'react';
 
 import { cn } from '@/lib/utils';
 
-// 대시보드 카드 안에서 반복되는 그래픽 조각들.
-// 치수는 CSS 클래스(.dash-*)가 정하므로, 화면 밀도가 바뀌어도 여기는 그대로다.
+// Graphic pieces reused inside the dashboard cards.
+// Dimensions come from CSS classes (.dash-*), so these stay the same as screen density changes.
 
 interface GaugeProps {
   percentage: number;
   color: string;
   className?: string;
-  // 스크린리더용 라벨. 손수 그린 SVG 는 기본적으로 아무 것도 안 읽히므로,
-  // role="img" 와 함께 준다. 미지정 시 퍼센트만이라도 읽어 준다.
+  // Screen-reader label. A hand-drawn SVG reads nothing by default, so provide
+  // it together with role="img". If unset, at least the percentage is read.
   ariaLabel?: string;
 }
 
-// 크기는 CSS(.dash-gauge)가 정한다. viewBox 로 그리면 화면 밀도에 따라
-// 지름이 바뀌어도 선 두께가 같은 비율로 따라간다.
+// Size comes from CSS (.dash-gauge). Drawing with a viewBox keeps the stroke
+// width in the same proportion even as the diameter changes with screen density.
 const GAUGE_BOX = 36;
 const GAUGE_STROKE = 3.5;
 const GAUGE_RADIUS = GAUGE_BOX / 2 - GAUGE_STROKE / 2 - 1.25;
@@ -82,7 +82,7 @@ interface SparklineProps {
   emptyLabel?: string;
 }
 
-// 축도 눈금도 없는 추세선. 세로 축은 표시된 구간의 최댓값에 맞춰 자동으로 늘어난다.
+// A trend line with no axes or ticks. The vertical axis auto-scales to the max of the shown range.
 export const Sparkline: React.FC<SparklineProps> = ({ series, className, emptyLabel = 'collecting…' }) => {
   const width = 200;
   const height = 34;

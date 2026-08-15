@@ -6,13 +6,13 @@ import { logger } from '@/utils/logger';
 
 const execAsync = promisify(exec);
 
-// `ip`, `sensors`, `ps` 등은 /usr/sbin, /sbin 에 설치되는 경우가 많은데
-// 비-root 사용자로 뜬 systemd/pm2 서비스의 PATH 에는 그 경로가 빠져 있다.
-// 그래서 명령이 "not found" 로 끝나고, 지표가 통째로 0 이 된다.
+// `ip`, `sensors`, `ps`, etc. are often installed in /usr/sbin or /sbin, but a
+// systemd/pm2 service running as a non-root user has those paths missing from
+// its PATH. The command then ends in "not found" and the metric drops to 0.
 export const EXEC_ENV = {
   ...process.env,
   PATH: [process.env.PATH, '/usr/local/sbin', '/usr/sbin', '/sbin'].filter(Boolean).join(':'),
-  LC_ALL: 'C', // 로케일에 따라 소수점이 ','가 되면 parseFloat가 잘라먹는다
+  LC_ALL: 'C', // if the locale makes the decimal separator ',', parseFloat truncates it
   LANG: 'C'
 };
 
@@ -29,7 +29,7 @@ export async function readSys(filePath: string): Promise<string | null> {
   }
 }
 
-// 수집기 하나가 실패해도 나머지 지표는 살려 보낸다.
+// If one collector fails, still return the rest of the metrics.
 export async function collect<T>(
   name: string,
   fn: () => Promise<T>,
@@ -46,9 +46,9 @@ export async function collect<T>(
   }
 }
 
-// 대시보드는 1초마다 폴링한다. `who`, `last`, `nvidia-smi` 처럼 프로세스를
-// 띄우는 수집기까지 매 초 돌리면 측정 대상 서버가 더 바빠지므로,
-// 잘 변하지 않는 값은 TTL 동안 캐시해서 재사용한다.
+// The dashboard polls once a second. Running process-spawning collectors like
+// `who`, `last`, `nvidia-smi` every second would make the monitored server
+// busier, so values that rarely change are cached and reused for a TTL.
 export function withTtl<T>(ttlMs: number, fn: () => Promise<T>): () => Promise<T> {
   let value: T;
   let expiresAt = 0;
@@ -56,7 +56,7 @@ export function withTtl<T>(ttlMs: number, fn: () => Promise<T>): () => Promise<T
 
   return async () => {
     if (expiresAt > Date.now()) return value;
-    // 같은 틱에 여러 수집기가 부르더라도 프로세스는 한 번만 띄운다.
+    // Even if several collectors call within the same tick, spawn the process only once.
     if (inflight) return inflight;
 
     inflight = fn()

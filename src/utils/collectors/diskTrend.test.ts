@@ -5,9 +5,9 @@ import { predictHoursToFull } from '@/utils/collectors/diskTrend';
 const HOUR = 3_600_000;
 
 describe('predictHoursToFull', () => {
-  it('일정하게 차오르면 남은 시간을 추정한다', () => {
+  it('estimates the time left when it fills steadily', () => {
     const now = Date.UTC(2026, 0, 2, 12, 0, 0);
-    // 4시간 동안 80% → 84% (시간당 1%p). 남은 16%p → 16시간.
+    // 80% -> 84% over 4 hours (1%p/hour). 16%p left -> 16 hours.
     const samples = [
       { at: now - 4 * HOUR, percent: 80 },
       { at: now, percent: 84 }
@@ -15,7 +15,7 @@ describe('predictHoursToFull', () => {
     expect(predictHoursToFull(samples, now)).toBe(16);
   });
 
-  it('정체/감소 중이면 예측하지 않는다', () => {
+  it('does not forecast when flat/shrinking', () => {
     const now = Date.UTC(2026, 0, 2, 12, 0, 0);
     expect(
       predictHoursToFull(
@@ -37,12 +37,12 @@ describe('predictHoursToFull', () => {
     ).toBeNull();
   });
 
-  it('샘플이 하나뿐이면 예측할 수 없다', () => {
+  it('cannot forecast with only one sample', () => {
     const now = Date.now();
     expect(predictHoursToFull([{ at: now, percent: 90 }], now)).toBeNull();
   });
 
-  it('이미 가득 찼으면 0을 준다', () => {
+  it('returns 0 when already full', () => {
     const now = Date.UTC(2026, 0, 2, 12, 0, 0);
     const samples = [
       { at: now - 2 * HOUR, percent: 99 },

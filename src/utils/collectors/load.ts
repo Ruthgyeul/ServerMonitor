@@ -4,9 +4,10 @@ import { readFile } from 'fs/promises';
 import { LoadInfo, SwapInfo } from '@/types/system';
 import { round } from '@/utils/collectors/shell';
 
-// /proc/loadavg 는 "0.42 0.38 0.35 2/1234 5678" 꼴이다. 4번째 필드 앞쪽 숫자가
-// 지금 실행 중이거나 실행 대기 중인 커널 엔티티 수 — 부하 평균의 순간값에 해당한다.
-// os.loadavg() 로는 얻을 수 없어 파일을 직접 읽는다.
+// /proc/loadavg looks like "0.42 0.38 0.35 2/1234 5678". The number before the
+// slash in the 4th field is the count of kernel entities running or waiting to
+// run right now — the instantaneous counterpart of the load average.
+// os.loadavg() can't give it, so read the file directly.
 export function parseRunningEntities(contents: string): number | null {
   const match = contents.match(/^\S+\s+\S+\s+\S+\s+(\d+)\/\d+/);
   if (!match) return null;
@@ -18,17 +19,18 @@ async function getRunningEntities(): Promise<number | null> {
   try {
     return parseRunningEntities(await readFile('/proc/loadavg', 'utf-8'));
   } catch {
-    // /proc 가 없는 OS(macOS 등)이거나 읽을 수 없다. 순간값만 비운다.
+    // OS without /proc (macOS, etc.) or unreadable. Leave only the instantaneous value empty.
     return null;
   }
 }
 
-// 30분 이동평균은 뺀 나머지. 호출부가 현재 샘플을 기록한 뒤에 창을 읽어야
-// 방금 값까지 반영되므로, 조립은 systemMonitor 가 맡는다.
+// Everything except the 30-minute moving average. The caller must read the
+// window after recording the current sample so it reflects the latest value,
+// so systemMonitor does the assembly.
 export type LoadAverageBase = Omit<LoadInfo, 'avg30' | 'avg30WindowSeconds'>;
 
 export async function getLoadAverage(): Promise<LoadAverageBase> {
-  // os.loadavg() 는 /proc/loadavg 를 읽는 것과 같지만 파싱이 필요 없다.
+  // os.loadavg() is the same as reading /proc/loadavg but needs no parsing.
   const [avg1, avg5, avg15] = os.loadavg();
   return {
     avg1: round(avg1),
@@ -55,7 +57,7 @@ export async function getSwapInfo(): Promise<SwapInfo> {
   return {
     used: toGb(usedKb),
     total: toGb(totalKb),
-    // 스왑이 없는 서버(총량 0)는 0% 로 둔다. 0/0 은 NaN 이 되어 UI 를 깨뜨린다.
+    // A server with no swap (total 0) stays at 0%. 0/0 would be NaN and break the UI.
     percentage: totalKb > 0 ? round((usedKb / totalKb) * 100, 1) : 0
   };
 }

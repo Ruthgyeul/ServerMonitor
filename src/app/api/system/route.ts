@@ -5,12 +5,13 @@ import { isValidServerData } from '@/utils/validation';
 import { logger } from '@/utils/logger';
 import { jsonResponse } from '@/utils/http';
 
-// 수집기별 실패는 systemMonitor 안에서 각자 fallback 으로 처리되므로,
-// 여기까지 올라온 에러는 진짜 고장이다. 0으로 채운 정상 응답을 돌려주면
-// 대시보드에 "모든 값이 0" 으로만 보이고 원인이 감춰지므로 5xx 로 알린다.
+// Per-collector failures are each handled with a fallback inside systemMonitor,
+// so an error that reaches here is a real fault. Returning a zero-filled "ok"
+// response would just show "everything is 0" on the dashboard and hide the
+// cause, so we surface it as a 5xx instead.
 
 function getCorsHeaders(origin: string | undefined) {
-  // 이 라우트는 GET/OPTIONS 만 구현한다. 쓰지도 않는 메서드/헤더를 광고하지 않는다.
+  // This route only implements GET/OPTIONS. Don't advertise methods/headers it doesn't use.
   return corsHeaders(origin, {
     'Access-Control-Allow-Methods': 'GET, OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type, Authorization',
@@ -24,7 +25,7 @@ export async function GET(request: Request) {
   try {
     const data = await getSystemInfo();
 
-    // 데이터 유효성 검사
+    // Validate the data
     if (!data || !isValidServerData(data)) {
       logger.error('Invalid server data received');
       return new NextResponse(JSON.stringify({ error: 'Invalid server data received' }), {
@@ -33,11 +34,11 @@ export async function GET(request: Request) {
       });
     }
 
-    // 큰 JSON(history + processes)이라 클라이언트가 gzip 을 받으면 압축해 보낸다.
+    // Large JSON (history + processes), so compress it when the client accepts gzip.
     return jsonResponse(request, data, { headers: getCorsHeaders(origin) });
   } catch (error) {
-    // 원인(파일 경로/명령 실패 메시지 등)은 서버 로그에만 남기고, 클라이언트에는
-    // 내부 구조를 드러내지 않는 일반 메시지만 돌려준다.
+    // Keep the cause (file paths / command failure messages) in the server log
+    // only, and return the client a generic message that reveals no internals.
     logger.error('Error fetching system data:', error);
     return new NextResponse(JSON.stringify({ error: 'Failed to collect system data' }), {
       status: 500,
@@ -46,7 +47,7 @@ export async function GET(request: Request) {
   }
 }
 
-// OPTIONS 메서드 핸들링 (CORS preflight 요청 처리)
+// OPTIONS handling (CORS preflight)
 export function OPTIONS(request: Request) {
   const origin = request.headers.get('origin') || undefined;
   return new NextResponse(null, { headers: getCorsHeaders(origin) });

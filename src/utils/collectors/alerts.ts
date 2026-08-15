@@ -6,8 +6,9 @@ import { dispatchAlert } from '@/utils/collectors/notify';
 
 const MAX_ENTRIES = 30;
 
-// 임계값은 환경변수로 덮어쓸 수 있게 한다. 미설정이면 아래 기본값을 쓴다 —
-// 소스를 고치지 않고도 운영자가 호스트 특성에 맞춰 조정할 수 있어야 한다.
+// Thresholds can be overridden by environment variables. Unset uses the
+// defaults below — an operator should be able to tune them to a host's
+// characteristics without editing the source.
 function num(key: string, fallback: number): number {
   const raw = process.env[key];
   if (raw === undefined || raw.trim() === '') return fallback;
@@ -15,8 +16,8 @@ function num(key: string, fallback: number): number {
   return Number.isFinite(value) ? value : fallback;
 }
 
-// 임계값을 넘나드는 값 때문에 로그가 도배되지 않도록, 켜지는 값과 꺼지는 값을
-// 다르게 둔다(히스테리시스).
+// To keep a value hovering around the threshold from flooding the log, the
+// enter value and clear value differ (hysteresis).
 interface Rule {
   key: string;
   level: AlertLevel;
@@ -69,8 +70,9 @@ const RULES: Rule[] = [
   }
 ];
 
-// 임계 상태가 지속될 때 다시 통지할 간격(분). 0(기본)이면 재통지하지 않는다.
-// 화면 로그는 도배하지 않고, 외부 웹훅으로만 재통지한다.
+// How often (minutes) to re-notify while a breach persists. 0 (default)
+// disables re-notification. This never floods the on-screen log — it re-notifies
+// via the external webhook only.
 const RENOTIFY_MS = num('ALERT_RENOTIFY_MINUTES', 0) * 60 * 1000;
 
 const active = new Set<string>();
@@ -79,12 +81,13 @@ let knownSessions: Set<string> | null = null;
 let knownFirewall: FirewallInfo['status'] | null = null;
 let knownIfaceDown: Set<string> | null = null;
 let sequence = 0;
-// 룰별 마지막 외부 통지 시각. 재통지 쿨다운 판단에 쓴다.
+// Per-rule last external-notify time. Used for the re-notify cooldown.
 const lastNotifiedAt = new Map<string, number>();
 
-// --- 디스크 영속화 -------------------------------------------------------
-// 알림 로그는 지금까지 프로세스 메모리에만 있어 재시작하면 사라졌다. history.json
-// 과 같은 방식으로 data/alerts.json 에 남겨, 배포/크래시 후에도 최근 알림이 유지된다.
+// --- Disk persistence ----------------------------------------------------
+// Until now the alert log lived only in process memory and was lost on restart.
+// Persist it to data/alerts.json the same way as history.json, so recent alerts
+// survive a redeploy/crash.
 const DATA_DIR = process.env.DATA_DIR || path.join(/*turbopackIgnore: true*/ process.cwd(), 'data');
 const STORE_FILE = process.env.ALERTS_FILE || path.join(DATA_DIR, 'alerts.json');
 const STORE_VERSION = 1;
@@ -102,11 +105,11 @@ function ensureLoaded(): void {
     const raw = fs.readFileSync(/*turbopackIgnore: true*/ STORE_FILE, 'utf-8');
     const parsed = JSON.parse(raw) as StoreShape;
     if (parsed && parsed.v === STORE_VERSION && Array.isArray(parsed.log)) {
-      // 최신순으로 저장돼 있으므로 그대로 복원하되 상한을 지킨다.
+      // Stored newest-first, so restore as-is but honor the cap.
       for (const entry of parsed.log.slice(0, MAX_ENTRIES)) log.push(entry);
     }
   } catch {
-    // 파일이 없거나(첫 실행) 읽을 수 없으면 빈 상태로 시작한다.
+    // If the file is missing (first run) or unreadable, start empty.
   }
 }
 
@@ -124,7 +127,7 @@ async function writeStore(): Promise<void> {
     await fs.promises.writeFile(tmp, JSON.stringify(payload), 'utf-8');
     await fs.promises.rename(tmp, STORE_FILE);
   } catch {
-    // 디스크 쓰기 실패는 치명적이지 않다. 다음 저장에서 다시 시도한다.
+    // A disk write failure is not fatal. Retry on the next save.
   } finally {
     writing = false;
   }
@@ -139,15 +142,15 @@ function scheduleSave(): void {
   if (typeof saveTimer.unref === 'function') saveTimer.unref();
 }
 
-// 종료 신호에 마지막 상태를 동기로 한 번 더 남긴다. 예약 저장이 아직 안 돌았어도
-// 최근 알림을 잃지 않는다(history.ts 와 같은 방식).
+// On a shutdown signal, write the final state synchronously once more. Even if
+// the scheduled save hasn't run yet, recent alerts aren't lost (same as history.ts).
 function flushSync(): void {
   try {
     const payload: StoreShape = { v: STORE_VERSION, log };
     fs.mkdirSync(DATA_DIR, { recursive: true });
     fs.writeFileSync(STORE_FILE, JSON.stringify(payload), 'utf-8');
   } catch {
-    // 종료 중 실패는 삼킨다.
+    // Swallow failures during shutdown.
   }
 }
 
@@ -160,11 +163,12 @@ function hookExit(): void {
   process.once('beforeExit', () => flushSync());
 }
 
-// --- 로그/통지 -----------------------------------------------------------
+// --- Log / notify --------------------------------------------------------
 
-// firstEvaluation: 프로세스가 막 떠서 처음 평가하는 순간에는, 이미 임계 상태이거나
-// 이미 붙어 있던 SSH/방화벽 상태를 "방금 일어난 일"처럼 외부로 쏟아내지 않는다.
-// 화면 로그에는 남기되(운영자가 현재 상태를 알 수 있게) 웹훅 통지는 건너뛴다.
+// firstEvaluation: at the very first evaluation right after the process starts,
+// an already-breached value or already-attached SSH/firewall state isn't pushed
+// out as if it "just happened". It's still written to the on-screen log (so the
+// operator sees the current state) but the webhook notify is skipped.
 function push(level: AlertLevel, message: string, at: number, notify: boolean): void {
   sequence += 1;
   const entry: AlertEntry = { id: `${at}-${sequence}`, level, message, at: new Date(at).toISOString() };
@@ -183,7 +187,7 @@ export interface AlertInput {
   temperature: TemperatureValue;
   firewall: FirewallInfo['status'];
   sshSessions: SshSession[];
-  // 인터페이스 다운 감지용. 이름과 상태만 있으면 된다(선택적: 구버전 입력 호환).
+  // For interface-down detection. Only the name and state are needed (optional: old-input compatible).
   interfaces?: { name: string; state: 'up' | 'down' | 'unknown' }[];
 }
 
@@ -213,7 +217,7 @@ export function evaluateAlerts(input: AlertInput, at: number = Date.now()): Aler
       lastNotifiedAt.delete(rule.key);
       push('ok', rule.onClear(value), at, !firstEvaluation);
     } else if (active.has(rule.key) && RENOTIFY_MS > 0) {
-      // 임계 상태가 지속되면 재통지(외부 웹훅만, 화면 로그는 도배하지 않는다).
+      // While the breach persists, re-notify (external webhook only, doesn't flood the on-screen log).
       const last = lastNotifiedAt.get(rule.key) ?? 0;
       if (at - last >= RENOTIFY_MS) {
         lastNotifiedAt.set(rule.key, at);
@@ -227,10 +231,11 @@ export function evaluateAlerts(input: AlertInput, at: number = Date.now()): Aler
     }
   }
 
-  // 새로 생긴 SSH 세션만 기록한다. 첫 평가에서는 이미 붙어 있던 세션을
-  // 방금 로그인한 것처럼 쏟아내지 않도록 조용히 기억만 해둔다.
-  // 키는 user@ip 로만 잡는다. `since` 를 넣으면 타임스탬프가 조금만 흔들려도
-  // 같은 세션이 새 로그인처럼 반복 기록되므로(도배) 세션 지속 동안은 한 번만 남긴다.
+  // Record only newly appeared SSH sessions. On the first evaluation, quietly
+  // remember the already-attached sessions instead of dumping them as fresh
+  // logins. The key is user@ip only. Including `since` would make the same
+  // session reprint as a new login whenever the timestamp jitters slightly
+  // (spam), so record it once for the life of the session.
   const sessionKeys = new Set(input.sshSessions.map(s => `${s.user}@${s.ip}`));
   if (knownSessions === null) {
     knownSessions = sessionKeys;
@@ -242,7 +247,7 @@ export function evaluateAlerts(input: AlertInput, at: number = Date.now()): Aler
     knownSessions = sessionKeys;
   }
 
-  // 인터페이스 다운 전이. up→down 은 경고, down→up 은 해제로 남긴다.
+  // Interface-down transitions. up->down is a warning, down->up is a clear.
   if (input.interfaces) {
     const downNow = new Set(input.interfaces.filter(i => i.state === 'down').map(i => i.name));
     if (knownIfaceDown === null) {
@@ -257,7 +262,7 @@ export function evaluateAlerts(input: AlertInput, at: number = Date.now()): Aler
       knownIfaceDown = downNow;
     }
   } else if (knownIfaceDown === null) {
-    // 인터페이스 정보가 아직 없으면 첫 평가 플래그만 소진되지 않도록 빈 집합으로 초기화.
+    // If interface info isn't available yet, initialize to an empty set so the first-evaluation flag isn't left unconsumed.
     knownIfaceDown = new Set();
   }
 

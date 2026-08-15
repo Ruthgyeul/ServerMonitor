@@ -22,20 +22,21 @@ import { NetworkHistoryEntry, ServerData } from '@/types/system';
 import { formatClock, formatRate } from '@/utils/format';
 import { COLORS, statusColor, tempColor } from '@/utils/statusColors';
 
-// 이 페이지는 메인 대시보드(src/app/page.tsx)와 같은 터미널 디자인을 그대로 쓰되,
-// 한 호스트가 아니라 클러스터의 여러 노드를 한 화면에 나란히 띄운다. 예전에는
-// 브라우저가 각 노드의 /api/system 을 직접 폴링했지만, 이제 같은 오리진의
-// /api/cluster 가 서버측에서 노드들을 대신 모아 압축 결과만 내려준다 — 노드 IP 는
-// 클라이언트에 노출되지 않고, 노드마다 CORS 를 열 필요도 없다.
+// This page uses the same terminal design as the main dashboard
+// (src/app/page.tsx) but lays out several cluster nodes side by side instead of
+// one host. It used to poll each node's /api/system directly from the browser;
+// now the same-origin /api/cluster aggregates the nodes server-side and returns
+// only a compact result — node IPs aren't exposed to the client, and there's no
+// need to open CORS per node.
 
-// 매초 갱신한다 — 메인 대시보드의 폴링 주기와 같다.
+// Refresh every second — the same polling cadence as the main dashboard.
 const POLL_INTERVAL_MS = 1000;
-// 스파크라인이 덮는 구간. 노드 하나당 최근 30초.
+// The span the sparkline covers. The last 30 seconds per node.
 const MAX_NETWORK_POINTS = 30;
 
 type NodeResult = { ok: true; data: ServerData } | { ok: false; error: string };
 
-// /api/cluster 가 노드당 내려주는 형태. IP 는 없고 표시용 host 라벨만 있다.
+// The per-node shape /api/cluster returns. No IP, only a display host label.
 interface ClusterNode {
   name: string;
   host: string;
@@ -44,7 +45,7 @@ interface ClusterNode {
 }
 
 export default function ClusterPage() {
-  // null = 아직 첫 응답 전(연결 중), [] = 서버가 노드 없음이라고 확인해 준 상태.
+  // null = before the first response (connecting), [] = the server confirmed there are no nodes.
   const [nodes, setNodes] = useState<ClusterNode[] | null>(null);
   const [networkHistory, setNetworkHistory] = useState<Record<string, NetworkHistoryEntry[]>>({});
   const now = useNow();
@@ -58,13 +59,14 @@ export default function ClusterPage() {
         received = payload.nodes ?? [];
       }
     } catch {
-      // 집계 엔드포인트에 못 닿으면 마지막 값을 유지한다(화면을 비우지 않는다).
+      // If the aggregation endpoint is unreachable, keep the last value (don't blank the screen).
       return;
     }
     setNodes(received);
 
-    // 스파크라인에 쓸 순간 처리량을 노드별 히스토리에 이어 붙인다. 넣을 때 잘라
-    // 두므로 별도 정리 타이머가 필요 없다. IP 가 없어 이름을 키로 쓴다.
+    // Append the instantaneous throughput for the sparkline to each node's
+    // history. Trimming on insert means no separate cleanup timer is needed.
+    // There's no IP, so the name is used as the key.
     const time = new Date().toLocaleTimeString('en-US', {
       hour: '2-digit',
       minute: '2-digit',
@@ -121,9 +123,9 @@ export default function ClusterPage() {
   );
 }
 
-// --- 상단 크롬 / 헤더 ------------------------------------------------------
+// --- Top chrome / header ---------------------------------------------------
 
-// 메인 대시보드와 똑같은 터미널 창 크롬. 경로만 클러스터 쪽으로 바꾼다.
+// The same terminal-window chrome as the main dashboard. Only the path changes to the cluster one.
 const TerminalTitleBar: React.FC = () => (
   <div className="term-titlebar">
     <div className="flex shrink-0 items-center gap-[7px]">
@@ -158,7 +160,7 @@ const ClusterHeader: React.FC<ClusterHeaderProps> = ({ online, total, now }) => 
         <div className="h-[7px] w-[7px] shrink-0 animate-[pulseDot_2s_ease-in-out_infinite] rounded-full bg-green-400" />
       </div>
 
-      {/* 마운트 전에는 시각을 그리지 않는다(하이드레이션 불일치 방지). */}
+      {/* Don't render the time before mount (avoids a hydration mismatch). */}
       <span className="t-body order-1 whitespace-nowrap font-mono text-gray-300 md:order-3">
         {now === null ? ' ' : formatClock(new Date(now))}
       </span>
@@ -192,7 +194,7 @@ const EmptyCluster: React.FC = () => (
   </div>
 );
 
-// --- 노드 카드 -------------------------------------------------------------
+// --- Node card -------------------------------------------------------------
 
 interface ServerCardProps {
   node: ClusterNode;
@@ -202,8 +204,8 @@ interface ServerCardProps {
 const ServerCard: React.FC<ServerCardProps> = ({ node, history }) => {
   const { result } = node;
 
-  // 연결 실패면 그 이유를 보여 준다. 메인 대시보드가 마지막 값을 유지하듯 여기도
-  // 프레임은 늘 그린다.
+  // On a connection failure, show the reason. Like the main dashboard keeping
+  // its last value, the frame is always drawn here too.
   if (!result.ok) {
     return (
       <ServerShell name={node.name} host={node.host} status="offline">
@@ -215,9 +217,9 @@ const ServerCard: React.FC<ServerCardProps> = ({ node, history }) => {
   const { cpu, memory, disk, network, uptime, fan } = result.data;
   const toGb = (mb: number) => (mb / 1024).toFixed(1);
 
-  // 팬은 값이 잡히는 첫 커넥터를 쓴다(메인보드마다 위치가 다르다).
+  // For fan, use the first connector that has a value (the position varies by motherboard).
   const rpm = [fan.cpu, fan.case1, fan.case2].find(value => value > 0) ?? 0;
-  // cpu.temperature 는 아키텍처와 무관하게 채워지는 대표 CPU 온도다.
+  // cpu.temperature is the representative CPU temperature, filled regardless of architecture.
   const temperature = cpu.temperature;
   const topProcess = result.data.processes.find(process => process.cpu > 0 || process.memory > 0);
 
@@ -291,7 +293,7 @@ const STATUS_COLOR: Record<ServerStatus, string> = {
   connecting: '#8b93a7'
 };
 
-// 노드 카드의 공통 껍데기 — 메인 대시보드의 Card 와 같은 결(보더/배경/헤더)이다.
+// The shared shell of a node card — the same look (border/background/header) as the main dashboard's Card.
 const ServerShell: React.FC<{
   name: string;
   host: string;
@@ -320,7 +322,7 @@ const ServerShell: React.FC<{
   </section>
 );
 
-// --- 카드 안 조각 ----------------------------------------------------------
+// --- Pieces inside the card ------------------------------------------------
 
 interface MiniGaugeProps {
   icon: LucideIcon;
@@ -330,7 +332,7 @@ interface MiniGaugeProps {
   caption: string;
 }
 
-// 메인 대시보드 GaugeRow 의 게이지 타일을, 카드 안에 3개 나란히 넣도록 압축한 판.
+// A compact version of the main dashboard's GaugeRow gauge tile, to fit three side by side in a card.
 const MiniGauge: React.FC<MiniGaugeProps> = ({ icon: Icon, iconColor, label, percentage, caption }) => {
   const color = statusColor(percentage);
 
@@ -362,7 +364,7 @@ const InfoItem: React.FC<{ icon: LucideIcon; color: string; value: string }> = (
   </span>
 );
 
-// --- 표기 헬퍼 -------------------------------------------------------------
+// --- Formatting helpers ----------------------------------------------------
 
 function formatUptime(uptime: ServerData['uptime']): string {
   const { days, hours, minutes } = uptime;
@@ -371,8 +373,8 @@ function formatUptime(uptime: ServerData['uptime']): string {
   return `${minutes}m`;
 }
 
-// `comm` 은 대개 실행 파일명뿐이지만, 경로/인자가 섞여 들어오는 노드도 있어 첫 토큰의
-// 파일명만 남긴다. 좁은 칸에 이름이 넘치지 않게 하기 위한 표기용 정리다.
+// `comm` is usually just the executable name, but some nodes mix in a
+// path/args, so keep only the basename of the first token. A display-only tidy-up to keep the name from overflowing a narrow cell.
 function shortProcessName(name: string): string {
   return name.split(' ')[0].split('/').pop() ?? name;
 }
