@@ -1,7 +1,6 @@
-import { NextResponse } from 'next/server';
-
 import { ServerData } from '@/types/system';
 import { ClusterServer, getClusterHost, getClusterServers, getClusterUrl } from '@/config/clusterConfig';
+import { jsonResponse } from '@/utils/http';
 
 // 클러스터 뷰는 지금까지 브라우저에서 각 노드의 /api/system 을 직접 폴링했다.
 // 그래서 (a) 모든 노드가 대시보드 오리진을 CORS 로 허용해야 하고, (b) 노드 IP 가
@@ -59,11 +58,13 @@ async function fetchNode(server: ClusterServer): Promise<ClusterNode> {
   }
 }
 
-export async function GET() {
+export async function GET(request: Request) {
   const servers = getClusterServers();
   const nodes = await Promise.all(servers.map(fetchNode));
 
-  return NextResponse.json(
+  // 노드 전체 데이터를 모은 큰 페이로드라 gzip 을 받으면 압축해 보낸다.
+  return jsonResponse(
+    request,
     { nodes, timestamp: new Date().toISOString() },
     { headers: { 'Cache-Control': 'no-store' } }
   );
