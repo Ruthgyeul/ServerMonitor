@@ -22,7 +22,10 @@ export const Gauge: React.FC<GaugeProps> = ({ percentage, color, className }) =>
   const filled = Math.max(0, Math.min(100, percentage));
 
   return (
-    <svg viewBox={`0 0 ${GAUGE_BOX} ${GAUGE_BOX}`} className={cn('dash-gauge shrink-0 -rotate-90', className)}>
+    <svg
+      viewBox={`0 0 ${GAUGE_BOX} ${GAUGE_BOX}`}
+      className={cn('dash-gauge shrink-0 -rotate-90', className)}
+    >
       <circle
         cx={GAUGE_BOX / 2}
         cy={GAUGE_BOX / 2}

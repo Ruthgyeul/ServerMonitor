@@ -14,60 +14,60 @@ export const runtime = 'nodejs';
 const KEEPALIVE_MS = 15000;
 
 export async function GET(request: Request) {
-    const origin = request.headers.get('origin') || undefined;
-    const encoder = new TextEncoder();
+  const origin = request.headers.get('origin') || undefined;
+  const encoder = new TextEncoder();
 
-    let unsubscribe: () => void = () => {};
-    let keepAlive: ReturnType<typeof setInterval> | null = null;
+  let unsubscribe: () => void = () => {};
+  let keepAlive: ReturnType<typeof setInterval> | null = null;
 
-    const stream = new ReadableStream({
-        start(controller) {
-            const push = (chunk: string) => {
-                try {
-                    controller.enqueue(encoder.encode(chunk));
-                } catch {
-                    // 컨트롤러가 이미 닫힘(클라이언트 종료). 정리는 abort/cancel 이 맡는다.
-                }
-            };
-
-            const send = (data: ServerData) => push(`data: ${JSON.stringify(data)}\n\n`);
-
-            unsubscribe = subscribe(send);
-
-            // ": " 로 시작하는 줄은 SSE 코멘트라 클라이언트가 무시한다. 연결 유지용.
-            keepAlive = setInterval(() => push(': ping\n\n'), KEEPALIVE_MS);
-
-            const cleanup = () => {
-                unsubscribe();
-                if (keepAlive) {
-                    clearInterval(keepAlive);
-                    keepAlive = null;
-                }
-                try {
-                    controller.close();
-                } catch {
-                    // 이미 닫힌 경우 무시.
-                }
-            };
-
-            request.signal.addEventListener('abort', cleanup);
-        },
-        cancel() {
-            unsubscribe();
-            if (keepAlive) {
-                clearInterval(keepAlive);
-                keepAlive = null;
-            }
+  const stream = new ReadableStream({
+    start(controller) {
+      const push = (chunk: string) => {
+        try {
+          controller.enqueue(encoder.encode(chunk));
+        } catch {
+          // 컨트롤러가 이미 닫힘(클라이언트 종료). 정리는 abort/cancel 이 맡는다.
         }
-    });
+      };
 
-    const headers = corsHeaders(origin, {
-        'Content-Type': 'text/event-stream; charset=utf-8',
-        'Cache-Control': 'no-cache, no-transform',
-        Connection: 'keep-alive',
-        // nginx 리버스 프록시가 응답을 버퍼링해 실시간성이 깨지는 것을 막는다.
-        'X-Accel-Buffering': 'no'
-    });
+      const send = (data: ServerData) => push(`data: ${JSON.stringify(data)}\n\n`);
 
-    return new Response(stream, { headers });
+      unsubscribe = subscribe(send);
+
+      // ": " 로 시작하는 줄은 SSE 코멘트라 클라이언트가 무시한다. 연결 유지용.
+      keepAlive = setInterval(() => push(': ping\n\n'), KEEPALIVE_MS);
+
+      const cleanup = () => {
+        unsubscribe();
+        if (keepAlive) {
+          clearInterval(keepAlive);
+          keepAlive = null;
+        }
+        try {
+          controller.close();
+        } catch {
+          // 이미 닫힌 경우 무시.
+        }
+      };
+
+      request.signal.addEventListener('abort', cleanup);
+    },
+    cancel() {
+      unsubscribe();
+      if (keepAlive) {
+        clearInterval(keepAlive);
+        keepAlive = null;
+      }
+    }
+  });
+
+  const headers = corsHeaders(origin, {
+    'Content-Type': 'text/event-stream; charset=utf-8',
+    'Cache-Control': 'no-cache, no-transform',
+    Connection: 'keep-alive',
+    // nginx 리버스 프록시가 응답을 버퍼링해 실시간성이 깨지는 것을 막는다.
+    'X-Accel-Buffering': 'no'
+  });
+
+  return new Response(stream, { headers });
 }

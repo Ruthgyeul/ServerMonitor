@@ -193,7 +193,8 @@ const TerminalTitleBar: React.FC<{ data: DashboardData }> = ({ data }) => {
 type HeaderProps = Omit<DashboardProps, 'networkHistory' | 'diskIoHistory'>;
 
 const Header: React.FC<HeaderProps> = ({ data, connected, lastUpdate, now }) => {
-  const secondsAgo = now !== null && lastUpdate !== null ? Math.max(0, Math.round((now - lastUpdate) / 1000)) : 0;
+  const secondsAgo =
+    now !== null && lastUpdate !== null ? Math.max(0, Math.round((now - lastUpdate) / 1000)) : 0;
 
   return (
     <header className="dash-head sticky top-0 z-10 flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-gray-700 bg-gray-800/95 backdrop-blur">
@@ -270,7 +271,14 @@ interface GaugeTileProps {
 }
 
 // 시안에서는 게이지 네 개가 각각 독립된 카드다.
-const GaugeCard: React.FC<GaugeTileProps> = ({ icon: Icon, iconColor, label, percentage, caption, detail }) => {
+const GaugeCard: React.FC<GaugeTileProps> = ({
+  icon: Icon,
+  iconColor,
+  label,
+  percentage,
+  caption,
+  detail
+}) => {
   const color = percentage === null ? COLORS.muted : statusColor(percentage);
 
   return (
@@ -420,7 +428,11 @@ const LoadCard: React.FC<{ data: DashboardData }> = ({ data }) => {
           </span>
         </span>
       </div>
-      <div className="dash-loadgrid grid grid-cols-12" role="list" aria-label="Load average, one cell per hour over the last 48 hours">
+      <div
+        className="dash-loadgrid grid grid-cols-12"
+        role="list"
+        aria-label="Load average, one cell per hour over the last 48 hours"
+      >
         {cells.map((cell, index) => {
           const label =
             cell?.avg1 != null ? `${formatShortDateTime(cell.at)} · load ${cell.avg1.toFixed(2)}` : 'no data';
@@ -469,7 +481,10 @@ const CoresCard: React.FC<{ data: DashboardData }> = ({ data }) => {
                 px 로 고정하면 큰 화면에서 숫자가 칸을 넘어 서로 붙는다. */}
             <span className="t-micro w-[3ch] shrink-0 text-gray-500">C{index}</span>
             <div className="h-1.5 min-w-0 flex-1 overflow-hidden rounded bg-gray-900">
-              <div className="h-full rounded" style={{ width: `${usage}%`, background: statusColor(usage) }} />
+              <div
+                className="h-full rounded"
+                style={{ width: `${usage}%`, background: statusColor(usage) }}
+              />
             </div>
             <span className="t-micro w-[4ch] shrink-0 text-right text-gray-400">{usage.toFixed(0)}%</span>
           </li>
@@ -538,7 +553,8 @@ const CpuDayCard: React.FC<{ data: DashboardData }> = ({ data }) => (
         >
           {data.history.cpuHourly.map(sample => {
             const hour = `${new Date(sample.at).getHours()}:00`;
-            const label = sample.usage === null ? `${hour} — no data` : `${hour} — ${sample.usage.toFixed(0)}%`;
+            const label =
+              sample.usage === null ? `${hour} — no data` : `${hour} — ${sample.usage.toFixed(0)}%`;
             return (
               <div
                 key={sample.at}
@@ -601,33 +617,35 @@ const DiskIoCard: React.FC<{ data: DashboardData; history: DiskIoPoint[] }> = ({
   const io = formatMbPair(data.diskIO.read, data.diskIO.write);
 
   return (
-  <Card
-    icon={HardDriveDownload}
-    color="#38bdf8"
-    title="DISK I/O"
-    right={
-      <span className="t-micro shrink-0 whitespace-nowrap font-mono">
-        <span className="text-blue-400">R {io.read}</span>{' '}
-        <span className="text-pink-400">W {io.write}</span>{' '}
-        <span className="text-gray-500">{io.unit}</span>
-      </span>
-    }
-  >
-    <div className="dash-spark">
-      <Sparkline
-        series={[
-          { key: 'read', values: history.map(point => point.read), color: '#60a5fa' },
-          { key: 'write', values: history.map(point => point.write), color: '#f472b6' }
-        ]}
-      />
-    </div>
-  </Card>
+    <Card
+      icon={HardDriveDownload}
+      color="#38bdf8"
+      title="DISK I/O"
+      right={
+        <span className="t-micro shrink-0 whitespace-nowrap font-mono">
+          <span className="text-blue-400">R {io.read}</span>{' '}
+          <span className="text-pink-400">W {io.write}</span> <span className="text-gray-500">{io.unit}</span>
+        </span>
+      }
+    >
+      <div className="dash-spark">
+        <Sparkline
+          series={[
+            { key: 'read', values: history.map(point => point.read), color: '#60a5fa' },
+            { key: 'write', values: history.map(point => point.write), color: '#f472b6' }
+          ]}
+        />
+      </div>
+    </Card>
   );
 };
 
 // --- 네트워크 --------------------------------------------------------------
 
-const NetworkCard: React.FC<{ data: DashboardData; history: NetworkHistoryEntry[] }> = ({ data, history }) => (
+const NetworkCard: React.FC<{ data: DashboardData; history: NetworkHistoryEntry[] }> = ({
+  data,
+  history
+}) => (
   <Card
     icon={Network}
     color="#22d3ee"
@@ -693,7 +711,9 @@ const InterfacesCard: React.FC<{ data: DashboardData }> = ({ data }) => {
             <span className="min-w-0 truncate text-gray-400">
               {entry.name} <span className="text-gray-500">{entry.ip ?? '—'}</span>
             </span>
-            <span className={cn('shrink-0 font-mono', entry.state === 'up' ? 'text-green-400' : 'text-gray-500')}>
+            <span
+              className={cn('shrink-0 font-mono', entry.state === 'up' ? 'text-green-400' : 'text-gray-500')}
+            >
               {entry.state !== 'up'
                 ? entry.state
                 : entry.speedMbps === null
@@ -746,7 +766,9 @@ const AlertsCard: React.FC<{ data: DashboardData; now: number | null }> = ({ dat
           <span className="truncate" style={{ color: ALERT_LEVEL_COLORS[alert.level] ?? '#9ca3af' }}>
             {alert.message}
           </span>
-          <span className="shrink-0 text-gray-500">{now === null ? '' : formatRelativeTime(alert.at, now)}</span>
+          <span className="shrink-0 text-gray-500">
+            {now === null ? '' : formatRelativeTime(alert.at, now)}
+          </span>
         </li>
       ))}
     </ul>
@@ -798,7 +820,9 @@ const SshCard: React.FC<{ data: DashboardData; now: number | null }> = ({ data, 
           <span className="min-w-0 truncate text-gray-400">
             {session.user}@{session.ip}
           </span>
-          <span className="shrink-0 text-gray-500">{now === null ? '' : formatRelativeTime(session.since, now)}</span>
+          <span className="shrink-0 text-gray-500">
+            {now === null ? '' : formatRelativeTime(session.since, now)}
+          </span>
         </li>
       ))}
     </ul>
@@ -824,7 +848,8 @@ const TrafficCard: React.FC<{ data: DashboardData }> = ({ data }) => (
 
 const FirewallCard: React.FC<{ data: DashboardData }> = ({ data }) => {
   const { firewall } = data.security;
-  const color = firewall.status === 'active' ? '#4ade80' : firewall.status === 'inactive' ? '#f87171' : '#9ca3af';
+  const color =
+    firewall.status === 'active' ? '#4ade80' : firewall.status === 'inactive' ? '#f87171' : '#9ca3af';
 
   return (
     <Card

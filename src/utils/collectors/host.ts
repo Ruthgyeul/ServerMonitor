@@ -35,7 +35,10 @@ const readRebootReason = withTtl(5 * 60 * 1000, async (): Promise<string | null>
     return null; // last 미설치(busybox 등) 또는 wtmp 권한 없음
   }
 
-  const lines = output.split('\n').map(line => line.trim()).filter(Boolean);
+  const lines = output
+    .split('\n')
+    .map(line => line.trim())
+    .filter(Boolean);
   const rebootIndex = lines.findIndex(line => line.startsWith('reboot'));
   if (rebootIndex === -1) return null;
 

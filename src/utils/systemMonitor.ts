@@ -213,7 +213,8 @@ async function getNetworkInfo(warnings: string[], sockets: SocketSummary): Promi
   }
 
   // 에러율은 바이트가 아니라 패킷 대비로 계산해야 의미가 있다.
-  const rate = (errors: number, packets: number) => (packets > 0 ? ((errors / packets) * 100).toFixed(2) : '0.00');
+  const rate = (errors: number, packets: number) =>
+    packets > 0 ? ((errors / packets) * 100).toFixed(2) : '0.00';
 
   const [ping, interfaces] = await Promise.all([
     collect('network.ping', getPing, 0, warnings),
@@ -415,7 +416,10 @@ function getProcesses(): Promise<Process[]> {
 // 포함 태스크 수는 /proc/loadavg 분모에서 얻는다.
 async function getProcessSummary(): Promise<ProcessSummary> {
   const stdout = await run('ps -eo stat= 2>/dev/null');
-  const states = stdout.split('\n').map(line => line.trim()).filter(Boolean);
+  const states = stdout
+    .split('\n')
+    .map(line => line.trim())
+    .filter(Boolean);
   if (states.length === 0) throw new Error('ps returned no process states');
 
   let running = 0;
@@ -452,10 +456,7 @@ async function getUptime(): Promise<UptimeInfo> {
 
 // --- Security ----------------------------------------------------------
 
-async function getSecurityInfo(
-  peers: Map<string, number>,
-  warnings: string[]
-): Promise<SecurityInfo> {
+async function getSecurityInfo(peers: Map<string, number>, warnings: string[]): Promise<SecurityInfo> {
   const [firewall, sshSessions, topTraffic] = await Promise.all([
     collect(
       'security.firewall',
@@ -515,62 +516,57 @@ export async function getSystemInfo(): Promise<ServerData> {
     topProcessesByMemory,
     battery
   ] = await Promise.all([
-      getCpuInfo(warnings),
-      collect('memory', getMemoryInfo, { used: 0, total: 0, percentage: 0 }, warnings),
-      collect('disk', getDiskInfo, { used: 0, total: 0, percentage: 0, mounts: [] as DiskMount[] }, warnings),
-      collect(
-        'network',
-        () => getNetworkInfo(warnings, sockets),
-        {
-          download: 0,
-          upload: 0,
-          ping: 0,
-          errorRates: { rx: '0.00', tx: '0.00' },
-          connections: 0,
-          listeningPorts: 0,
-          interfaces: [],
-          linkSpeedMbps: null,
-          bandwidthPercentage: 0,
-          totalRxBytes: 0,
-          totalTxBytes: 0
-        },
-        warnings
-      ),
-      collect('temperature', getTemperature, emptyTemperature(), warnings),
-      collect('fan', getFanSpeed, { cpu: 0, case1: 0, case2: 0 }, warnings),
-      collect<Process[]>('processes', getProcesses, [], warnings),
-      collect('uptime', getUptime, { days: 0, hours: 0, minutes: 0 }, warnings),
-      collect(
-        'host',
-        getHostInfo,
-        {
-          hostname: os.hostname(),
-          os: `${os.type()} ${os.release()}`,
-          kernel: os.release(),
-          arch: os.arch(),
-          bootTime: new Date(Date.now() - os.uptime() * 1000).toISOString(),
-          rebootReason: null,
-          virtualization: null
-        },
-        warnings
-      ),
-      collect('swap', getSwapInfo, { used: 0, total: 0, percentage: 0 }, warnings),
-      collect('diskIO', getDiskIo, { read: 0, write: 0 }, warnings),
-      collect(
-        'gpu',
-        getGpuInfo,
-        { name: null, usage: 'N/A' as const, temperature: 'N/A' as const },
-        warnings
-      ),
-      collect<ProcessSummary>(
-        'processSummary',
-        getProcessSummary,
-        { total: 0, running: 0, sleeping: 0, zombie: 0, threads: null },
-        warnings
-      ),
-      collect<Process[]>('processesByMemory', () => getProcessesBy('-pmem'), [], warnings),
-      collect<BatteryInfo | null>('battery', getBatteryInfo, null, warnings)
-    ]);
+    getCpuInfo(warnings),
+    collect('memory', getMemoryInfo, { used: 0, total: 0, percentage: 0 }, warnings),
+    collect('disk', getDiskInfo, { used: 0, total: 0, percentage: 0, mounts: [] as DiskMount[] }, warnings),
+    collect(
+      'network',
+      () => getNetworkInfo(warnings, sockets),
+      {
+        download: 0,
+        upload: 0,
+        ping: 0,
+        errorRates: { rx: '0.00', tx: '0.00' },
+        connections: 0,
+        listeningPorts: 0,
+        interfaces: [],
+        linkSpeedMbps: null,
+        bandwidthPercentage: 0,
+        totalRxBytes: 0,
+        totalTxBytes: 0
+      },
+      warnings
+    ),
+    collect('temperature', getTemperature, emptyTemperature(), warnings),
+    collect('fan', getFanSpeed, { cpu: 0, case1: 0, case2: 0 }, warnings),
+    collect<Process[]>('processes', getProcesses, [], warnings),
+    collect('uptime', getUptime, { days: 0, hours: 0, minutes: 0 }, warnings),
+    collect(
+      'host',
+      getHostInfo,
+      {
+        hostname: os.hostname(),
+        os: `${os.type()} ${os.release()}`,
+        kernel: os.release(),
+        arch: os.arch(),
+        bootTime: new Date(Date.now() - os.uptime() * 1000).toISOString(),
+        rebootReason: null,
+        virtualization: null
+      },
+      warnings
+    ),
+    collect('swap', getSwapInfo, { used: 0, total: 0, percentage: 0 }, warnings),
+    collect('diskIO', getDiskIo, { read: 0, write: 0 }, warnings),
+    collect('gpu', getGpuInfo, { name: null, usage: 'N/A' as const, temperature: 'N/A' as const }, warnings),
+    collect<ProcessSummary>(
+      'processSummary',
+      getProcessSummary,
+      { total: 0, running: 0, sleeping: 0, zombie: 0, threads: null },
+      warnings
+    ),
+    collect<Process[]>('processesByMemory', () => getProcessesBy('-pmem'), [], warnings),
+    collect<BatteryInfo | null>('battery', getBatteryInfo, null, warnings)
+  ]);
 
   const loadBase = await getLoadAverage();
   const security = await getSecurityInfo(sockets.peers, warnings);

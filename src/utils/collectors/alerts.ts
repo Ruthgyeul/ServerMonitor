@@ -263,12 +263,7 @@ export function evaluateAlerts(input: AlertInput, at: number = Date.now()): Aler
 
   if (input.firewall !== 'unknown' && input.firewall !== knownFirewall) {
     if (knownFirewall !== null) {
-      push(
-        input.firewall === 'active' ? 'ok' : 'critical',
-        `Firewall ${input.firewall}`,
-        at,
-        true
-      );
+      push(input.firewall === 'active' ? 'ok' : 'critical', `Firewall ${input.firewall}`, at, true);
     }
     knownFirewall = input.firewall;
   }

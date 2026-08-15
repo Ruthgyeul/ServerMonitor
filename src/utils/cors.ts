@@ -15,7 +15,10 @@ export function isAllowedOrigin(origin: string | undefined): origin is string {
 // B 오리진에 그대로 재사용해, 허용되지 않은 오리진이 읽어 가거나 그 반대가 된다.
 // 오리진이 허용되지 않아 ACAO 를 안 붙이는 경우에도 응답은 Origin 에 의존하므로
 // 항상 붙인다.
-export function corsHeaders(origin: string | undefined, base: Record<string, string> = {}): Record<string, string> {
+export function corsHeaders(
+  origin: string | undefined,
+  base: Record<string, string> = {}
+): Record<string, string> {
   const headers: Record<string, string> = { ...base, Vary: 'Origin' };
   if (isAllowedOrigin(origin)) {
     headers['Access-Control-Allow-Origin'] = origin;

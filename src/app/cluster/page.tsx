@@ -33,9 +33,7 @@ const POLL_INTERVAL_MS = 1000;
 // 스파크라인이 덮는 구간. 노드 하나당 최근 30초.
 const MAX_NETWORK_POINTS = 30;
 
-type NodeResult =
-  | { ok: true; data: ServerData }
-  | { ok: false; error: string };
+type NodeResult = { ok: true; data: ServerData } | { ok: false; error: string };
 
 // /api/cluster 가 노드당 내려주는 형태. IP 는 없고 표시용 host 라벨만 있다.
 interface ClusterNode {
@@ -226,7 +224,13 @@ const ServerCard: React.FC<ServerCardProps> = ({ node, history }) => {
   return (
     <ServerShell name={node.name} host={node.host} status="online">
       <div className="grid grid-cols-3 gap-2">
-        <MiniGauge icon={Cpu} iconColor="#60a5fa" label="CPU" percentage={cpu.usage} caption={`${cpu.cores}c`} />
+        <MiniGauge
+          icon={Cpu}
+          iconColor="#60a5fa"
+          label="CPU"
+          percentage={cpu.usage}
+          caption={`${cpu.cores}c`}
+        />
         <MiniGauge
           icon={MemoryStick}
           iconColor="#4ade80"
@@ -345,7 +349,11 @@ const MiniGauge: React.FC<MiniGaugeProps> = ({ icon: Icon, iconColor, label, per
   );
 };
 
-const InfoItem: React.FC<{ icon: LucideIcon; color: string; value: string }> = ({ icon: Icon, color, value }) => (
+const InfoItem: React.FC<{ icon: LucideIcon; color: string; value: string }> = ({
+  icon: Icon,
+  color,
+  value
+}) => (
   <span className="flex items-center gap-1">
     <Icon className="dash-icon shrink-0" color={color} strokeWidth={2} />
     <span className="truncate font-mono" style={{ color }}>
@@ -353,7 +361,6 @@ const InfoItem: React.FC<{ icon: LucideIcon; color: string; value: string }> = (
     </span>
   </span>
 );
-
 
 // --- 표기 헬퍼 -------------------------------------------------------------
 

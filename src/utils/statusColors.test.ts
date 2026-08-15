@@ -17,8 +17,7 @@ function hue([r, g, b]: [number, number, number]): number {
   if (max === min) return 0;
 
   const span = max - min;
-  const raw =
-    max === r ? ((g - b) / span) % 6 : max === g ? (b - r) / span + 2 : (r - g) / span + 4;
+  const raw = max === r ? ((g - b) / span) % 6 : max === g ? (b - r) / span + 2 : (r - g) / span + 4;
   return (raw * 60 + 360) % 360;
 }
 

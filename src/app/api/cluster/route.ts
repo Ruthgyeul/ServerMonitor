@@ -1,12 +1,7 @@
 import { NextResponse } from 'next/server';
 
 import { ServerData } from '@/types/system';
-import {
-  ClusterServer,
-  getClusterHost,
-  getClusterServers,
-  getClusterUrl
-} from '@/config/clusterConfig';
+import { ClusterServer, getClusterHost, getClusterServers, getClusterUrl } from '@/config/clusterConfig';
 
 // 클러스터 뷰는 지금까지 브라우저에서 각 노드의 /api/system 을 직접 폴링했다.
 // 그래서 (a) 모든 노드가 대시보드 오리진을 CORS 로 허용해야 하고, (b) 노드 IP 가
@@ -21,9 +16,7 @@ export const dynamic = 'force-dynamic';
 // 응답 없는 노드가 집계 전체를 붙잡지 않도록 노드별로 끊는다.
 const FETCH_TIMEOUT_MS = 5000;
 
-type NodeResult =
-  | { ok: true; data: ServerData }
-  | { ok: false; error: string };
+type NodeResult = { ok: true; data: ServerData } | { ok: false; error: string };
 
 export interface ClusterNode {
   name: string;
@@ -45,12 +38,22 @@ async function fetchNode(server: ClusterServer): Promise<ClusterNode> {
   try {
     const response = await fetch(url, { signal: controller.signal, headers, cache: 'no-store' });
     if (!response.ok) {
-      return { name: server.name, host: getClusterHost(server), type: server.type, result: { ok: false, error: `HTTP ${response.status}` } };
+      return {
+        name: server.name,
+        host: getClusterHost(server),
+        type: server.type,
+        result: { ok: false, error: `HTTP ${response.status}` }
+      };
     }
     const data = (await response.json()) as ServerData;
     return { name: server.name, host: getClusterHost(server), type: server.type, result: { ok: true, data } };
   } catch {
-    return { name: server.name, host: getClusterHost(server), type: server.type, result: { ok: false, error: 'Connection failed' } };
+    return {
+      name: server.name,
+      host: getClusterHost(server),
+      type: server.type,
+      result: { ok: false, error: 'Connection failed' }
+    };
   } finally {
     clearTimeout(timeout);
   }

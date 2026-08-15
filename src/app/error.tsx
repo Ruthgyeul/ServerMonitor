@@ -3,10 +3,7 @@
 import { useEffect } from 'react';
 import { FallbackProps } from 'react-error-boundary';
 
-export default function Error({
-  error,
-  resetErrorBoundary,
-}: FallbackProps) {
+export default function Error({ error, resetErrorBoundary }: FallbackProps) {
   useEffect(() => {
     console.error(error);
   }, [error]);
@@ -24,4 +21,4 @@ export default function Error({
       </div>
     </div>
   );
-} 
+}
