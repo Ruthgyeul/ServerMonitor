@@ -17,8 +17,8 @@ import {
   TemperatureValue
 } from '@/types/system';
 
-// API 의 새 필드들은 전부 optional 이다(구버전 노드 호환). 컴포넌트마다
-// `?? 0` 을 흩뿌리는 대신, 화면에 넘기기 직전 한 번만 기본값을 채운다.
+// The API's new fields are all optional (old-node compatible). Rather than
+// scattering `?? 0` across every component, fill defaults once, right before handing off to the screen.
 export interface DashboardData {
   cpu: {
     usage: number;

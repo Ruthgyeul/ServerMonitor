@@ -1,13 +1,13 @@
 import type { NextConfig } from 'next';
 
-// 보안 응답 헤더. 대시보드는 임베드될 이유가 없으므로 클릭재킹을 원천 차단하고,
-// MIME 스니핑/플러그인 주입/base 태그 하이재킹을 막는다.
+// Security response headers. The dashboard has no reason to be embedded, so
+// clickjacking is blocked outright, along with MIME sniffing / plugin injection / base-tag hijacking.
 //
-// CSP 는 script/style/connect 를 제약하지 않는 최소 구성이다. 그 세 가지를
-// 좁히면 Next 의 인라인 부트스트랩, Tailwind/Recharts 의 인라인 스타일,
-// /cluster 의 교차-노드 fetch 가 깨지기 쉬워, 여기서는 확실히 안전한
-// frame-ancestors/object-src/base-uri 만 강제한다. 더 엄격한 CSP 가 필요하면
-// 배포 환경에 맞춰 script-src/connect-src 를 추가하라(README 참고).
+// The CSP is a minimal setup that doesn't restrict script/style/connect.
+// Narrowing those three easily breaks Next's inline bootstrap, the inline
+// styles of Tailwind/Recharts, and /cluster's cross-node fetch, so here we only
+// enforce the definitely-safe frame-ancestors/object-src/base-uri. If a
+// stricter CSP is needed, add script-src/connect-src to match the deployment (see README).
 const securityHeaders = [
   {
     key: 'Content-Security-Policy',
@@ -16,12 +16,12 @@ const securityHeaders = [
   { key: 'X-Frame-Options', value: 'DENY' },
   { key: 'X-Content-Type-Options', value: 'nosniff' },
   { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
-  // 이 대시보드는 카메라/마이크/위치정보 등을 쓰지 않는다. 전부 끈다.
+  // This dashboard uses no camera/microphone/geolocation, etc. Turn them all off.
   {
     key: 'Permissions-Policy',
     value: 'camera=(), microphone=(), geolocation=(), interest-cohort=()'
   },
-  // HTTPS 응답에서만 브라우저가 적용한다. HTTP 로 서빙 중이면 무시되므로 안전.
+  // Browsers apply this only on HTTPS responses. It's ignored when served over HTTP, so it's safe.
   {
     key: 'Strict-Transport-Security',
     value: 'max-age=31536000; includeSubDomains'
@@ -29,8 +29,8 @@ const securityHeaders = [
 ];
 
 const nextConfig: NextConfig = {
-  poweredByHeader: false, // "X-Powered-By: Next.js" 로 스택/버전을 광고하지 않는다
-  // Docker 이미지를 최소화한다: 서버 실행에 필요한 파일만 .next/standalone 로 추린다.
+  poweredByHeader: false, // don't advertise the stack/version via "X-Powered-By: Next.js"
+  // Minimize the Docker image: only the files needed to run the server are pruned into .next/standalone.
   output: 'standalone',
   async headers() {
     return [

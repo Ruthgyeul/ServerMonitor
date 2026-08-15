@@ -5,8 +5,8 @@ import React, { useRef, useState } from 'react';
 import { NetworkHistoryEntry } from '@/types/system';
 import { rateUnit } from '@/utils/format';
 
-// 시안의 차트를 그대로 옮긴 SVG. 고정 캔버스(1024x600) 안에서는 recharts 의
-// 반응형 측정이 필요 없고, viewBox 만으로 정확히 같은 비율이 나온다.
+// An SVG that reproduces the design's chart. Inside a fixed canvas (1024x600)
+// recharts' responsive measurement isn't needed, and a viewBox alone gives exactly the same proportions.
 const WIDTH = 700;
 const HEIGHT = 260;
 const PAD_LEFT = 50;
@@ -15,13 +15,13 @@ const PAD_TOP = 8;
 const PAD_BOTTOM = 16;
 const TICK_COUNT = 4;
 
-// 크로스헤어 말풍선. 모노스페이스라 글자폭이 일정해서 폭을 글자 수로 계산할 수 있다.
+// The crosshair tooltip. Monospace has a constant glyph width, so the width can be computed from the character count.
 const READOUT_FONT = 9;
 const READOUT_CHAR_W = READOUT_FONT * 0.62;
 const READOUT_PAD = 6;
 const READOUT_LINE = 11;
 
-// 축 최댓값을 1/2/5 배수로 올려 눈금 숫자가 지저분해지지 않게 한다.
+// Round the axis max up to a 1/2/5 multiple so the tick numbers don't get messy.
 function niceMax(value: number): number {
   if (value <= 0) return 4;
   const raw = value / TICK_COUNT;
@@ -39,8 +39,8 @@ export const NetworkAreaChart: React.FC<NetworkAreaChartProps> = ({ data }) => {
   const svgRef = useRef<SVGSVGElement>(null);
   const [active, setActive] = useState<number | null>(null);
 
-  // 화면 좌표 → viewBox 좌표. preserveAspectRatio 로 레터박스가 생길 수 있어
-  // 폭 비율로 어림하지 않고 CTM 역행렬을 쓴다.
+  // Screen coords -> viewBox coords. preserveAspectRatio can produce letterboxing,
+  // so use the inverse CTM rather than estimating from the width ratio.
   const indexAt = (clientX: number, clientY: number, count: number): number | null => {
     const svg = svgRef.current;
     const ctm = svg?.getScreenCTM();
@@ -90,8 +90,8 @@ export const NetworkAreaChart: React.FC<NetworkAreaChartProps> = ({ data }) => {
       height="100%"
       viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
       preserveAspectRatio="xMidYMid meet"
-      // 마우스는 hover, 터치는 탭/드래그로 같은 지점을 집는다. touch-action 은
-      // 건드리지 않는다 — 차트 위에서 페이지 세로 스크롤이 막히면 손해가 더 크다.
+      // Mouse picks a point via hover, touch via tap/drag. Don't touch
+      // touch-action — blocking vertical page scroll over the chart would cost more.
       onPointerMove={event => setActive(indexAt(event.clientX, event.clientY, data.length))}
       onPointerDown={event => setActive(indexAt(event.clientX, event.clientY, data.length))}
       onPointerLeave={() => setActive(null)}
@@ -166,7 +166,7 @@ export const NetworkAreaChart: React.FC<NetworkAreaChartProps> = ({ data }) => {
           ];
           const boxWidth = Math.max(...lines.map(text => text.length)) * READOUT_CHAR_W + READOUT_PAD * 2;
           const boxHeight = lines.length * READOUT_LINE + READOUT_PAD * 2 - 3;
-          // 오른쪽 끝에서는 말풍선이 축 밖으로 나가므로 커서 왼쪽에 붙인다.
+          // At the right edge the tooltip would run off the axis, so pin it to the left of the cursor.
           const flip = cx + 10 + boxWidth > PAD_LEFT + innerWidth;
           const boxX = flip ? cx - 10 - boxWidth : cx + 10;
 

@@ -3,10 +3,10 @@ import { readFile } from 'fs/promises';
 import { DiskIoInfo } from '@/types/system';
 import { round } from '@/utils/collectors/shell';
 
-// 파티션(sda1, nvme0n1p2)까지 세면 같은 I/O 를 두 번 더하게 된다. 전체 디스크만 센다.
+// Counting partitions (sda1, nvme0n1p2) too would double-count the same I/O. Count whole disks only.
 const WHOLE_DISK_PATTERN = /^(sd[a-z]+|nvme\d+n\d+|mmcblk\d+|vd[a-z]+|xvd[a-z]+|hd[a-z]+)$/;
 
-// /proc/diskstats 의 섹터는 장치의 물리 섹터 크기와 무관하게 항상 512 바이트다.
+// A /proc/diskstats sector is always 512 bytes, regardless of the device's physical sector size.
 const SECTOR_BYTES = 512;
 
 let previousSample: { read: number; write: number; at: number } | null = null;
@@ -44,7 +44,7 @@ export async function getDiskIo(): Promise<DiskIoInfo> {
   const previous = previousSample;
   previousSample = { ...totals, at: now };
 
-  // 첫 샘플은 비교 대상이 없다. 누적 바이트를 그대로 쓰면 수백 MB/s 로 보인다.
+  // The first sample has nothing to compare against. Using cumulative bytes as-is would look like hundreds of MB/s.
   if (!previous) return { read: 0, write: 0 };
 
   const elapsedSeconds = (now - previous.at) / 1000;

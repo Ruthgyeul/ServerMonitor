@@ -7,7 +7,7 @@ import { DashboardData, toDashboardData } from '@/utils/dashboardData';
 
 const MAX_POINTS = 60;
 
-// 이 필드들이 없으면 응답이 /api/system 의 것이 아니거나 심하게 망가진 것이다.
+// Without these fields the response either isn't from /api/system or is badly broken.
 const REQUIRED_FIELDS = [
   'cpu',
   'memory',
@@ -56,8 +56,8 @@ export function useSystemData(): SystemDataState {
   });
 
   useEffect(() => {
-    // 폴링(초당 GET) 대신 연결 하나를 열어두고 서버가 밀어주는 SSE 를 구독한다.
-    // EventSource 는 연결이 끊기면 자동으로 재연결하므로 별도 백오프가 필요 없다.
+    // Instead of polling (a GET per second), keep one connection open and
+    // subscribe to the SSE the server pushes. EventSource auto-reconnects on drop, so no separate backoff is needed.
     const source = new EventSource('/api/system/stream');
 
     source.onopen = () => {
@@ -94,15 +94,15 @@ export function useSystemData(): SystemDataState {
       } catch (error) {
         const message = error instanceof Error ? error.message : 'Unknown error occurred';
         console.error('Error parsing system data:', error);
-        // 파싱 실패는 연결 문제가 아니다. 마지막 값은 유지하고 에러만 표시한다.
+        // A parse failure isn't a connection problem. Keep the last value and just show the error.
         setState(previous => ({ ...previous, error: message }));
       }
     };
 
     source.onerror = () => {
-      // 연결이 끊긴 상태. 마지막으로 받은 값은 지우지 않는다. 잠깐 끊겼다고
-      // 화면이 비어버리면 벽에 걸어둔 대시보드로서는 오히려 정보가 줄어든다.
-      // EventSource 가 알아서 재연결을 시도하며, 성공하면 onopen 이 복구한다.
+      // Disconnected. Don't clear the last received value. If the screen went
+      // blank on a brief drop, a wall-mounted dashboard would actually show less
+      // info. EventSource retries reconnection on its own, and onopen restores things on success.
       setState(previous => ({ ...previous, connected: false }));
     };
 

@@ -1,4 +1,4 @@
-// 대시보드 전체가 같은 기준으로 색을 고르도록 한곳에 모아둔다.
+// Centralized so the whole dashboard picks colors by the same rules.
 
 export const COLORS = {
   ok: '#10b981',
@@ -23,30 +23,32 @@ export function tempColor(temperature: number | 'N/A'): string {
   return '#f87171';
 }
 
-// 로드는 코어 수로 나눠야 의미가 있다. 4코어의 4.0 과 1코어의 4.0 은 다르다.
-// 격자와 같은 그라데이션을 쓰되, 글자라서 어두운 쪽 끝은 잘라 가독성을 지킨다.
+// Load is only meaningful divided by the core count. 4.0 on 4 cores differs
+// from 4.0 on 1 core. Uses the same gradient as the grid, but clips the dark
+// end for text readability.
 export function loadColor(load: number, cores: number): string {
   const perCore = cores > 0 ? load / cores : load;
   return heatColor(Math.max(TEXT_HEAT_FLOOR, perCore));
 }
 
-// 부하가 낮으면 초록, 높아질수록 노랑 → 주황 → 빨강으로 이어지는 연속 그라데이션.
-// 단계식으로 끊으면 0.59 와 0.61 이 완전히 다른 색이 되어 추세가 안 보인다.
+// A continuous gradient: green when load is low, then yellow -> orange -> red
+// as it rises. Stepping it discretely would make 0.59 and 0.61 completely
+// different colors and hide the trend.
 const HEAT_STOPS: ReadonlyArray<readonly [number, readonly [number, number, number]]> = [
-  [0, [14, 68, 41]], // 거의 유휴 — 어두운 초록
+  [0, [14, 68, 41]], // nearly idle — dark green
   [0.35, [38, 166, 65]],
   [0.6, [250, 204, 21]],
   [0.8, [249, 115, 22]],
-  [1, [239, 68, 68]] // 포화 — 빨강
+  [1, [239, 68, 68]] // saturated — red
 ];
 
-// 어두운 배경 위 글자에는 그라데이션의 제일 어두운 초록이 너무 안 읽힌다.
+// The gradient's darkest green is too hard to read as text on a dark background.
 const TEXT_HEAT_FLOOR = 0.35;
 
-// ratio 는 0(유휴)~1(포화)로 정규화된 부하. 범위를 벗어나면 양 끝 색으로 고정된다.
+// ratio is load normalized to 0 (idle)-1 (saturated). Out of range clamps to the end colors.
 export function heatColor(ratio: number): string {
-  // NaN 은 clamp 를 그대로 통과해 rgb(NaN,…) 가 되므로 먼저 막는다. ±Infinity 는
-  // 막지 않는다 — 아래 clamp 가 양 끝(유휴/포화)으로 접어 주는 편이 자연스럽다.
+  // NaN passes clamp through and becomes rgb(NaN,...), so block it first. Don't
+  // block +/-Infinity — the clamp below folding it to an end (idle/saturated) is more natural.
   if (Number.isNaN(ratio)) return COLORS.muted;
   const t = Math.min(1, Math.max(0, ratio));
   for (let i = 1; i < HEAT_STOPS.length; i++) {
@@ -61,7 +63,7 @@ export function heatColor(ratio: number): string {
   return COLORS.critical;
 }
 
-// 값이 없는 구간은 배경색으로 비워 둔다. 코어당 로드 1.0 을 포화로 본다.
+// Sections with no value are left empty in the background color. Treats a per-core load of 1.0 as saturation.
 export function loadCellColor(load: number | null, cores: number): string {
   if (load === null) return COLORS.empty;
   const perCore = cores > 0 ? load / cores : load;

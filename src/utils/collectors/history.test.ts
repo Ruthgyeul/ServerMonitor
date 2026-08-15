@@ -4,8 +4,8 @@ import { join } from 'path';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-// history 는 모듈 스코프에 버킷을 들고 있어서 테스트마다 새로 불러와야 한다.
-// 저장 파일도 테스트별 임시 디렉터리로 돌려 서로 간섭하지 않게 한다.
+// history holds its buckets in module scope, so it must be reimported per test.
+// The store file is also given a per-test temp directory so they don't interfere.
 async function freshHistory() {
   vi.resetModules();
   const dir = mkdtempSync(join(tmpdir(), 'history-test-'));
@@ -28,7 +28,7 @@ describe('load history buckets', () => {
     delete process.env.HISTORY_FILE;
   });
 
-  it('48시간을 1시간 버킷 48칸으로 돌려준다', async () => {
+  it('returns 48 hours as 48 one-hour buckets', async () => {
     const { recordSample, getHistory } = await freshHistory();
     const now = Date.UTC(2026, 0, 2, 12, 0, 0);
 
@@ -36,12 +36,12 @@ describe('load history buckets', () => {
     const { load } = getHistory(now);
 
     expect(load).toHaveLength(48);
-    // 가장 오래된 칸과 최신 칸이 정확히 47시간 떨어져 있어야 48시간을 덮는다.
+    // The oldest and newest cells must be exactly 47 hours apart to cover 48 hours.
     const span = new Date(load.at(-1)!.at).getTime() - new Date(load[0].at).getTime();
     expect(span).toBe(47 * HOUR);
   });
 
-  it('같은 시간대의 샘플은 평균으로 합쳐진다', async () => {
+  it('samples in the same hour are merged into an average', async () => {
     const { recordSample, getHistory } = await freshHistory();
     const now = Date.UTC(2026, 0, 2, 12, 0, 0);
 
@@ -51,7 +51,7 @@ describe('load history buckets', () => {
     expect(getHistory(now).load.at(-1)!.avg1).toBe(3);
   });
 
-  it('서버가 꺼져 있던 구간은 null 로 남는다', async () => {
+  it('leaves null for the stretch the server was down', async () => {
     const { recordSample, getHistory } = await freshHistory();
     const now = Date.UTC(2026, 0, 2, 12, 0, 0);
 
@@ -59,35 +59,35 @@ describe('load history buckets', () => {
     recordSample(0, 1, now);
 
     const { load } = getHistory(now);
-    // 최신 칸과 3시간 전 칸에만 값이 있고 그 사이는 비어 있다.
+    // Only the newest cell and the cell 3 hours ago have values; the gap is empty.
     expect(load.at(-1)!.avg1).toBe(1);
     expect(load.at(-2)!.avg1).toBeNull();
     expect(load.at(-4)!.avg1).toBe(1);
   });
 
-  it('표시 창(48h) 밖이라도 7일 안의 데이터는 보관한다', async () => {
+  it('retains data within 7 days even outside the display window (48h)', async () => {
     const first = await freshHistory();
-    // prune 은 마지막 샘플 시각 기준으로 자르므로 실제 시계에 맞춘다.
+    // prune trims relative to the last sample time, so align to the real clock.
     const now = Math.floor(Date.now() / HOUR) * HOUR;
 
-    // 48시간 표시 창보다는 오래됐지만 7일 보관 창 안이다.
+    // Older than the 48-hour display window, but inside the 7-day retention window.
     first.recordSample(0, 7, now - 100 * HOUR);
     first.recordSample(0, 1, now);
 
     process.emit('SIGTERM');
     const saved = JSON.parse(readFileSync(first.file, 'utf-8'));
     const keys = saved.loadBuckets.map((row: [number, number, number]) => row[0]);
-    // 100시간 전 버킷이 디스크에 남아 있어야 한다(prune 되지 않았다).
+    // The bucket from 100 hours ago must remain on disk (not pruned).
     expect(keys).toContain(now - 100 * HOUR);
-    // 그래프는 예전처럼 48칸만 그린다 — 오래된 데이터는 보관만 되고 표시되지 않는다.
+    // The graph still draws only 48 cells — old data is retained but not displayed.
     expect(first.getHistory(now).load).toHaveLength(48);
   });
 
-  it('7일보다 오래된 버킷은 버린다', async () => {
+  it('drops buckets older than 7 days', async () => {
     const first = await freshHistory();
     const now = Math.floor(Date.now() / HOUR) * HOUR;
 
-    first.recordSample(0, 9, now - 200 * HOUR); // 7일(168h) 밖
+    first.recordSample(0, 9, now - 200 * HOUR); // outside 7 days (168h)
     first.recordSample(0, 1, now);
 
     process.emit('SIGTERM');
@@ -96,19 +96,19 @@ describe('load history buckets', () => {
     expect(keys).not.toContain(now - 200 * HOUR);
   });
 
-  it('재시작해도 디스크에서 복구된다', async () => {
+  it('recovers from disk across a restart', async () => {
     const first = await freshHistory();
-    // 복구는 실제 시계 기준으로 오래된 버킷을 버린다. 고정 과거 시각을 쓰면
-    // 저장한 버킷이 곧바로 "48시간 밖" 으로 판정되므로 지금 시각에 맞춘다.
+    // Recovery drops buckets old relative to the real clock. Using a fixed past
+    // time would immediately judge the stored bucket as "outside 48 hours", so align to now.
     const now = Math.floor(Date.now() / HOUR) * HOUR;
     first.recordSample(0, 2.5, now);
 
-    // 예약 저장을 기다리지 않고 종료 경로와 같은 동기 저장을 태운다.
+    // Trigger the same synchronous save as the shutdown path instead of waiting for the scheduled save.
     process.emit('SIGTERM');
     const saved = JSON.parse(readFileSync(first.file, 'utf-8'));
     expect(saved.loadBuckets.length).toBeGreaterThan(0);
 
-    // 같은 파일을 가리키는 새 모듈 인스턴스가 값을 다시 읽어야 한다.
+    // A new module instance pointing at the same file must re-read the values.
     vi.resetModules();
     process.env.DATA_DIR = first.dir;
     process.env.HISTORY_FILE = first.file;
@@ -116,7 +116,7 @@ describe('load history buckets', () => {
     expect(second.getHistory(now).load.at(-1)!.avg1).toBe(2.5);
   });
 
-  it('저장 포맷 버전이 다르면 통째로 무시한다', async () => {
+  it('ignores the whole store when the format version differs', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'history-test-'));
     const file = join(dir, 'history.json');
     writeFileSync(file, JSON.stringify({ v: 99, loadBuckets: [[0, 5, 1]], cpuBuckets: [] }));
@@ -130,7 +130,7 @@ describe('load history buckets', () => {
     expect(load.every(sample => sample.avg1 === null)).toBe(true);
   });
 
-  it('깨진 파일에도 죽지 않고 빈 상태로 뜬다', async () => {
+  it('starts empty without crashing on a corrupt file', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'history-test-'));
     const file = join(dir, 'history.json');
     writeFileSync(file, '{ this is not json');
@@ -145,12 +145,12 @@ describe('load history buckets', () => {
 });
 
 describe('getLoad30mAverage', () => {
-  it('샘플이 없으면 값이 없다고 알린다', async () => {
+  it('reports no value when there are no samples', async () => {
     const { getLoad30mAverage } = await freshHistory();
     expect(getLoad30mAverage(Date.now())).toEqual({ value: null, windowSeconds: 0 });
   });
 
-  it('창 안의 샘플을 평균낸다', async () => {
+  it('averages the samples inside the window', async () => {
     const { recordSample, getLoad30mAverage } = await freshHistory();
     const now = Date.UTC(2026, 0, 2, 12, 0, 0);
 
@@ -160,18 +160,18 @@ describe('getLoad30mAverage', () => {
     expect(getLoad30mAverage(now).value).toBe(2);
   });
 
-  it('창이 덜 찼으면 덮은 구간을 초로 알려준다', async () => {
+  it('reports the covered span in seconds when the window is not full', async () => {
     const { recordSample, getLoad30mAverage } = await freshHistory();
     const now = Date.UTC(2026, 0, 2, 12, 0, 0);
 
     recordSample(0, 1, now - 90_000);
     recordSample(0, 1, now);
 
-    // 분으로 반올림하면 시작 직후 "0분 평균" 이 되어버린다.
+    // Rounding to minutes would read "0-minute average" right after start.
     expect(getLoad30mAverage(now).windowSeconds).toBe(90);
   });
 
-  it('30분보다 오래된 샘플은 평균에서 빠진다', async () => {
+  it('excludes samples older than 30 minutes from the average', async () => {
     const { recordSample, getLoad30mAverage } = await freshHistory();
     const now = Date.UTC(2026, 0, 2, 12, 0, 0);
 
@@ -183,7 +183,7 @@ describe('getLoad30mAverage', () => {
     expect(rolling.windowSeconds).toBe(0);
   });
 
-  it('창 길이는 30분에서 멈춘다', async () => {
+  it('caps the window length at 30 minutes', async () => {
     const { recordSample, getLoad30mAverage } = await freshHistory();
     const now = Date.UTC(2026, 0, 2, 12, 0, 0);
 

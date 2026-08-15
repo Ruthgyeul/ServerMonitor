@@ -4,29 +4,30 @@ import path from 'path';
 import { CpuHourSample, HistoryInfo, LoadSample } from '@/types/system';
 import { round } from '@/utils/collectors/shell';
 
-// 히스토리 버킷은 프로세스 메모리에 두되, 디스크에도 영속화한다. 그래야
-// 배포(git pull) 후 재시작이나 크래시로 서버가 다시 떠도 그래프가 리셋되지
-// 않는다. 저장 파일은 gitignore 된 data 디렉터리에 있어 pull/build 가 건드리지
-// 않는다.
+// History buckets live in process memory but are also persisted to disk, so a
+// restart after a deploy (git pull) or a crash doesn't reset the graphs. The
+// store file lives in the gitignored data directory, so pull/build don't touch
+// it.
 //
-// 보관과 표시를 분리한다. 버킷은 1시간 단위로 7일치(168칸)를 남기지만(prune·
-// 디스크 복구의 창), 그래프는 예전 그대로 로드 48시간·CPU 24시간만 그린다.
-// getHistory 가 표시 창만큼만 잘라 돌려주므로, 데이터는 7일치 쌓여도 화면은
-// 바뀌지 않는다.
+// Retention and display are separated. Buckets keep 7 days at 1-hour
+// granularity (168 cells) — the window for pruning/disk recovery — but the
+// graphs still draw only 48h of load and 24h of CPU as before. getHistory slices
+// to just the display window, so the screen doesn't change even as 7 days of
+// data accumulate.
 const LOAD_BUCKET_MS = 60 * 60 * 1000;
 const HOUR_BUCKET_MS = 60 * 60 * 1000;
 
-// 보관(prune·디스크 복구)의 창 — 두 버킷 모두 7일치를 남긴다.
+// The retention (prune / disk recovery) window — both buckets keep 7 days.
 const RETENTION_HOURS = 7 * 24;
 const LOAD_RETENTION = RETENTION_HOURS;
 const CPU_RETENTION = RETENTION_HOURS;
 
-// 그래프에 실제로 그리는 창 — 예전과 동일하다.
-const LOAD_DISPLAY = 48; // 48시간
-const CPU_DISPLAY = 24; // 24시간
+// The window actually drawn on the graphs — unchanged from before.
+const LOAD_DISPLAY = 48; // 48 hours
+const CPU_DISPLAY = 24; // 24 hours
 
-// 디스크에 너무 자주 쓰지 않도록 최소 저장 간격을 둔다. 버킷은 작아서(수십 개)
-// 손실되는 최악의 구간도 이 간격만큼뿐이다.
+// A minimum save interval keeps disk writes from being too frequent. The
+// buckets are small (a few dozen), so the worst-case data loss is just this interval.
 const SAVE_INTERVAL_MS = 30 * 1000;
 
 // process.cwd() resolves to the project root at runtime; without this ignore,
@@ -44,10 +45,11 @@ interface Bucket {
 const loadBuckets = new Map<number, Bucket>();
 const cpuBuckets = new Map<number, Bucket>();
 
-// --- 30분 이동평균 -------------------------------------------------------
-// 커널이 주는 부하 평균은 1/5/15분뿐이라, 30분은 매 샘플을 짧은 창에 담아 직접
-// 낸다. 1초 간격(유휴 시 15초)이라 창에 최대 1800개가 들어간다 — 메모리 부담이
-// 없고, 버킷과 달리 디스크에 남기지 않는다(재시작하면 다시 차오른다).
+// --- 30-minute moving average --------------------------------------------
+// The kernel only gives 1/5/15-minute load averages, so we compute the 30-minute
+// one ourselves by keeping each sample in a short window. At a 1s interval (15s
+// when idle) the window holds at most 1800 entries — no memory burden — and,
+// unlike the buckets, it isn't persisted (it refills after a restart).
 const ROLLING_WINDOW_MS = 30 * 60 * 1000;
 
 interface Sample {
@@ -59,12 +61,13 @@ const recentLoad: Sample[] = [];
 
 export interface RollingAverage {
   value: number | null;
-  // 실제로 덮은 구간(초). 창이 덜 찼는지 호출부가 알 수 있어야 한다.
-  // 분으로 주면 시작 직후 "0분 평균" 이 되어버려 초로 준다.
+  // The span actually covered (seconds). The caller must be able to tell if the
+  // window is only partly filled. Reporting minutes would read "0-minute average"
+  // right after start, so it's given in seconds.
   windowSeconds: number;
 }
 
-// 창 밖으로 나간 샘플을 앞에서 덜어낸다. 시간순으로 들어오므로 앞쪽만 보면 된다.
+// Trim samples that fell out of the window from the front. They arrive in time order, so only the front needs checking.
 function pruneRecent(now: number): void {
   const oldest = now - ROLLING_WINDOW_MS;
   let drop = 0;
@@ -100,7 +103,7 @@ function prune(buckets: Map<number, Bucket>, oldestKey: number): void {
   }
 }
 
-// --- 영속화 --------------------------------------------------------------
+// --- Persistence ---------------------------------------------------------
 
 type SerializedBucket = [key: number, sum: number, count: number];
 interface StoreShape {
@@ -119,7 +122,7 @@ function hydrate(buckets: Map<number, Bucket>, rows: unknown, bucketMs: number, 
   for (const row of rows) {
     if (!Array.isArray(row) || row.length !== 3) continue;
     const [key, sum, cnt] = row;
-    // 손상/오래된 버킷은 조용히 버린다. 화면에 "데이터 없음" 으로 보일 뿐이다.
+    // Silently drop corrupt/stale buckets. They just show as "no data" on screen.
     if (typeof key !== 'number' || typeof sum !== 'number' || typeof cnt !== 'number') continue;
     if (!Number.isFinite(key) || cnt <= 0 || key < oldest) continue;
     buckets.set(key, { sum, count: cnt });
@@ -128,8 +131,8 @@ function hydrate(buckets: Map<number, Bucket>, rows: unknown, bucketMs: number, 
 
 let loaded = false;
 
-// 최초 접근 시 한 번만 디스크에서 읽어들인다. top-level await 를 피하려고
-// 동기 읽기를 쓴다(파일이 작아 부담 없다).
+// Read from disk once on first access. Uses a synchronous read to avoid a
+// top-level await (the file is small, so it's fine).
 function ensureLoaded(): void {
   if (loaded) return;
   loaded = true;
@@ -141,7 +144,7 @@ function ensureLoaded(): void {
       hydrate(cpuBuckets, parsed.cpuBuckets, HOUR_BUCKET_MS, CPU_RETENTION);
     }
   } catch {
-    // 파일이 없거나(첫 실행) 읽을 수 없으면 빈 상태로 시작한다.
+    // If the file is missing (first run) or unreadable, start empty.
   }
 }
 
@@ -160,18 +163,18 @@ async function writeStore(): Promise<void> {
   };
   try {
     await fs.promises.mkdir(DATA_DIR, { recursive: true });
-    // 임시 파일에 쓰고 rename 해서, 쓰다 만 파일이 남지 않게(원자적 교체) 한다.
+    // Write to a temp file and rename so no half-written file remains (atomic replace).
     const tmp = `${STORE_FILE}.tmp`;
     await fs.promises.writeFile(tmp, JSON.stringify(payload), 'utf-8');
     await fs.promises.rename(tmp, STORE_FILE);
   } catch {
-    // 디스크 쓰기 실패는 치명적이지 않다. 다음 저장에서 다시 시도한다.
+    // A disk write failure is not fatal. Retry on the next save.
   } finally {
     writing = false;
   }
 }
 
-// 매 샘플마다 쓰지 않고, 최소 간격을 두어 예약한다.
+// Rather than writing every sample, schedule with a minimum interval.
 function scheduleSave(): void {
   if (saveTimer) return;
   const elapsed = Date.now() - lastSaveAt;
@@ -180,12 +183,12 @@ function scheduleSave(): void {
     saveTimer = null;
     void writeStore();
   }, delay);
-  // 이 타이머 하나 때문에 프로세스가 종료를 미루지 않도록 한다.
+  // Don't let this one timer keep the process from exiting.
   if (typeof saveTimer.unref === 'function') saveTimer.unref();
 }
 
-// 종료 신호를 받으면 마지막 상태를 동기로 한 번 더 남긴다. 예약된 저장이
-// 아직 안 돌았어도 최근 구간을 잃지 않는다.
+// On a shutdown signal, write the final state synchronously once more. Even if
+// the scheduled save hasn't run yet, the recent window isn't lost.
 function flushSync(): void {
   try {
     const payload: StoreShape = {
@@ -196,7 +199,7 @@ function flushSync(): void {
     fs.mkdirSync(DATA_DIR, { recursive: true });
     fs.writeFileSync(STORE_FILE, JSON.stringify(payload), 'utf-8');
   } catch {
-    // 종료 중 실패는 삼킨다.
+    // Swallow failures during shutdown.
   }
 }
 
@@ -209,7 +212,7 @@ function hookExit(): void {
   process.once('beforeExit', () => flushSync());
 }
 
-// --- 공개 API ------------------------------------------------------------
+// --- Public API ----------------------------------------------------------
 
 export function recordSample(cpuUsage: number, load1: number, at: number = Date.now()): void {
   ensureLoaded();

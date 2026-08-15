@@ -7,8 +7,9 @@ import { useNow } from '@/hooks/useNow';
 import { useSystemData } from '@/hooks/useSystemData';
 import type { DashboardData } from '@/utils/dashboardData';
 
-// 탭만 봐도 경보를 알 수 있도록, 지금 당장 문제가 있으면 문서 제목에 ⚠ 를 붙이고
-// 파비콘을 빨간 점으로 바꾼다. 벽에 여러 탭을 띄워 두는 운용에서 유용하다.
+// So an alert is visible from the tab alone: when there's a current problem,
+// prefix the document title with ⚠ and turn the favicon into a red dot. Useful
+// when several tabs are left open on a wall.
 const BASE_TITLE = 'Server Monitor';
 const ALERT_FAVICON =
   'data:image/svg+xml,' +
@@ -38,14 +39,14 @@ export default function DisplayPage() {
 
     const icon = document.querySelector<HTMLLinkElement>('link[rel="icon"]');
     if (!icon) return;
-    // 원래 아이콘을 기억해 두었다가, 경보가 풀리면 되돌린다.
+    // Remember the original icon and restore it when the alert clears.
     const original = icon.dataset.original ?? icon.getAttribute('href') ?? '/favicon.svg';
     icon.dataset.original = original;
     icon.setAttribute('href', alerting ? ALERT_FAVICON : original);
   }, [alerting]);
 
   useEffect(() => {
-    // 화면 잠김 방지
+    // Prevent the screen from locking
     const wakeLock = async () => {
       try {
         if ('wakeLock' in navigator) {
@@ -78,8 +79,8 @@ export default function DisplayPage() {
   );
 }
 
-// 첫 응답을 받기 전에만 보인다. 한 번이라도 받은 뒤에는 연결이 끊겨도
-// 마지막 값을 계속 띄우고, 헤더의 표시등으로 상태를 알린다.
+// Only shown before the first response. After receiving one, it keeps showing
+// the last value even if the connection drops, and signals status via the header indicator.
 const StartupState: React.FC<{ error: string | null }> = ({ error }) => (
   <div className="flex flex-col items-center justify-center gap-3 p-8">
     {error ? (

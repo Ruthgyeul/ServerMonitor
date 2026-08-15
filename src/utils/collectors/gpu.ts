@@ -5,7 +5,7 @@ import { clamp, readSys, round, run, withTtl } from '@/utils/collectors/shell';
 
 const UNAVAILABLE: GpuInfo = { name: null, usage: 'N/A', temperature: 'N/A' };
 
-// amdgpu 는 사용률을 sysfs 로 그대로 노출한다. 외부 명령이 필요 없다.
+// amdgpu exposes utilization directly via sysfs. No external command needed.
 async function readAmdGpu(): Promise<GpuInfo | null> {
   let cards: string[];
   try {
@@ -49,7 +49,7 @@ async function readAmdTemperature(card: string): Promise<number | 'N/A'> {
   return 'N/A';
 }
 
-// nvidia-smi 는 프로세스를 띄우고 200ms 가까이 걸린다. 매 초 호출하지 않는다.
+// nvidia-smi spawns a process and takes close to 200ms. Don't call it every second.
 const readNvidiaGpu = withTtl(5000, async (): Promise<GpuInfo | null> => {
   let output: string;
   try {
@@ -57,7 +57,7 @@ const readNvidiaGpu = withTtl(5000, async (): Promise<GpuInfo | null> => {
       'nvidia-smi --query-gpu=name,utilization.gpu,temperature.gpu --format=csv,noheader,nounits'
     );
   } catch {
-    return null; // 드라이버/도구 미설치
+    return null; // driver/tool not installed
   }
 
   const [line] = output.split('\n');
@@ -75,7 +75,7 @@ const readNvidiaGpu = withTtl(5000, async (): Promise<GpuInfo | null> => {
 });
 
 export async function getGpuInfo(): Promise<GpuInfo> {
-  // 인텔 내장 그래픽은 커널이 사용률을 퍼센트로 노출하지 않아
-  // (i915 는 perf 이벤트로만 얻을 수 있다) N/A 로 남는다.
+  // Intel integrated graphics leaves N/A: the kernel doesn't expose utilization
+  // as a percentage (i915 only offers it via perf events).
   return (await readAmdGpu()) ?? (await readNvidiaGpu()) ?? UNAVAILABLE;
 }

@@ -13,26 +13,27 @@ function parseOsRelease(contents: string): Record<string, string> {
   return fields;
 }
 
-// 배포판 이름은 부팅 중에 바뀌지 않는다. 한 번 읽으면 충분하다.
+// The distro name doesn't change while booted. Reading it once is enough.
 const readDistro = withTtl(60 * 60 * 1000, async (): Promise<string> => {
   const contents = (await readSys('/etc/os-release')) ?? (await readSys('/usr/lib/os-release'));
   if (!contents) return `${os.type()} ${os.release()}`;
 
   const fields = parseOsRelease(contents);
-  // PRETTY_NAME 은 "Ubuntu 22.04.4 LTS" 처럼 길어서 좁은 헤더에 안 들어간다.
-  // NAME + VERSION_ID 조합("Ubuntu 22.04")이 더 짧고 정보량은 같다.
+  // PRETTY_NAME like "Ubuntu 22.04.4 LTS" is too long for the narrow header.
+  // NAME + VERSION_ID ("Ubuntu 22.04") is shorter with the same information.
   if (fields.NAME && fields.VERSION_ID) return `${fields.NAME} ${fields.VERSION_ID}`;
   return fields.PRETTY_NAME || fields.NAME || `${os.type()} ${os.release()}`;
 });
 
-// wtmp 를 뒤져 마지막 재부팅 직전에 정상 종료(shutdown) 기록이 있었는지 본다.
-// 있으면 계획된 재부팅, 없으면 커널 패닉/정전처럼 예기치 못한 종료다.
+// Scans wtmp to see whether there was a clean shutdown record right before the
+// last reboot. If so it was a planned reboot; if not it was an unexpected
+// shutdown like a kernel panic or power loss.
 const readRebootReason = withTtl(5 * 60 * 1000, async (): Promise<string | null> => {
   let output: string;
   try {
     output = await run('last -x -F -n 20 reboot shutdown 2>/dev/null || true');
   } catch {
-    return null; // last 미설치(busybox 등) 또는 wtmp 권한 없음
+    return null; // `last` not installed (busybox, etc.) or no wtmp permission
   }
 
   const lines = output
@@ -47,14 +48,15 @@ const readRebootReason = withTtl(5 * 60 * 1000, async (): Promise<string | null>
   return previous.startsWith('shutdown') ? 'clean shutdown' : 'unexpected shutdown';
 });
 
-// 가상화/컨테이너 종류. 일부 지표(steal, 온도, 팬)의 해석이 베어메탈과 달라지므로
-// 어떤 환경에서 도는지 표기한다. systemd-detect-virt 는 없으면 exit 1 이라 || true.
-// 값은 부팅 중 바뀌지 않으니 오래 캐시한다.
+// Virtualization/container kind. Some metrics (steal, temperature, fan) read
+// differently from bare metal, so note the environment it runs in.
+// systemd-detect-virt exits 1 when there's none, hence || true. The value
+// doesn't change while booted, so cache it for a long time.
 const readVirtualization = withTtl(60 * 60 * 1000, async (): Promise<string | null> => {
   try {
     const output = await run('systemd-detect-virt 2>/dev/null || true');
     const value = output.trim();
-    // "none" 은 베어메탈. 빈 문자열은 도구 미설치 — 둘 다 표기하지 않는다.
+    // "none" is bare metal. An empty string means the tool isn't installed — neither is shown.
     if (!value || value === 'none') return null;
     return value;
   } catch {

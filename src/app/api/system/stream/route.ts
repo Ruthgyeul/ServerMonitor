@@ -2,15 +2,15 @@ import { ServerData } from '@/types/system';
 import { corsHeaders } from '@/utils/cors';
 import { subscribe } from '@/utils/systemStream';
 
-// 이 라우트는 연결을 열어둔 채 서버가 데이터를 밀어주는 SSE 스트림이다.
-// 폴링과 달리 클라이언트당 연결 1개만 유지되고, 실제 수집은 systemStream 의
-// 단일 루프가 담당한다(초당 1회 고정).
+// This route is an SSE stream: the server holds the connection open and pushes
+// data. Unlike polling, only one connection per client is kept, and the actual
+// collection is handled by systemStream's single loop (fixed at once per second).
 
-// 장기 연결 + Node 전용 수집(fs/os/child_process)이므로 정적 최적화를 끈다.
+// Long-lived connection + Node-only collection (fs/os/child_process), so disable static optimization.
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
-// 유휴 연결이 프록시/방화벽에 끊기지 않도록 주기적으로 보내는 keep-alive.
+// Periodic keep-alive so idle connections aren't dropped by a proxy/firewall.
 const KEEPALIVE_MS = 15000;
 
 export async function GET(request: Request) {
@@ -26,13 +26,14 @@ export async function GET(request: Request) {
         try {
           controller.enqueue(encoder.encode(chunk));
         } catch {
-          // 컨트롤러가 이미 닫힘(클라이언트 종료). 정리는 abort/cancel 이 맡는다.
+          // Controller already closed (client left). abort/cancel handle cleanup.
         }
       };
 
-      // 각 이벤트에 id 를 달고, 연결 시작에 재연결 지연(retry) 힌트를 준다.
-      // id 는 EventSource 가 재연결 시 Last-Event-ID 로 되돌려 보내며, retry 는
-      // 브라우저 기본 재연결 간격을 명시해 끊겼을 때 복구 동작을 예측 가능하게 한다.
+      // Attach an id to each event and give a reconnect-delay (retry) hint at
+      // the start. EventSource sends the id back as Last-Event-ID on reconnect,
+      // and retry sets the browser's default reconnect interval so recovery
+      // after a drop is predictable.
       const send = (data: ServerData) => {
         const id = data.timestamp ?? new Date().toISOString();
         push(`id: ${id}\ndata: ${JSON.stringify(data)}\n\n`);
@@ -41,7 +42,7 @@ export async function GET(request: Request) {
       push('retry: 3000\n\n');
       unsubscribe = subscribe(send);
 
-      // ": " 로 시작하는 줄은 SSE 코멘트라 클라이언트가 무시한다. 연결 유지용.
+      // A line starting with ": " is an SSE comment the client ignores. Used to keep the connection alive.
       keepAlive = setInterval(() => push(': ping\n\n'), KEEPALIVE_MS);
 
       const cleanup = () => {
@@ -53,7 +54,7 @@ export async function GET(request: Request) {
         try {
           controller.close();
         } catch {
-          // 이미 닫힌 경우 무시.
+          // Ignore if already closed.
         }
       };
 
@@ -72,7 +73,7 @@ export async function GET(request: Request) {
     'Content-Type': 'text/event-stream; charset=utf-8',
     'Cache-Control': 'no-cache, no-transform',
     Connection: 'keep-alive',
-    // nginx 리버스 프록시가 응답을 버퍼링해 실시간성이 깨지는 것을 막는다.
+    // Stops an nginx reverse proxy from buffering the response and breaking real-time delivery.
     'X-Accel-Buffering': 'no'
   });
 

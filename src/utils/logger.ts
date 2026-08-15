@@ -1,6 +1,7 @@
-// 흩어져 있던 console.warn/error 를 레벨 있는 로거 하나로 모은다. LOG_LEVEL 로
-// 출력량을 조절한다(error < warn < info < debug). 기본은 info — 수집기 실패
-// 경고까지는 보이고, 상세 디버그는 감춘다. 의존성 없이 console 위에 얇게 얹는다.
+// Collects the scattered console.warn/error calls into one leveled logger.
+// LOG_LEVEL tunes the volume (error < warn < info < debug). The default is
+// info — collector-failure warnings show, verbose debug is hidden. A thin
+// wrapper over console with no dependencies.
 
 type Level = 'error' | 'warn' | 'info' | 'debug';
 
@@ -14,7 +15,7 @@ function threshold(): number {
 function emit(level: Level, args: unknown[]): void {
   if (ORDER[level] > threshold()) return;
   const prefix = `[${new Date().toISOString()}] ${level.toUpperCase()}`;
-  // error/warn 은 stderr, 나머지는 stdout 으로 나가도록 대응 console 메서드를 쓴다.
+  // error/warn go to stderr, everything else to stdout via the matching console method.
   const sink = level === 'error' ? console.error : level === 'warn' ? console.warn : console.log;
   sink(prefix, ...args);
 }

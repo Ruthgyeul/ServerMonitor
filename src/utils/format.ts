@@ -1,5 +1,5 @@
-// 대시보드 표기 전용 포맷터. 수집기는 항상 같은 단위(네트워크는 KB/s, 디스크는 GB)로
-// 보내고, 사람이 읽기 좋은 단위 변환은 전부 여기서 한다.
+// Display-only formatters for the dashboard. Collectors always send the same
+// unit (KB/s for network, GB for disk), and all human-readable unit conversion happens here.
 
 export function formatRate(kbPerSecond: number): string {
   if (!Number.isFinite(kbPerSecond)) return '0 KB/s';
@@ -7,14 +7,14 @@ export function formatRate(kbPerSecond: number): string {
   return `${kbPerSecond.toFixed(kbPerSecond >= 10 ? 0 : 1)} KB/s`;
 }
 
-// 축 눈금처럼 단위를 따로 붙여야 할 때 쓴다.
+// Used when the unit needs to be attached separately, like on an axis tick.
 export function rateUnit(maxKbPerSecond: number): { unit: string; divisor: number } {
   return maxKbPerSecond >= 1024 ? { unit: 'MB/s', divisor: 1024 } : { unit: 'KB/s', divisor: 1 };
 }
 
-// 디스크 I/O 는 MB/s 로 들어온다. 유휴에 가까운 서버는 값이 1 MB/s 를 한참 밑돌아
-// MB/s 로 반올림하면 계속 0.0 으로만 보인다. 두 값 중 큰 쪽이 1 MB/s 미만이면
-// 둘 다 KB/s 로 바꿔, 단위 하나는 공유하되 실제 값이 드러나게 한다.
+// Disk I/O arrives in MB/s. A near-idle server sits far below 1 MB/s, so
+// rounding to MB/s keeps showing 0.0. If the larger of the two is under 1 MB/s,
+// switch both to KB/s — one shared unit, but the real value shows.
 export function formatMbPair(readMb: number, writeMb: number): { read: string; write: string; unit: string } {
   const useKb = Math.max(readMb, writeMb) < 1;
   if (useKb) {
@@ -62,7 +62,7 @@ export function formatClock(date: Date): string {
   return `${day} ${time}`;
 }
 
-// "07-20 14:32" — 좁은 카드에 넣기 위해 연도는 뺀다.
+// "07-20 14:32" — the year is dropped to fit a narrow card.
 export function formatShortDateTime(iso: string): string {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return '—';
@@ -71,7 +71,7 @@ export function formatShortDateTime(iso: string): string {
   return `${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
-// 커널 릴리스는 "5.15.0-101-generic" 처럼 길다. 헤더에는 버전만 남긴다.
+// A kernel release like "5.15.0-101-generic" is long. Keep only the version in the header.
 export function shortKernel(release: string): string {
   return release.split('-')[0];
 }

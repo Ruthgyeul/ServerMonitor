@@ -1,12 +1,13 @@
 import { getSystemInfo } from '@/utils/systemMonitor';
 import { isX86TemperatureInfo } from '@/types/system';
 
-// Prometheus 스크레이프 엔드포인트. 모니터링 도구인데 표준 노출 포맷이 없어
-// Grafana/Prometheus 로 장기 저장·경보를 위임할 수 없었다. getSystemInfo() 는
-// 이미 1초 캐시라 스크레이프가 추가 수집을 유발하지 않는다.
+// Prometheus scrape endpoint. This is a monitoring tool with no standard
+// exposition format, so long-term storage/alerting could not be delegated to
+// Grafana/Prometheus. getSystemInfo() is already cached for 1s, so a scrape
+// triggers no extra collection.
 //
-// 중요: SSH 접속 IP·프로세스명·트래픽 피어 같은 민감 정보는 내보내지 않고,
-// 수치 지표만 노출한다. (/api/system 과 달리 정찰용으로 쓸 수 없다.)
+// Important: sensitive data (SSH source IPs, process names, traffic peers) is
+// never emitted — only numeric metrics. Unlike /api/system it can't be used for recon.
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -55,7 +56,7 @@ export async function GET() {
   g('server_memory_total_mb', 'Total memory in MB.', data.memory.total);
   g('server_memory_percent', 'Memory usage percentage.', data.memory.percentage);
 
-  // 루트 파일시스템. 다중 디스크(disks[])가 있으면 마운트별로도 노출한다.
+  // Root filesystem. If multiple disks (disks[]) are present, expose them per-mount too.
   g('server_disk_percent', 'Disk usage percentage.', data.disk.percentage, { mount: '/' });
   g('server_disk_used_gb', 'Used disk in GB.', data.disk.used, { mount: '/' });
   g('server_disk_total_gb', 'Total disk in GB.', data.disk.total, { mount: '/' });
@@ -109,7 +110,7 @@ export async function GET() {
     .map(key => line('server_fan_rpm', data.fan[key], { fan: key }));
   metric('server_fan_rpm', 'Fan speed in RPM.', 'gauge', fanRows);
 
-  // 마더보드/기타 온도(수치인 것만).
+  // Motherboard / other temperatures (numeric ones only).
   if (isX86TemperatureInfo(data.temperature)) {
     g('server_gpu_edge_temperature_celsius', 'GPU edge temperature.', data.temperature.gpu);
     g('server_motherboard_temperature_celsius', 'Motherboard temperature.', data.temperature.motherboard);
@@ -132,7 +133,7 @@ export async function GET() {
     line('server_active_alerts', activeAlerts)
   ]);
 
-  // Prometheus 텍스트 노출 포맷은 마지막 줄에 개행이 있어야 한다.
+  // The Prometheus text exposition format requires a trailing newline.
   const body = out.join('\n') + '\n';
   return new Response(body, {
     headers: {

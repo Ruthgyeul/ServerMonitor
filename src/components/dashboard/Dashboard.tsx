@@ -45,8 +45,8 @@ import {
   tempColor
 } from '@/utils/statusColors';
 
-// 카드는 멀티컬럼(.dash-grid)으로 흘러 화면 폭에 따라 1/2/3열이 된다.
-// 열 수와 치수는 전부 src/styles/globals.css 가 정한다.
+// Cards flow in a multi-column layout (.dash-grid), becoming 1/2/3 columns with
+// screen width. The column count and dimensions are all set by src/styles/globals.css.
 const TEMP_SCALE_MAX = 90;
 const TEMP_WARN = 65;
 const TEMP_CRITICAL = 74;
@@ -55,13 +55,13 @@ const MAX_ALERTS = 5;
 const MAX_PROCESSES = 6;
 const MAX_SESSIONS = 4;
 const MAX_PEERS = 4;
-// 도커/브리지/veth 까지 다 그리면 카드 하나가 열 하나를 잡아먹는다.
+// Drawing docker/bridge/veth too would let one card eat an entire column.
 const MAX_INTERFACES = 4;
-// 이보다 많으면 코어 막대를 두 줄로 접는다.
+// Above this, the core bars fold onto two rows.
 const CORE_SPLIT_THRESHOLD = 8;
 const LOAD_CELLS = 48;
-// 30분 이동평균의 창 길이. history.ts 의 ROLLING_WINDOW_MS 와 같은 값이며,
-// 여기서는 "창이 다 찼는가" 를 판정하는 데만 쓴다.
+// The 30-minute moving-average window length. Same value as ROLLING_WINDOW_MS in
+// history.ts; used here only to decide "is the window full".
 const ROLLING_30M_SECONDS = 30 * 60;
 
 interface DashboardProps {
@@ -86,8 +86,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
     <Header data={data} connected={connected} lastUpdate={lastUpdate} now={now} />
     <AlertBar data={data} />
 
-    {/* 열 구성과 각 열 안의 순서는 디자인 시안 그대로다.
-        화면이 좁아지면 열이 통째로 아래로 접힐 뿐, 카드가 재배치되지는 않는다. */}
+    {/* The column makeup and the order within each column follow the design.
+        As the screen narrows, columns fold below whole; cards are never rearranged. */}
     <div className="dash-layout">
       <div className="dash-col">
         <UptimeCard data={data} />
@@ -123,7 +123,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
   </div>
 );
 
-// --- 공통 조각 -------------------------------------------------------------
+// --- Shared pieces ---------------------------------------------------------
 
 interface CardProps {
   icon: LucideIcon;
@@ -150,9 +150,9 @@ const Empty: React.FC<{ children: React.ReactNode }> = ({ children }) => (
   <p className="t-body text-gray-500">{children}</p>
 );
 
-// --- 헤더 / 경고 -----------------------------------------------------------
+// --- Header / alerts -------------------------------------------------------
 
-// 배너에 띄울 만한 "지금 당장 문제" 만 고른다. 지나간 사건은 ALERTS LOG 가 맡는다.
+// Pick only "a problem right now" worth showing in the banner. Past events are handled by the ALERTS LOG.
 function currentAlerts(data: DashboardData): string[] {
   const alerts: string[] = [];
 
@@ -168,8 +168,8 @@ function currentAlerts(data: DashboardData): string[] {
   return alerts;
 }
 
-// 터미널 윈도우 크롬. 신호등 + 경로만 얹어 대시보드를 "터미널 창"처럼 감싼다.
-// 배치나 정보는 건드리지 않는, 순수 장식용 상단 바다.
+// Terminal-window chrome. Just the traffic lights + path wrap the dashboard like
+// a "terminal window". A purely decorative top bar that touches no layout or data.
 const TerminalTitleBar: React.FC<{ data: DashboardData }> = ({ data }) => {
   const host = data.host.hostname || 'server';
 
@@ -195,11 +195,11 @@ type HeaderProps = Omit<DashboardProps, 'networkHistory' | 'diskIoHistory'>;
 const Header: React.FC<HeaderProps> = ({ data, connected, lastUpdate, now }) => {
   const secondsAgo =
     now !== null && lastUpdate !== null ? Math.max(0, Math.round((now - lastUpdate) / 1000)) : 0;
-  // 연결은 살아 있는데 값이 멎었을 수 있다(수집 루프 정지 등). SSE connected 와
-  // 별개로, 마지막 성공 샘플이 오래됐으면 amber 로 알린다.
+  // The connection may be alive while the values are stuck (a stalled collection
+  // loop, etc.). Independent of SSE connected, show amber when the last successful sample is old.
   const stale = connected && secondsAgo > 5;
-  // API 가 돌려주는 warnings 는 어떤 수집기가 실패했는지 담는다. 지금까지 화면엔
-  // 안 보였다 — 몇 개가 degrade 됐는지 뱃지로 띄우고, 목록은 호버 툴팁에 담는다.
+  // The warnings the API returns hold which collectors failed. They weren't shown
+  // on screen before — show how many degraded as a badge, with the list in a hover tooltip.
   const degraded = data.warnings.length;
 
   return (
@@ -211,13 +211,13 @@ const Header: React.FC<HeaderProps> = ({ data, connected, lastUpdate, now }) => 
         <div className="h-[7px] w-[7px] shrink-0 animate-[pulseDot_2s_ease-in-out_infinite] rounded-full bg-green-400" />
       </div>
 
-      {/* 마운트 전에는 시각을 그리지 않는다(하이드레이션 불일치 방지). */}
+      {/* Don't render the time before mount (avoids a hydration mismatch). */}
       <span className="t-body order-1 whitespace-nowrap font-mono text-gray-300 md:order-3">
         {now === null ? ' ' : formatClock(new Date(now))}
       </span>
 
-      {/* 좁은 화면에서는 w-full 때문에 이 묶음만 통째로 둘째 줄로 내려간다.
-          넓은 화면에서는 시계 앞에 나란히 붙는다. */}
+      {/* On a narrow screen, w-full drops this whole group onto a second row.
+          On a wide screen it sits inline before the clock. */}
       <div className="order-2 flex w-full items-center justify-between gap-3 md:order-2 md:w-auto md:justify-end">
         <div className="flex shrink-0 items-center gap-1">
           <div
@@ -280,7 +280,7 @@ const AlertBar: React.FC<{ data: DashboardData }> = ({ data }) => {
   );
 };
 
-// --- 게이지 ----------------------------------------------------------------
+// --- Gauges ----------------------------------------------------------------
 
 interface GaugeTileProps {
   icon: LucideIcon;
@@ -288,12 +288,12 @@ interface GaugeTileProps {
   label: string;
   percentage: number | null;
   caption: string;
-  // 게이지에 마우스를 올리거나 손으로 눌렀을 때 보여줄 한 줄. caption 은 칸에
-  // 맞춰 잘리지만 이쪽은 잘리지 않은 전체 수치를 담는다.
+  // The line shown on hover or tap of the gauge. caption is truncated to fit the
+  // cell, but this holds the full, un-truncated numbers.
   detail: string;
 }
 
-// 시안에서는 게이지 네 개가 각각 독립된 카드다.
+// In the design the four gauges are each their own card.
 const GaugeCard: React.FC<GaugeTileProps> = ({
   icon: Icon,
   iconColor,
@@ -310,8 +310,8 @@ const GaugeCard: React.FC<GaugeTileProps> = ({
         <Icon className="dash-icon shrink-0" color={iconColor} strokeWidth={2} />
         <span className="t-micro truncate text-gray-300">{label}</span>
       </div>
-      {/* 툴팁은 게이지+수치 묶음이 진다. 카드 전체가 아니라 그림 위에서만 떠야
-          이웃 카드로 넘어갈 때 깜빡이지 않는다. */}
+      {/* The gauge+value group owns the tooltip. It must appear only over the
+          graphic, not the whole card, so it doesn't flicker when moving to a neighbor. */}
       <div className="dash-tip flex flex-col items-center" tabIndex={-1} data-tip={detail}>
         <Gauge
           percentage={percentage ?? 0}
@@ -331,15 +331,15 @@ const GaugeCard: React.FC<GaugeTileProps> = ({
 const GaugeRow: React.FC<{ data: DashboardData }> = ({ data }) => {
   const toGb = (mb: number) => (mb / 1024).toFixed(1);
 
-  // CPU 툴팁에 새 지표들을 덧붙인다(레이아웃은 그대로, 호버 시에만 보인다):
-  // 현재 클럭·I/O 대기, 그리고 스틸이 0보다 크면(과판매 VPS) 스틸까지.
+  // Append the new metrics to the CPU tooltip (layout unchanged, only shown on
+  // hover): current clock, I/O wait, and steal when it's above 0 (an oversubscribed VPS).
   const cpuFreq = data.cpu.frequencyMhz === 'N/A' ? '' : ` · ${(data.cpu.frequencyMhz / 1000).toFixed(2)}GHz`;
   const cpuSteal = data.cpu.steal > 0 ? ` · steal ${data.cpu.steal.toFixed(1)}%` : '';
   const cpuDetail = `${data.cpu.usage.toFixed(1)}% across ${data.cpu.cores} cores · load 1m ${data.load.avg1.toFixed(
     2
   )}${cpuFreq} · iowait ${data.cpu.iowait.toFixed(1)}%${cpuSteal}`;
 
-  // DISK 툴팁에 루트 외 마운트의 사용률과, 채워지는 중이면 가득 참 예측을 덧붙인다.
+  // Append non-root mount usage to the DISK tooltip, plus the fill forecast when it's filling.
   const extraMounts = data.disks.filter(mount => mount.mount !== '/');
   const mountDetail =
     extraMounts.length > 0
@@ -350,8 +350,8 @@ const GaugeRow: React.FC<{ data: DashboardData }> = ({ data }) => {
       ? ` · full in ~${data.disk.hoursToFull < 48 ? `${data.disk.hoursToFull.toFixed(1)}h` : `${Math.round(data.disk.hoursToFull / 24)}d`}`
       : '';
 
-  // 시안은 네 개를 한 줄에 놓는다. 휴대폰 폭에서는 게이지 지름보다 칸이 좁아져
-  // 넘치므로, 그때만 2x2 로 접는다.
+  // The design places four on one row. At phone width the cell gets narrower than
+  // the gauge diameter and overflows, so it folds to 2x2 only then.
   return (
     <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
       <GaugeCard
@@ -401,7 +401,7 @@ const GaugeRow: React.FC<{ data: DashboardData }> = ({ data }) => {
   );
 };
 
-// --- 시스템 ----------------------------------------------------------------
+// --- System ----------------------------------------------------------------
 
 const UptimeCard: React.FC<{ data: DashboardData }> = ({ data }) => (
   <Card icon={Clock} color="#4ade80" title="UPTIME">
@@ -426,19 +426,25 @@ const UptimeCard: React.FC<{ data: DashboardData }> = ({ data }) => (
 const LoadCard: React.FC<{ data: DashboardData }> = ({ data }) => {
   const { load, cpu, history } = data;
 
-  // 한 칸이 1시간이라 48칸이면 48시간이다. 아직 다 못 채웠으면 앞쪽을 빈 칸으로
-  // 메워 격자 모양을 유지한다.
+  // One cell is 1 hour, so 48 cells is 48 hours. If not yet full, pad the front
+  // with empty cells to keep the grid shape.
   const cells = [
     ...Array(Math.max(0, LOAD_CELLS - history.load.length)).fill(null),
     ...history.load.slice(-LOAD_CELLS)
   ];
 
-  // 순간값은 실행 대기 태스크 수다. /proc 가 없는 OS 에서는 못 읽으므로 1분 평균으로
-  // 물러난다 — 색을 고를 기준값도 같이 따라간다.
+  // The instantaneous value is the run-queue task count. On an OS without /proc
+  // it can't be read, so it falls back to the 1-minute average — the value used to pick the color follows too.
   const liveLoad = load.running ?? load.avg1;
 
-  // 30분은 커널이 주지 않아 우리 샘플로 낸다. 창이 아직 덜 찼으면 별표로 알리고,
-  // 툴팁에 실제로 덮은 구간을 적는다 — 시작 직후 "0분 평균" 이 되지 않도록 초로 받는다.
+  // Core-normalized load (1.00 = all cores saturated). A load of 8 means
+  // different things on 4 vs 16 cores, so show this alongside the absolute value.
+  const perCoreLoad = load.avg1 / Math.max(1, cpu.cores);
+  const perCoreTip = `1-minute load per core (1.00 = all ${cpu.cores} cores fully saturated)`;
+
+  // The kernel doesn't give 30m, so we compute it from our samples. If the window
+  // isn't full yet, mark it with an asterisk and note the actually-covered span in
+  // the tooltip — taken in seconds so it isn't a "0-minute average" right after start.
   const partial30m = load.avg30 !== null && load.avg30WindowSeconds < ROLLING_30M_SECONDS;
   const window30m =
     load.avg30WindowSeconds < 60
@@ -472,7 +478,15 @@ const LoadCard: React.FC<{ data: DashboardData }> = ({ data }) => {
       }
     >
       <div className="t-micro mb-1 flex items-center justify-between gap-2 text-gray-500">
-        <span>Last 48h</span>
+        <span
+          className="dash-tip"
+          tabIndex={-1}
+          data-tip={perCoreTip}
+          style={{ color: loadColor(load.avg1, cpu.cores) }}
+        >
+          {perCoreLoad.toFixed(2)}
+          <span className="text-gray-600">/core</span>
+        </span>
         <span className="truncate">
           1m {load.avg1.toFixed(2)} · 15m {load.avg15.toFixed(2)} ·{' '}
           <span className="dash-tip" tabIndex={-1} data-tip={avg30Tip}>
@@ -493,8 +507,8 @@ const LoadCard: React.FC<{ data: DashboardData }> = ({ data }) => {
             <div
               key={cell ? cell.at : `empty-${index}`}
               role="listitem"
-              // 탭 순서에는 넣지 않되(48칸이다) 눌렀을 때 포커스는 받게 한다.
-              // 터치에서 툴팁이 뜨는 경로가 이것뿐이다.
+              // Keep it out of tab order (there are 48 cells) but let it take focus on tap.
+              // This is the only path for the tooltip to appear on touch.
               tabIndex={-1}
               className="dash-loadcell dash-tip rounded-[2px]"
               style={{ background: loadCellColor(cell?.avg1 ?? null, cpu.cores) }}
@@ -520,18 +534,18 @@ const CoresCard: React.FC<{ data: DashboardData }> = ({ data }) => {
       right={hidden > 0 ? <span className="t-micro shrink-0 text-gray-500">+{hidden}</span> : undefined}
     >
       {cores.length === 0 && <Empty>per-core data unavailable</Empty>}
-      {/* 가로 막대라 코어가 몇 개든, 열이 얼마나 좁든 읽힌다. */}
+      {/* Horizontal bars stay readable no matter how many cores or how narrow the column. */}
       <ul className={cn('dash-corelist', cores.length > CORE_SPLIT_THRESHOLD && 'dash-corelist--split')}>
         {cores.map((usage, index) => (
           <li
             key={index}
             className="dash-tip flex items-center gap-1.5"
             tabIndex={-1}
-            // 막대 옆 숫자는 자리를 아끼려 정수로 줄여 놨다. 소수점은 여기서 준다.
+            // The number beside the bar is rounded to an integer to save space. The decimal is given here.
             data-tip={`core ${index} · ${usage.toFixed(1)}%`}
           >
-            {/* 폭을 ch 로 잡아야 글자 배율(--dash-scale)을 따라 같이 넓어진다.
-                px 로 고정하면 큰 화면에서 숫자가 칸을 넘어 서로 붙는다. */}
+            {/* Width in ch so it widens with the type scale (--dash-scale). Fixing
+                it in px would make the numbers overflow the cell and collide on large screens. */}
             <span className="t-micro w-[3ch] shrink-0 text-gray-500">C{index}</span>
             <div className="h-1.5 min-w-0 flex-1 overflow-hidden rounded bg-gray-900">
               <div
@@ -582,7 +596,7 @@ const TemperatureCard: React.FC<{ data: DashboardData }> = ({ data }) => {
 };
 
 const FanCard: React.FC<{ data: DashboardData }> = ({ data }) => {
-  // 메인보드마다 어느 커넥터에 팬이 꽂혀 있는지 달라서, 값이 잡히는 첫 번째를 쓴다.
+  // Which connector the fan is plugged into varies by motherboard, so use the first one that has a value.
   const rpm = [data.fan.cpu, data.fan.case1, data.fan.case2].find(value => value > 0) ?? 0;
 
   return (
@@ -693,7 +707,7 @@ const DiskIoCard: React.FC<{ data: DashboardData; history: DiskIoPoint[] }> = ({
   );
 };
 
-// --- 네트워크 --------------------------------------------------------------
+// --- Network ---------------------------------------------------------------
 
 const NetworkCard: React.FC<{ data: DashboardData; history: NetworkHistoryEntry[] }> = ({
   data,
@@ -710,8 +724,8 @@ const NetworkCard: React.FC<{ data: DashboardData; history: NetworkHistoryEntry[
       </span>
     }
   >
-    {/* 범례에 부팅 이후 누적 총량을 함께 적어(순간 속도만으로는 알 수 없는) 대역폭
-        사용량을 한눈에 보게 한다. */}
+    {/* Show the since-boot cumulative totals in the legend so bandwidth usage —
+        which the instantaneous rate alone can't tell you — is visible at a glance. */}
     <div className="t-micro flex items-center justify-center gap-4 text-gray-400">
       <span className="flex items-center gap-1">
         <span className="h-[7px] w-[7px] rounded-full bg-blue-500" />
@@ -728,7 +742,7 @@ const NetworkCard: React.FC<{ data: DashboardData; history: NetworkHistoryEntry[
   </Card>
 );
 
-// 시안에서 차트 아래 따로 놓인 한 줄짜리 요약 바.
+// A one-line summary bar placed separately below the chart in the design.
 const NetworkStripCard: React.FC<{ data: DashboardData }> = ({ data }) => (
   <section className="dash-card flex flex-wrap items-center justify-around gap-x-4 gap-y-1 rounded-lg border border-gray-700 bg-gray-800">
     <StripItem value={data.network.ping.toFixed(1)} unit="ms ping" color="text-yellow-400" />
@@ -787,7 +801,7 @@ const InterfacesCard: React.FC<{ data: DashboardData }> = ({ data }) => {
 const BandwidthCard: React.FC<{ data: DashboardData }> = ({ data }) => {
   const percentage = data.network.bandwidthPercentage;
   const color = statusColor(percentage);
-  // 게이지가 재는 것과 같은 값: 현재 총 처리량(다운로드+업로드).
+  // The same value the gauge measures: current total throughput (download + upload).
   const usage = data.network.download + data.network.upload;
 
   return (
@@ -810,7 +824,7 @@ const BandwidthCard: React.FC<{ data: DashboardData }> = ({ data }) => {
   );
 };
 
-// --- 로그 / 보안 -----------------------------------------------------------
+// --- Logs / security -------------------------------------------------------
 
 const AlertsCard: React.FC<{ data: DashboardData; now: number | null }> = ({ data, now }) => (
   <Card icon={TriangleAlert} color="#f87171" title="ALERTS LOG">
@@ -831,34 +845,64 @@ const AlertsCard: React.FC<{ data: DashboardData; now: number | null }> = ({ dat
 );
 
 const ProcessesCard: React.FC<{ data: DashboardData }> = ({ data }) => {
-  const processes = data.processes.filter(p => p.cpu > 0 || p.memory > 0).slice(0, MAX_PROCESSES);
+  // Toggle the list between CPU-sorted (default) and memory-sorted. The
+  // memory-sorted list comes from a separate ps call surfaced by the API.
+  const [sortBy, setSortBy] = React.useState<'cpu' | 'mem'>('cpu');
+  const source = sortBy === 'mem' ? data.topProcessesByMemory : data.processes;
+  const processes = source.filter(p => p.cpu > 0 || p.memory > 0).slice(0, MAX_PROCESSES);
   const { total, zombie } = data.processSummary;
 
-  // 전체 프로세스 규모를 카드 헤더에 요약한다(상위 목록은 그대로). 좀비가 있으면
-  // 빨갛게 — 프로세스 리크의 신호다.
-  const summary =
-    total > 0 ? (
-      <span className="t-micro shrink-0 font-mono text-gray-500">
-        {total} proc{zombie > 0 && <span className="text-red-400"> · {zombie}Z</span>}
+  // Summarise the whole process table in the header (the list stays top-N).
+  // Zombies are shown in red — a sign of a process leak.
+  const summary = (
+    <span className="flex shrink-0 items-center gap-2">
+      {total > 0 && (
+        <span className="t-micro font-mono text-gray-500">
+          {total} proc{zombie > 0 && <span className="text-red-400"> · {zombie}Z</span>}
+        </span>
+      )}
+      <span className="t-micro flex overflow-hidden rounded border border-gray-700 font-mono">
+        {(['cpu', 'mem'] as const).map(key => (
+          <button
+            key={key}
+            type="button"
+            onClick={() => setSortBy(key)}
+            className={cn(
+              'px-1 uppercase',
+              sortBy === key ? 'bg-gray-700 text-gray-100' : 'text-gray-500 hover:text-gray-300'
+            )}
+            aria-pressed={sortBy === key}
+          >
+            {key === 'cpu' ? 'CPU' : 'MEM'}
+          </button>
+        ))}
       </span>
-    ) : undefined;
+    </span>
+  );
 
   return (
     <Card icon={AlignLeft} color="#fb923c" title="TOP PROCESSES" right={summary}>
       <div className="t-micro mb-0.5 flex items-center justify-between text-gray-500">
         <span>Name</span>
         <div className="flex gap-2">
-          <span className="w-[5ch] text-right text-yellow-400">CPU</span>
-          <span className="w-[5ch] text-right text-blue-400">RAM</span>
+          <span
+            className={cn('w-[5ch] text-right', sortBy === 'cpu' ? 'text-yellow-400' : 'text-yellow-400/60')}
+          >
+            CPU
+          </span>
+          <span className={cn('w-[5ch] text-right', sortBy === 'mem' ? 'text-blue-400' : 'text-blue-400/60')}>
+            RAM
+          </span>
         </div>
       </div>
       {processes.length === 0 && <Empty>process list unavailable</Empty>}
       <ul className="dash-rows">
         {processes.map(process => (
           <li key={process.id} className="t-body flex items-center justify-between gap-2">
-            {/* 툴팁을 truncate 한 요소에 직접 걸면 그 요소의 overflow:hidden 에
-                잘린다. 그래서 자르지 않는 바깥 span 이 툴팁을 진다. 전체 이름은
-                DOM 텍스트에 그대로 있어 스크린리더는 잘린 것과 무관하게 읽는다. */}
+            {/* Putting the tooltip on a truncated element clips it to that
+                element's overflow:hidden, so the un-truncated outer span owns
+                the tooltip. The full name stays in the DOM text, so a screen
+                reader reads it regardless of truncation. */}
             <span className="dash-tip min-w-0" tabIndex={-1} data-tip={process.name}>
               <span className="block truncate text-gray-400">{process.name}</span>
             </span>
@@ -901,7 +945,7 @@ const TrafficCard: React.FC<{ data: DashboardData }> = ({ data }) => (
       {data.security.topTraffic.slice(0, MAX_PEERS).map(peer => (
         <li key={peer.ip} className="t-body flex items-center justify-between gap-2">
           <span className="min-w-0 truncate font-mono text-gray-400">{peer.ip}</span>
-          {/* conntrack 이 바이트를 세지 않는 커널에서는 연결 수만 알 수 있다. */}
+          {/* On a kernel where conntrack doesn't count bytes, only the connection count is known. */}
           <span className="shrink-0 font-mono text-sky-400">
             {peer.bytes === null ? `${peer.connections} conn` : formatBytes(peer.bytes)}
           </span>

@@ -6,9 +6,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { AlertInput } from '@/utils/collectors/alerts';
 
-// alerts 는 모듈 스코프에 활성 룰/로그/known 상태를 들고 있어 테스트마다 새로
-// 불러온다. 저장 파일도 임시 디렉터리로 격리한다. 웹훅 호출은 fetch 를 목으로
-// 잡아 호출 횟수만 센다(실제 네트워크로 나가지 않게).
+// alerts holds active-rule/log/known state in module scope, so it's reimported
+// per test. The store file is also isolated to a temp directory. Webhook calls
+// are mocked via fetch to count invocations only (so nothing goes to the real network).
 async function freshAlerts(env: Record<string, string> = {}) {
   vi.resetModules();
   const dir = mkdtempSync(join(tmpdir(), 'alerts-test-'));
@@ -55,43 +55,43 @@ describe('evaluateAlerts', () => {
     ENV_KEYS.forEach(key => delete process.env[key]);
   });
 
-  it('임계값을 넘으면 알림을 남기고, 히스테리시스로 내려오면 해제한다', async () => {
+  it('records an alert when a threshold is crossed and clears it on hysteresis', async () => {
     const { evaluateAlerts } = await freshAlerts();
     const t0 = Date.UTC(2026, 0, 2, 12, 0, 0);
 
-    // 첫 평가는 정상값 — 아무 알림도 없다(이후 전이를 첫 로그인처럼 쏟지 않기 위함).
+    // The first evaluation is a normal value — no alerts (so later transitions aren't dumped like a first login).
     expect(evaluateAlerts(baseInput(), t0)).toHaveLength(0);
 
-    // CPU 가 90 을 넘으면 warning 이 쌓인다.
+    // When CPU crosses 90 a warning accumulates.
     const entered = evaluateAlerts(baseInput({ cpu: 95 }), t0 + 1000);
     expect(entered[0].message).toContain('CPU usage 95%');
     expect(entered[0].level).toBe('warning');
 
-    // 85(=clearBelow 80 보다 큼)에서는 아직 해제되지 않는다.
+    // At 85 (> clearBelow 80) it isn't cleared yet.
     const held = evaluateAlerts(baseInput({ cpu: 85 }), t0 + 2000);
     expect(held.find(e => e.message.includes('back to normal'))).toBeUndefined();
 
-    // 80 아래로 내려오면 해제 로그.
+    // Below 80 it logs a clear.
     const cleared = evaluateAlerts(baseInput({ cpu: 70 }), t0 + 3000);
     expect(cleared[0].message).toContain('CPU usage back to normal');
     expect(cleared[0].level).toBe('ok');
   });
 
-  it('첫 평가에서 이미 임계 상태면 로그엔 남기되 웹훅은 보내지 않는다', async () => {
+  it('on the first evaluation, an already-breached value is logged but not webhooked', async () => {
     const { evaluateAlerts, fetchMock } = await freshAlerts();
     const t0 = Date.UTC(2026, 0, 2, 12, 0, 0);
 
     const first = evaluateAlerts(baseInput({ cpu: 99 }), t0);
     expect(first[0].message).toContain('CPU usage 99%');
-    // 부팅 직후 이미 임계였던 값은 외부로 쏟지 않는다.
+    // A value already breached right after boot is not pushed out.
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it('전이가 생기면 웹훅으로 통지한다', async () => {
+  it('notifies via webhook when a transition occurs', async () => {
     const { evaluateAlerts, fetchMock } = await freshAlerts();
     const t0 = Date.UTC(2026, 0, 2, 12, 0, 0);
 
-    evaluateAlerts(baseInput(), t0); // 첫 평가 소진
+    evaluateAlerts(baseInput(), t0); // consume the first evaluation
     evaluateAlerts(baseInput({ cpu: 95 }), t0 + 1000);
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
@@ -100,23 +100,23 @@ describe('evaluateAlerts', () => {
     expect(JSON.parse(options.body as string).message).toContain('CPU usage 95%');
   });
 
-  it('새 SSH 세션은 통지하고, 이미 있던 세션은 통지하지 않는다', async () => {
+  it('notifies on a new SSH session but not on an already-present one', async () => {
     const { evaluateAlerts, fetchMock } = await freshAlerts();
     const t0 = Date.UTC(2026, 0, 2, 12, 0, 0);
 
     const existing = { user: 'root', ip: '10.0.0.1', since: new Date(t0).toISOString() };
-    // 첫 평가: 이미 붙어 있던 세션은 조용히 기억만.
+    // First evaluation: quietly remember the already-attached session.
     evaluateAlerts(baseInput({ sshSessions: [existing] }), t0);
     expect(fetchMock).not.toHaveBeenCalled();
 
-    // 새 세션 등장 → info 알림 + 통지.
+    // A new session appears -> info alert + notify.
     const newSession = { user: 'deploy', ip: '10.0.0.2', since: new Date(t0 + 1000).toISOString() };
     const log = evaluateAlerts(baseInput({ sshSessions: [existing, newSession] }), t0 + 1000);
     expect(log[0].message).toBe('SSH login: deploy@10.0.0.2');
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
-  it('인터페이스 다운/복구 전이를 기록한다', async () => {
+  it('records interface down/recovery transitions', async () => {
     const { evaluateAlerts } = await freshAlerts();
     const t0 = Date.UTC(2026, 0, 2, 12, 0, 0);
 
@@ -129,31 +129,31 @@ describe('evaluateAlerts', () => {
     expect(up[0].message).toBe('Interface eth0 back up');
   });
 
-  it('임계값을 환경변수로 덮어쓸 수 있다', async () => {
+  it('lets thresholds be overridden by environment variables', async () => {
     const { evaluateAlerts } = await freshAlerts({ ALERT_CPU_ENTER: '50', ALERT_CPU_CLEAR: '40' });
     const t0 = Date.UTC(2026, 0, 2, 12, 0, 0);
 
     evaluateAlerts(baseInput(), t0);
-    // 기본값이면 60 은 임계가 아니지만, ENTER=50 이므로 알림이 뜬다.
+    // With defaults 60 isn't a breach, but with ENTER=50 an alert fires.
     const entered = evaluateAlerts(baseInput({ cpu: 60 }), t0 + 1000);
     expect(entered[0].message).toContain('CPU usage 60%');
   });
 
-  it('알림 로그를 디스크에 남기고 재시작 후 복구한다', async () => {
+  it('persists the alert log to disk and recovers after a restart', async () => {
     const first = await freshAlerts();
     const t0 = Date.UTC(2026, 0, 2, 12, 0, 0);
 
     first.evaluateAlerts(baseInput(), t0);
     first.evaluateAlerts(baseInput({ cpu: 95 }), t0 + 1000);
 
-    // 예약 저장을 기다리지 않고 종료 경로와 같은 동기 저장을 태운다.
+    // Trigger the same synchronous save as the shutdown path instead of waiting for the scheduled save.
     process.emit('SIGTERM');
 
     vi.resetModules();
     process.env.DATA_DIR = first.dir;
     process.env.ALERTS_FILE = first.file;
     const second = await import('@/utils/collectors/alerts');
-    // 복구된 로그가 이전 CPU 알림을 포함해야 한다. 정상값으로 한 번 평가해도 유지.
+    // The recovered log must contain the earlier CPU alert. It persists even after one normal-value evaluation.
     const log = second.evaluateAlerts(baseInput(), t0 + 2000);
     expect(log.some(e => e.message.includes('CPU usage 95%'))).toBe(true);
   });

@@ -6,27 +6,27 @@ export interface Process {
   status: 'running' | 'sleeping';
 }
 
-// 온도 값 타입
+// Temperature value type
 export type TemperatureValue = number | 'N/A';
 
-// x86 아키텍처용 온도 정보
+// Temperature info for the x86 architecture
 export interface X86TemperatureInfo {
   cpu: TemperatureValue;
   gpu: TemperatureValue;
   motherboard: TemperatureValue;
 }
 
-// ARM 아키텍처용 온도 정보
+// Temperature info for the ARM architecture
 export interface ARMTemperatureInfo {
   cpu: TemperatureValue;
   rp1: TemperatureValue;
   ssd: TemperatureValue;
 }
 
-// 온도 정보 (아키텍처별)
+// Temperature info (per architecture)
 export type TemperatureInfo = X86TemperatureInfo | ARMTemperatureInfo;
 
-// 온도 정보 타입 가드
+// Temperature info type guards
 export function isX86TemperatureInfo(temp: TemperatureInfo): temp is X86TemperatureInfo {
   return 'gpu' in temp && 'motherboard' in temp;
 }
@@ -35,16 +35,16 @@ export function isARMTemperatureInfo(temp: TemperatureInfo): temp is ARMTemperat
   return 'rp1' in temp && 'ssd' in temp;
 }
 
-// 호스트 식별 정보. 헤더의 "Ubuntu 22.04 · 5.15.0" 표기와 재부팅 이력에 쓰인다.
+// Host identification. Used for the header's "Ubuntu 22.04 · 5.15.0" text and the reboot history.
 export interface HostInfo {
   hostname: string;
   os: string;
   kernel: string;
   arch: string;
   bootTime: string; // ISO 8601
-  // 마지막 재부팅이 정상 종료였는지. wtmp 를 못 읽으면 null.
+  // Whether the last reboot was a clean shutdown. null if wtmp can't be read.
   rebootReason: string | null;
-  // 가상화/컨테이너 종류(kvm/docker/lxc 등). 베어메탈이거나 감지 불가면 null.
+  // Virtualization/container kind (kvm/docker/lxc, etc.). null on bare metal or when undetectable.
   virtualization?: string | null;
 }
 
@@ -52,14 +52,15 @@ export interface LoadInfo {
   avg1: number;
   avg5: number;
   avg15: number;
-  // 지금 이 순간 실행 중이거나 실행을 기다리는 커널 엔티티 수.
-  // /proc/loadavg 4번째 필드(running/total)의 앞쪽 값으로, 부하 평균과 같은
-  // 단위의 "순간값" 이다. /proc 가 없는 OS 에서는 null.
+  // The number of kernel entities running or waiting to run right now. The
+  // value before the slash in /proc/loadavg's 4th field (running/total), an
+  // instantaneous value in the same unit as the load average. null on an OS without /proc.
   running: number | null;
-  // 커널은 1/5/15분 평균만 준다. 30분은 우리가 매초 남기는 샘플로 직접 낸다.
-  // 아직 30분이 안 찼으면 모인 만큼의 평균이고, 샘플이 없으면 null.
+  // The kernel only provides 1/5/15-minute averages. We compute the 30-minute
+  // one from the samples we record every second. If 30 minutes haven't elapsed
+  // yet it's the average of what's collected so far, and null if there are no samples.
   avg30: number | null;
-  // avg30 이 실제로 덮는 구간(초). 1800 보다 작으면 아직 창이 덜 찬 것이다.
+  // The span avg30 actually covers (seconds). Below 1800 the window isn't full yet.
   avg30WindowSeconds: number;
 }
 
@@ -88,8 +89,8 @@ export interface NetworkInterfaceInfo {
   isDefault: boolean;
 }
 
-// 대역폭 상위 피어. nf_conntrack 의 바이트 계정이 꺼져 있으면 bytes 는 null 이고
-// 연결 수(connections)만 의미가 있다.
+// Top bandwidth peers. If nf_conntrack byte accounting is off, bytes is null
+// and only the connection count is meaningful.
 export interface TrafficPeer {
   ip: string;
   bytes: number | null;
@@ -105,7 +106,7 @@ export interface SshSession {
 export interface FirewallInfo {
   status: 'active' | 'inactive' | 'unknown';
   backend: string | null;
-  // 커널 로그를 읽을 권한이 없으면 null.
+  // null if there's no permission to read the kernel log.
   blockedAttempts: number | null;
 }
 
@@ -115,8 +116,8 @@ export interface SecurityInfo {
   topTraffic: TrafficPeer[];
 }
 
-// 개별 마운트된 파일시스템의 사용량. 루트(/) 외에 데이터 볼륨이 따로 붙은
-// 서버에서도 실제 사용량을 볼 수 있게 한다.
+// Usage of an individually mounted filesystem. Lets servers with a separate
+// data volume besides root (/) see their real usage too.
 export interface DiskMount {
   mount: string;
   used: number; // GB
@@ -124,19 +125,19 @@ export interface DiskMount {
   percentage: number;
 }
 
-// 배터리/UPS 상태. Pi·노트북·UPS 연결 서버에 유의미하고, 없으면 null.
+// Battery/UPS status. Meaningful on Pi/laptop/UPS-connected servers, null otherwise.
 export interface BatteryInfo {
   percentage: number;
   status: string; // Charging / Discharging / Full / Not charging / Unknown
 }
 
-// 전체 프로세스 요약. top 목록(상위 20)과 달리 시스템 전체 규모를 센다.
+// Whole-process summary. Unlike the top list (top 20), it counts the whole system.
 export interface ProcessSummary {
   total: number;
   running: number;
   sleeping: number;
   zombie: number;
-  // 스레드 포함 전체 태스크 수. /proc/loadavg 로 얻으며 없으면 null.
+  // Total task count including threads. Obtained from /proc/loadavg, null if unavailable.
   threads: number | null;
 }
 
@@ -149,22 +150,23 @@ export interface AlertEntry {
   at: string; // ISO 8601
 }
 
-// 히스토리는 프로세스 메모리에 쌓이고 data/history.json 으로 영속화된다. 재시작해도
-// 복구되지만, 서버가 꺼져 있던 구간은 값이 없어 UI 가 "수집 중" 으로 표시한다.
+// History accumulates in process memory and is persisted to data/history.json.
+// It recovers across restarts, but a stretch when the server was down has no
+// value, which the UI shows as "collecting".
 export interface LoadSample {
-  at: string; // ISO 8601, 1시간 버킷의 시작
-  // 서버가 그 시간대에 켜져 있지 않았으면 null.
+  at: string; // ISO 8601, start of the 1-hour bucket
+  // null if the server wasn't up during that hour.
   avg1: number | null;
 }
 
 export interface CpuHourSample {
-  at: string; // ISO 8601, 정시 버킷의 시작
+  at: string; // ISO 8601, start of the on-the-hour bucket
   usage: number | null;
 }
 
 export interface HistoryInfo {
-  load: LoadSample[]; // 최근 48시간, 1시간 버킷
-  cpuHourly: CpuHourSample[]; // 최근 24시간, 1시간 버킷
+  load: LoadSample[]; // last 48 hours, 1-hour buckets
+  cpuHourly: CpuHourSample[]; // last 24 hours, 1-hour buckets
 }
 
 export interface ServerData {
@@ -172,9 +174,9 @@ export interface ServerData {
     usage: number;
     cores: number;
     temperature: TemperatureValue;
-    // 코어별 사용률. /proc/stat 를 못 읽으면 빈 배열.
+    // Per-core usage. Empty array if /proc/stat can't be read.
     perCore?: number[];
-    // 아래는 선택적(구버전 노드 호환). iowait/steal 은 %, frequencyMhz 는 평균 MHz.
+    // The following are optional (old-node compatible). iowait/steal are %, frequencyMhz is average MHz.
     iowait?: number;
     steal?: number;
     frequencyMhz?: number | 'N/A';
@@ -188,10 +190,10 @@ export interface ServerData {
     used: number;
     total: number;
     percentage: number;
-    // 최근 추세로 추정한 100% 도달까지 남은 시간(시간). 채워지는 중이 아니면 null.
+    // Estimated hours until 100% based on the recent trend. null when not filling.
     hoursToFull?: number | null;
   };
-  // 루트 외 마운트를 포함한 전체 파일시스템 목록(선택적: 구버전 노드 호환).
+  // Full filesystem list including non-root mounts (optional: old-node compatible).
   disks?: DiskMount[];
   network: {
     download: number;
@@ -206,7 +208,7 @@ export interface ServerData {
     interfaces?: NetworkInterfaceInfo[];
     linkSpeedMbps?: number | null;
     bandwidthPercentage?: number;
-    // 부팅 이후 누적 바이트(선택적: 구버전 노드 호환).
+    // Cumulative bytes since boot (optional: old-node compatible).
     totalRxBytes?: number;
     totalTxBytes?: number;
   };
@@ -222,23 +224,23 @@ export interface ServerData {
     case2: number;
   };
   processes: Process[];
-  // 아래 필드들은 1.3 에서 추가됐다. 구버전을 돌리는 클러스터 노드도 같은
-  // 대시보드로 읽을 수 있어야 하므로 전부 optional 이다.
+  // The fields below were added in 1.3. Cluster nodes running older versions
+  // must still be readable by the same dashboard, so all are optional.
   host?: HostInfo;
   load?: LoadInfo;
   swap?: SwapInfo;
   diskIO?: DiskIoInfo;
   gpu?: GpuInfo;
   security?: SecurityInfo;
-  // 전체 프로세스 요약 / 메모리 상위 프로세스 / 배터리(선택적: 구버전 노드 호환).
+  // Whole-process summary / memory-top processes / battery (optional: old-node compatible).
   processSummary?: ProcessSummary;
   topProcessesByMemory?: Process[];
   battery?: BatteryInfo | null;
   history?: HistoryInfo;
   alerts?: AlertEntry[];
   timestamp?: string;
-  // 일부 수집기만 실패했을 때 어떤 지표가 왜 비었는지 알려준다.
-  // 헤드리스 서버에서 `curl localhost:3000/api/system` 만으로 진단할 수 있게 하는 용도.
+  // When only some collectors fail, tells you which metric is empty and why.
+  // Lets you diagnose a headless server with just `curl localhost:3000/api/system`.
   warnings?: string[];
 }
 

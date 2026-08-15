@@ -19,8 +19,8 @@ const geistMono = Geist_Mono({
   subsets: ['latin']
 });
 
-// 모바일에서 CSS 픽셀이 기기 폭을 따라가야 반응형 레이아웃이 의도대로 접힌다.
-// 사용자가 핀치/더블탭으로 화면을 확대·축소하지 못하도록 배율을 1로 고정한다.
+// On mobile, CSS pixels must follow the device width for the responsive layout
+// to fold as intended. The scale is pinned to 1 so users can't pinch/double-tap to zoom.
 export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
@@ -81,7 +81,7 @@ export const metadata: Metadata = {
     creator: AUTHOR_NAME
   },
   verification: {
-    // Google Search Console 등에 사용되는 확인 코드가 있다면 추가
+    // Add a verification code here if one is used (e.g. Google Search Console)
     // google: "VERIFICATION_CODE",
   },
   alternates: {
@@ -100,7 +100,7 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
-        {/* theme-color 는 위의 viewport export 가 넣어준다. */}
+        {/* theme-color is injected by the viewport export above. */}
         <link rel="manifest" href="/manifest.json" />
         <meta name="mobile-web-app-capable" content="yes" />
         <meta name="mobile-web-app-status-bar-style" content="default" />
