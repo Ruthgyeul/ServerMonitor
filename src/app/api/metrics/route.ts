@@ -47,6 +47,9 @@ export async function GET() {
   g('server_cpu_usage_percent', 'CPU usage across all cores.', data.cpu.usage);
   g('server_cpu_cores', 'Number of logical CPU cores.', data.cpu.cores);
   g('server_cpu_temperature_celsius', 'CPU package temperature.', data.cpu.temperature);
+  g('server_cpu_iowait_percent', 'CPU time waiting on I/O.', data.cpu.iowait);
+  g('server_cpu_steal_percent', 'CPU time stolen by the hypervisor.', data.cpu.steal);
+  g('server_cpu_frequency_mhz', 'Average current CPU clock in MHz.', data.cpu.frequencyMhz);
 
   g('server_memory_used_mb', 'Used memory in MB.', data.memory.used);
   g('server_memory_total_mb', 'Total memory in MB.', data.memory.total);
@@ -107,7 +110,16 @@ export async function GET() {
     g('server_motherboard_temperature_celsius', 'Motherboard temperature.', data.temperature.motherboard);
   }
 
-  g('server_process_count', 'Number of top processes reported.', data.processes.length);
+  if (data.processSummary) {
+    g('server_processes_total', 'Total processes.', data.processSummary.total);
+    g('server_processes_running', 'Running processes.', data.processSummary.running);
+    g('server_processes_zombie', 'Zombie processes.', data.processSummary.zombie);
+    g('server_threads_total', 'Total tasks including threads.', data.processSummary.threads);
+  } else {
+    g('server_process_count', 'Number of top processes reported.', data.processes.length);
+  }
+
+  if (data.battery) g('server_battery_percent', 'Battery charge level.', data.battery.percentage);
 
   const alerts = data.alerts ?? [];
   const activeAlerts = alerts.filter(a => a.level === 'warning' || a.level === 'critical').length;

@@ -44,6 +44,8 @@ export interface HostInfo {
     bootTime: string; // ISO 8601
     // 마지막 재부팅이 정상 종료였는지. wtmp 를 못 읽으면 null.
     rebootReason: string | null;
+    // 가상화/컨테이너 종류(kvm/docker/lxc 등). 베어메탈이거나 감지 불가면 null.
+    virtualization?: string | null;
 }
 
 export interface LoadInfo {
@@ -122,6 +124,22 @@ export interface DiskMount {
     percentage: number;
 }
 
+// 배터리/UPS 상태. Pi·노트북·UPS 연결 서버에 유의미하고, 없으면 null.
+export interface BatteryInfo {
+    percentage: number;
+    status: string; // Charging / Discharging / Full / Not charging / Unknown
+}
+
+// 전체 프로세스 요약. top 목록(상위 20)과 달리 시스템 전체 규모를 센다.
+export interface ProcessSummary {
+    total: number;
+    running: number;
+    sleeping: number;
+    zombie: number;
+    // 스레드 포함 전체 태스크 수. /proc/loadavg 로 얻으며 없으면 null.
+    threads: number | null;
+}
+
 export type AlertLevel = 'ok' | 'info' | 'warning' | 'critical';
 
 export interface AlertEntry {
@@ -156,6 +174,10 @@ export interface ServerData {
         temperature: TemperatureValue;
         // 코어별 사용률. /proc/stat 를 못 읽으면 빈 배열.
         perCore?: number[];
+        // 아래는 선택적(구버전 노드 호환). iowait/steal 은 %, frequencyMhz 는 평균 MHz.
+        iowait?: number;
+        steal?: number;
+        frequencyMhz?: number | 'N/A';
     };
     memory: {
         used: number;
@@ -182,6 +204,9 @@ export interface ServerData {
         interfaces?: NetworkInterfaceInfo[];
         linkSpeedMbps?: number | null;
         bandwidthPercentage?: number;
+        // 부팅 이후 누적 바이트(선택적: 구버전 노드 호환).
+        totalRxBytes?: number;
+        totalTxBytes?: number;
     };
     uptime: {
         days: number;
@@ -203,6 +228,10 @@ export interface ServerData {
     diskIO?: DiskIoInfo;
     gpu?: GpuInfo;
     security?: SecurityInfo;
+    // 전체 프로세스 요약 / 메모리 상위 프로세스 / 배터리(선택적: 구버전 노드 호환).
+    processSummary?: ProcessSummary;
+    topProcessesByMemory?: Process[];
+    battery?: BatteryInfo | null;
     history?: HistoryInfo;
     alerts?: AlertEntry[];
     timestamp?: string;

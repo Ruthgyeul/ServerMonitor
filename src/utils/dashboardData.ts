@@ -9,7 +9,10 @@ import {
   ServerData,
   SwapInfo,
   DiskIoInfo,
+  DiskMount,
   GpuInfo,
+  ProcessSummary,
+  BatteryInfo,
   TemperatureInfo,
   TemperatureValue
 } from '@/types/system';
@@ -22,9 +25,13 @@ export interface DashboardData {
     cores: number;
     temperature: TemperatureValue;
     perCore: number[];
+    iowait: number;
+    steal: number;
+    frequencyMhz: number | 'N/A';
   };
   memory: { used: number; total: number; percentage: number };
   disk: { used: number; total: number; percentage: number };
+  disks: DiskMount[];
   swap: SwapInfo;
   diskIO: DiskIoInfo;
   gpu: GpuInfo;
@@ -38,6 +45,8 @@ export interface DashboardData {
     interfaces: NetworkInterfaceInfo[];
     linkSpeedMbps: number | null;
     bandwidthPercentage: number;
+    totalRxBytes: number;
+    totalTxBytes: number;
   };
   uptime: { days: number; hours: number; minutes: number };
   temperature: TemperatureInfo;
@@ -46,6 +55,9 @@ export interface DashboardData {
   host: HostInfo;
   load: LoadInfo;
   security: SecurityInfo;
+  processSummary: ProcessSummary;
+  topProcessesByMemory: Process[];
+  battery: BatteryInfo | null;
   history: HistoryInfo;
   alerts: AlertEntry[];
   timestamp: string;
@@ -66,10 +78,14 @@ export function toDashboardData(raw: ServerData): DashboardData {
       usage: raw.cpu.usage,
       cores: raw.cpu.cores,
       temperature: raw.cpu.temperature,
-      perCore: raw.cpu.perCore ?? []
+      perCore: raw.cpu.perCore ?? [],
+      iowait: raw.cpu.iowait ?? 0,
+      steal: raw.cpu.steal ?? 0,
+      frequencyMhz: raw.cpu.frequencyMhz ?? 'N/A'
     },
     memory: raw.memory,
     disk: raw.disk,
+    disks: raw.disks ?? [],
     swap: raw.swap ?? { used: 0, total: 0, percentage: 0 },
     diskIO: raw.diskIO ?? { read: 0, write: 0 },
     gpu: raw.gpu ?? { name: null, usage: 'N/A', temperature: 'N/A' },
@@ -82,7 +98,9 @@ export function toDashboardData(raw: ServerData): DashboardData {
       listeningPorts: raw.network.listeningPorts ?? 0,
       interfaces: raw.network.interfaces ?? [],
       linkSpeedMbps: raw.network.linkSpeedMbps ?? null,
-      bandwidthPercentage: raw.network.bandwidthPercentage ?? 0
+      bandwidthPercentage: raw.network.bandwidthPercentage ?? 0,
+      totalRxBytes: raw.network.totalRxBytes ?? 0,
+      totalTxBytes: raw.network.totalTxBytes ?? 0
     },
     uptime: raw.uptime,
     temperature: raw.temperature,
@@ -94,10 +112,14 @@ export function toDashboardData(raw: ServerData): DashboardData {
       kernel: '—',
       arch: '—',
       bootTime: new Date().toISOString(),
-      rebootReason: null
+      rebootReason: null,
+      virtualization: null
     },
     load: raw.load ?? { avg1: 0, avg5: 0, avg15: 0, running: null, avg30: null, avg30WindowSeconds: 0 },
     security: raw.security ?? EMPTY_SECURITY,
+    processSummary: raw.processSummary ?? { total: 0, running: 0, sleeping: 0, zombie: 0, threads: null },
+    topProcessesByMemory: raw.topProcessesByMemory ?? [],
+    battery: raw.battery ?? null,
     history: raw.history ?? EMPTY_HISTORY,
     alerts: raw.alerts ?? [],
     timestamp: raw.timestamp ?? new Date().toISOString(),
