@@ -1,5 +1,6 @@
 import { ServerData } from '@/types/system';
 import { getSystemInfo } from '@/utils/systemMonitor';
+import { logger } from '@/utils/logger';
 
 // 요청마다 수집기를 돌리는 대신, 프로세스 안에서 딱 하나의 루프만 돌린다.
 // 접속자가 몇 명이든 쉘 프로세스 spawn(sensors/ping/ps/df ...)은 한 번으로
@@ -52,14 +53,14 @@ async function tick(): Promise<void> {
       try {
         listener(data);
       } catch (error) {
-        console.error('SSE listener threw:', error);
+        logger.error('SSE listener threw:', error);
       }
     }
   } catch (error) {
     // 수집 자체가 실패해도 루프는 살려둔다. 이번 틱만 건너뛰고,
     // 구독자는 마지막으로 받은 값을 그대로 들고 있는다.
     consecutiveFailures += 1;
-    console.error('system collection loop failed:', error);
+    logger.error('system collection loop failed:', error);
   }
 }
 
@@ -97,7 +98,7 @@ export function subscribe(listener: Listener): () => void {
     try {
       listener(lastData);
     } catch (error) {
-      console.error('SSE listener threw on initial push:', error);
+      logger.error('SSE listener threw on initial push:', error);
     }
   }
 

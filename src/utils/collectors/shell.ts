@@ -2,6 +2,8 @@ import { exec } from 'child_process';
 import { promisify } from 'util';
 import { readFile } from 'fs/promises';
 
+import { logger } from '@/utils/logger';
+
 const execAsync = promisify(exec);
 
 // `ip`, `sensors`, `ps` 등은 /usr/sbin, /sbin 에 설치되는 경우가 많은데
@@ -39,7 +41,7 @@ export async function collect<T>(
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     warnings.push(`${name}: ${message}`);
-    console.warn(`[systemMonitor] ${name} failed:`, message);
+    logger.warn(`collector ${name} failed:`, message);
     return fallback;
   }
 }

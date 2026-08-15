@@ -30,8 +30,15 @@ export async function GET(request: Request) {
         }
       };
 
-      const send = (data: ServerData) => push(`data: ${JSON.stringify(data)}\n\n`);
+      // 각 이벤트에 id 를 달고, 연결 시작에 재연결 지연(retry) 힌트를 준다.
+      // id 는 EventSource 가 재연결 시 Last-Event-ID 로 되돌려 보내며, retry 는
+      // 브라우저 기본 재연결 간격을 명시해 끊겼을 때 복구 동작을 예측 가능하게 한다.
+      const send = (data: ServerData) => {
+        const id = data.timestamp ?? new Date().toISOString();
+        push(`id: ${id}\ndata: ${JSON.stringify(data)}\n\n`);
+      };
 
+      push('retry: 3000\n\n');
       unsubscribe = subscribe(send);
 
       // ": " 로 시작하는 줄은 SSE 코멘트라 클라이언트가 무시한다. 연결 유지용.

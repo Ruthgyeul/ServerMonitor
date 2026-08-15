@@ -1,4 +1,5 @@
 import { AlertEntry } from '@/types/system';
+import { logger } from '@/utils/logger';
 
 // 알림은 지금까지 화면(대시보드 alerts 카드)에만 표시됐다. 벽에 걸어둔 패널을
 // 24/7 쳐다보지 않는 한 임계값을 넘겨도 아무도 모른다. 여기서 임계 전이가 생길
@@ -59,7 +60,7 @@ export async function dispatchAlert(entry: AlertEntry): Promise<void> {
   } catch (error) {
     // 웹훅 실패는 치명적이지 않다. 대시보드/로그에는 알림이 그대로 남는다.
     const message = error instanceof Error ? error.message : String(error);
-    console.error('[alerts] webhook dispatch failed:', message);
+    logger.error('alerts webhook dispatch failed:', message);
   } finally {
     clearTimeout(timeout);
   }
