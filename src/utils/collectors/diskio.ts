@@ -11,9 +11,9 @@ const SECTOR_BYTES = 512;
 
 let previousSample: { read: number; write: number; at: number } | null = null;
 
-async function readDiskTotals(): Promise<{ read: number; write: number }> {
-  const contents = await readFile('/proc/diskstats', 'utf-8');
-
+// Pure parser for /proc/diskstats. Split from the read so the whole-disk
+// filtering and sector maths can be unit-tested.
+export function parseDiskTotals(contents: string): { read: number; write: number } {
   let readSectors = 0;
   let writeSectors = 0;
   let matched = 0;
@@ -36,6 +36,10 @@ async function readDiskTotals(): Promise<{ read: number; write: number }> {
 
   if (matched === 0) throw new Error('no whole-disk devices found in /proc/diskstats');
   return { read: readSectors * SECTOR_BYTES, write: writeSectors * SECTOR_BYTES };
+}
+
+async function readDiskTotals(): Promise<{ read: number; write: number }> {
+  return parseDiskTotals(await readFile('/proc/diskstats', 'utf-8'));
 }
 
 export async function getDiskIo(): Promise<DiskIoInfo> {

@@ -24,7 +24,7 @@ import { getEstablishedConnections } from '@/utils/collectors/netstat';
 const SSHD_SESSION = /^(?:sshd|sshd-session):\s+(\S+?)@(pts\/\d+|tty\S+|notty)\b/;
 const USER_HZ = 100; // effectively always 100 on Linux; the tick unit of /proc/<pid>/stat.
 
-interface Session extends SshSession {
+export interface Session extends SshSession {
   tty?: string;
 }
 
@@ -167,8 +167,9 @@ async function sessionsFromProcesses(): Promise<Session[]> {
 //   deploy   pts/1        2024-07-20 14:35 (192.168.0.5)
 const WHO_LINE = /^(\S+)\s+(\S+)\s+(\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2})(?::\d{2})?\s*(?:\(([^)]*)\))?/;
 
-async function sessionsFromWho(): Promise<Session[]> {
-  const output = await run('who 2>/dev/null || true');
+// Pure parser for `who` output. Split out so the line matching can be tested
+// without spawning the command.
+export function parseWhoOutput(output: string): Session[] {
   if (!output) return [];
 
   const sessions: Session[] = [];
@@ -190,8 +191,12 @@ async function sessionsFromWho(): Promise<Session[]> {
   return sessions;
 }
 
+async function sessionsFromWho(): Promise<Session[]> {
+  return parseWhoOutput(await run('who 2>/dev/null || true'));
+}
+
 // Merge the two sources by tty. For the same session, take the real IP and the earliest (= true) login time.
-function mergeSessions(...lists: Session[][]): SshSession[] {
+export function mergeSessions(...lists: Session[][]): SshSession[] {
   const byKey = new Map<string, Session>();
 
   for (const session of lists.flat()) {
@@ -227,12 +232,16 @@ async function isServiceActive(name: string): Promise<boolean> {
   return output === 'active';
 }
 
+// Pure: reads the ENABLED flag out of /etc/ufw/ufw.conf.
+export function parseUfwConf(conf: string): FirewallInfo['status'] {
+  return /^ENABLED=yes$/im.test(conf) ? 'active' : 'inactive';
+}
+
 async function detectFirewall(): Promise<{ status: FirewallInfo['status']; backend: string | null }> {
   // ufw status requires root, but the config file is usually world-readable.
   const ufwConf = await readSys('/etc/ufw/ufw.conf');
   if (ufwConf !== null) {
-    const enabled = /^ENABLED=yes$/im.test(ufwConf);
-    return { status: enabled ? 'active' : 'inactive', backend: 'ufw' };
+    return { status: parseUfwConf(ufwConf), backend: 'ufw' };
   }
 
   for (const service of ['firewalld', 'nftables', 'iptables']) {
@@ -259,10 +268,16 @@ const countBlockedAttempts = withTtl(60_000, async (): Promise<number | null> =>
     return null;
   }
 
+  return parseBlockedCount(output);
+});
+
+// Pure: the awk emits "<lines> <blocked>". No lines means no journal access
+// (null, distinct from a real 0), otherwise the blocked count.
+export function parseBlockedCount(output: string): number | null {
   const [lines, blocked] = output.split(/\s+/).map(Number);
   if (!lines || Number.isNaN(blocked)) return null;
   return blocked;
-});
+}
 
 export const getFirewallInfo = withTtl(30_000, async (): Promise<FirewallInfo> => {
   const [{ status, backend }, blockedAttempts] = await Promise.all([

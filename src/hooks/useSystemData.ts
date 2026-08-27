@@ -31,6 +31,9 @@ export interface SystemDataState {
   lastUpdate: number | null;
   networkHistory: NetworkHistoryEntry[];
   diskIoHistory: DiskIoPoint[];
+  // True when the stream is being rejected because the API is token-gated and
+  // this browser has no valid cookie. The page redirects to /login.
+  authRequired: boolean;
 }
 
 function assertServerData(payload: unknown): asserts payload is ServerData {
@@ -52,10 +55,32 @@ export function useSystemData(): SystemDataState {
     connected: false,
     lastUpdate: null,
     networkHistory: [],
-    diskIoHistory: []
+    diskIoHistory: [],
+    authRequired: false
   });
 
   useEffect(() => {
+    // EventSource surfaces no HTTP status on error, so when it fails before ever
+    // connecting we probe the endpoint once to tell "server down" from "401
+    // token gate", so the page can send the user to /login in the latter case.
+    let probed = false;
+    const probeAuth = () => {
+      if (probed) return;
+      probed = true;
+      fetch('/api/system/stream', { method: 'GET', headers: { Accept: 'text/event-stream' } })
+        .then(response => {
+          if (response.status === 401) {
+            setState(previous => ({ ...previous, authRequired: true }));
+          }
+          // Otherwise this is the long-lived SSE endpoint: cancel the body so a
+          // second stream doesn't sit open alongside the reconnecting EventSource.
+          void response.body?.cancel();
+        })
+        .catch(() => {
+          /* network error — leave it to the normal error path */
+        });
+    };
+
     // Instead of polling (a GET per second), keep one connection open and
     // subscribe to the SSE the server pushes. EventSource auto-reconnects on drop, so no separate backoff is needed.
     const source = new EventSource('/api/system/stream');
@@ -81,6 +106,7 @@ export function useSystemData(): SystemDataState {
           data,
           error: null,
           connected: true,
+          authRequired: false,
           lastUpdate: Date.now(),
           networkHistory: [
             ...previous.networkHistory,
@@ -104,6 +130,9 @@ export function useSystemData(): SystemDataState {
       // blank on a brief drop, a wall-mounted dashboard would actually show less
       // info. EventSource retries reconnection on its own, and onopen restores things on success.
       setState(previous => ({ ...previous, connected: false }));
+      // Only probe when we've never had a successful message (data === null via
+      // the closure is stale, so use the probed guard + connection state).
+      probeAuth();
     };
 
     return () => {

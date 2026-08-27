@@ -3,7 +3,7 @@ import os from 'os';
 import { HostInfo } from '@/types/system';
 import { readSys, run, withTtl } from '@/utils/collectors/shell';
 
-function parseOsRelease(contents: string): Record<string, string> {
+export function parseOsRelease(contents: string): Record<string, string> {
   const fields: Record<string, string> = {};
   for (const line of contents.split('\n')) {
     const match = line.match(/^([A-Z_]+)=(.*)$/);
@@ -28,14 +28,9 @@ const readDistro = withTtl(60 * 60 * 1000, async (): Promise<string> => {
 // Scans wtmp to see whether there was a clean shutdown record right before the
 // last reboot. If so it was a planned reboot; if not it was an unexpected
 // shutdown like a kernel panic or power loss.
-const readRebootReason = withTtl(5 * 60 * 1000, async (): Promise<string | null> => {
-  let output: string;
-  try {
-    output = await run('last -x -F -n 20 reboot shutdown 2>/dev/null || true');
-  } catch {
-    return null; // `last` not installed (busybox, etc.) or no wtmp permission
-  }
-
+// Pure: given `last -x` output, decide whether the last boot followed a clean
+// shutdown record. Split out so the log walking can be unit-tested.
+export function parseRebootReason(output: string): string | null {
   const lines = output
     .split('\n')
     .map(line => line.trim())
@@ -46,6 +41,16 @@ const readRebootReason = withTtl(5 * 60 * 1000, async (): Promise<string | null>
   const previous = lines[rebootIndex + 1];
   if (!previous) return null;
   return previous.startsWith('shutdown') ? 'clean shutdown' : 'unexpected shutdown';
+}
+
+const readRebootReason = withTtl(5 * 60 * 1000, async (): Promise<string | null> => {
+  let output: string;
+  try {
+    output = await run('last -x -F -n 20 reboot shutdown 2>/dev/null || true');
+  } catch {
+    return null; // `last` not installed (busybox, etc.) or no wtmp permission
+  }
+  return parseRebootReason(output);
 });
 
 // Virtualization/container kind. Some metrics (steal, temperature, fan) read

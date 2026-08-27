@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 
+import { timingSafeEqual } from '@/utils/timingSafeEqual';
+
 // /api/system* returns sensitive reconnaissance: SSH source IPs/usernames, the
 // full process list, open ports, traffic peer IPs, firewall state. CORS only
 // blocks a browser's cross-origin "read"; a non-browser client like curl reads it freely.
@@ -14,21 +16,6 @@ import { NextRequest, NextResponse } from 'next/server';
 // This mode is for a deployment where a reverse proxy injects the token, or for machine-to-machine polling.
 
 const AUTH_TOKEN = process.env.API_AUTH_TOKEN;
-
-// Make the time taken as uniform as possible whether the length or value
-// differs, to make it hard to recover the token one character at a time via a timing side channel.
-function timingSafeEqual(a: string, b: string): boolean {
-  const encoder = new TextEncoder();
-  const aBytes = encoder.encode(a);
-  const bBytes = encoder.encode(b);
-  // Iterate over the longer length so the same number of bytes is compared even when lengths differ.
-  const length = Math.max(aBytes.length, bBytes.length);
-  let mismatch = aBytes.length ^ bBytes.length;
-  for (let i = 0; i < length; i += 1) {
-    mismatch |= (aBytes[i] ?? 0) ^ (bBytes[i] ?? 0);
-  }
-  return mismatch === 0;
-}
 
 function presentedToken(request: NextRequest): string | null {
   const header = request.headers.get('authorization');

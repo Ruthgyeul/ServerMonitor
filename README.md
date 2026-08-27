@@ -173,7 +173,9 @@ read on the server.
 | `NEXT_PUBLIC_CLUSTER_PORT` | `src/config/clusterConfig.ts` | Port for **bare-host** cluster nodes' `/api/system` (default `3000`). Ignored for `ip` entries that already include a scheme. |
 | `NEXT_PUBLIC_CLUSTER_PROTOCOL` | `src/config/clusterConfig.ts` | Scheme (`http`/`https`) for **bare-host** cluster nodes (default `http`). Ignored for `ip` entries that already include a scheme. |
 | `ALLOWED_ORIGINS` | `src/app/api/system/route.ts` | Comma-separated list of origins allowed to call `/api/system` (CORS allow-list). CORS only limits cross-origin browser reads — it does not authenticate. See [Securing the API](#securing-the-api). |
-| `API_AUTH_TOKEN` | `src/proxy.ts` | Optional shared secret. When set, every `/api/system*` request must present it as `Authorization: Bearer <token>` or an `api_auth_token` cookie. Unset by default. Enabling it breaks the built-in browser dashboard — see [Securing the API](#securing-the-api). |
+| `API_AUTH_TOKEN` | `src/proxy.ts` | Optional shared secret. When set, every `/api/system*` request must present it as `Authorization: Bearer <token>` or an `api_auth_token` cookie. Unset by default. On its own it breaks the built-in browser dashboard — pair it with `DASHBOARD_PASSWORD` — see [Securing the API](#securing-the-api). |
+| `DASHBOARD_PASSWORD` | `src/app/api/auth/login/route.ts` | Optional login password. When set (with `API_AUTH_TOKEN`), `/login` accepts it and drops an HttpOnly `api_auth_token` cookie so the token-gated API and the browser dashboard work together. The token never reaches client JS. Unset by default (no login page). |
+| `RATE_LIMIT_RPM` | `src/utils/rateLimit.ts` | Per-IP request/minute cap on the public JSON endpoints (`/api/system`, `/api/metrics`), protecting the collectors from a busy loop. `0` disables it. Default `300` — generous enough for cluster polling and several dashboards. |
 | `NEXT_PUBLIC_SITE_URL` | `src/config/siteConfig.ts` | Canonical site URL used for metadata, Open Graph tags, `robots.txt` and `sitemap.xml`. |
 | `NEXT_PUBLIC_SITE_NAME` | `src/config/siteConfig.ts` | Full site/app name shown in page titles and metadata. |
 | `NEXT_PUBLIC_SITE_SHORT_NAME` | `src/config/siteConfig.ts` | Short name used in the title template and mobile web app title. |
@@ -214,8 +216,17 @@ Pick at least one of these, in rough order of preference:
 2. **Optional token gate.** Set `API_AUTH_TOKEN` (e.g. `openssl rand -hex 32`).
    Every `/api/system*` request then needs `Authorization: Bearer <token>` or an
    `api_auth_token` cookie. This suits machine-to-machine polling or a reverse
-   proxy that injects the token. Note it disables the built-in browser dashboard,
-   which cannot carry a secret token from the browser.
+   proxy that injects the token. On its own it disables the built-in browser
+   dashboard, which cannot carry a secret token from the browser.
+3. **Token gate + login (keeps the dashboard).** Set `API_AUTH_TOKEN` **and**
+   `DASHBOARD_PASSWORD`. The `/login` page verifies the password server-side and
+   drops the token as an HttpOnly `api_auth_token` cookie the browser then sends
+   automatically, so the gated API and the dashboard both work; the token itself
+   never reaches client JavaScript. `curl` without the cookie still gets `401`.
+
+A coarse per-IP rate limit (`RATE_LIMIT_RPM`, default 300) also guards
+`/api/system` and `/api/metrics` so an open deployment can't be driven into a
+collection busy loop.
 
 The app also sends hardening response headers (`X-Frame-Options: DENY`,
 `X-Content-Type-Options: nosniff`, a `frame-ancestors 'none'` CSP,
