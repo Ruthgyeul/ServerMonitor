@@ -49,5 +49,7 @@ export function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/api/system', '/api/system/:path*']
+  // /api/alerts is gated too: GET can expose SSH usernames/source IPs in alert
+  // messages, and the mute POST/DELETE change notification behaviour.
+  matcher: ['/api/system', '/api/system/:path*', '/api/alerts', '/api/alerts/:path*']
 };

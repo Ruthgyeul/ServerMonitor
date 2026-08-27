@@ -5,6 +5,8 @@ import { AlertEntry, AlertLevel, FirewallInfo, SshSession, TemperatureValue } fr
 import { dispatchAlert } from '@/utils/collectors/notify';
 import { isMuted } from '@/utils/collectors/alertMute';
 
+// The recent view streamed with every /api/system response (kept small so the
+// SSE payload stays light). The dashboard alert card reads this.
 const MAX_ENTRIES = 30;
 
 // Thresholds can be overridden by environment variables. Unset uses the
@@ -37,6 +39,11 @@ interface Rule {
   onClear: (value: number) => string;
   compute?: (values: Values) => number | null;
   when?: (values: Values) => boolean;
+  // How to treat a null computed value while the rule is active. Default is
+  // 'skip' (source temporarily unavailable). 'recovered' means null == no longer
+  // breached (e.g. disk-fill forecast becomes null when the disk stops filling),
+  // so an active alert should clear rather than stay stuck.
+  nullMeans?: 'recovered';
 }
 
 function breached(direction: Rule['direction'], value: number, enter: number): boolean {
@@ -142,6 +149,8 @@ const RULES: Rule[] = [
     enter: num('ALERT_DISKFILL_ENTER_HOURS', 24),
     clear: num('ALERT_DISKFILL_CLEAR_HOURS', 48),
     compute: v => v.diskFill,
+    // A null forecast means the disk is no longer filling → treat as recovered.
+    nullMeans: 'recovered',
     onEnter: value => `Disk fills in ~${value.toFixed(0)}h at the current rate`,
     onClear: () => 'Disk fill rate eased'
   },
@@ -193,6 +202,11 @@ const FLAP_THRESHOLD = num('ALERT_FLAP_THRESHOLD', 6);
 // Anomaly detection is opt-in — it can be noisy on a bursty host.
 const ANOMALY_ENABLED = /^(1|true|yes)$/i.test(process.env.ALERT_ANOMALY_ENABLE ?? '');
 
+// The persisted history the /alerts page reads is deeper than the SSE view: a
+// burst (or flapping) easily exceeds 30 entries within the 48h timeline window.
+const HISTORY_MAX = num('ALERT_HISTORY_MAX', 500);
+const HISTORY_RETENTION_MS = num('ALERT_HISTORY_RETENTION_DAYS', 7) * 24 * 60 * 60 * 1000;
+
 const active = new Set<string>();
 const log: AlertEntry[] = [];
 let knownSessions: Set<string> | null = null;
@@ -235,8 +249,8 @@ function ensureLoaded(): void {
     const raw = fs.readFileSync(/*turbopackIgnore: true*/ STORE_FILE, 'utf-8');
     const parsed = JSON.parse(raw) as StoreShape;
     if (parsed && parsed.v === STORE_VERSION && Array.isArray(parsed.log)) {
-      // Stored newest-first, so restore as-is but honor the cap.
-      for (const entry of parsed.log.slice(0, MAX_ENTRIES)) log.push(entry);
+      // Stored newest-first, so restore as-is but honor the history cap.
+      for (const entry of parsed.log.slice(0, HISTORY_MAX)) log.push(entry);
     }
   } catch {
     // If the file is missing (first run) or unreadable, start empty.
@@ -312,10 +326,18 @@ function push(
   sequence += 1;
   const entry: AlertEntry = { id: `${at}-${sequence}`, level, message, at: new Date(at).toISOString() };
   log.unshift(entry);
-  if (log.length > MAX_ENTRIES) log.length = MAX_ENTRIES;
+  pruneHistory(at);
   scheduleSave();
 
   if (notify && !isMuted(key, at)) void dispatchAlert(entry);
+}
+
+// Keep the persisted history within its cap and retention window. log is
+// newest-first, so stale entries collect at the tail.
+function pruneHistory(now: number): void {
+  if (log.length > HISTORY_MAX) log.length = HISTORY_MAX;
+  const oldest = now - HISTORY_RETENTION_MS;
+  while (log.length > 0 && new Date(log[log.length - 1].at).getTime() < oldest) log.pop();
 }
 
 // The full persisted alert log (newest first), for the /alerts history page.
@@ -368,10 +390,34 @@ export function evaluateAlerts(input: AlertInput, at: number = Date.now()): Aler
     cpuAnomaly: input.cpuAnomaly === undefined ? null : input.cpuAnomaly ? 1 : 0
   };
 
+  // Expire flapping for rules that have settled (no transitions left within the
+  // window). Without this, a rule that flapped and then stayed breached would
+  // suppress its re-notifications forever, since flapping was only re-evaluated
+  // on a transition.
+  for (const key of [...flapping]) {
+    const times = transitions.get(key) ?? [];
+    while (times.length > 0 && at - times[0] > FLAP_WINDOW_MS) times.shift();
+    transitions.set(key, times);
+    if (times.length < FLAP_THRESHOLD) flapping.delete(key);
+  }
+
   for (const rule of RULES) {
     if (rule.when && !rule.when(values)) continue;
     const value = rule.compute ? rule.compute(values) : values[rule.key];
-    if (value === null || value === undefined || Number.isNaN(value)) continue;
+    if (value === null || value === undefined || Number.isNaN(value)) {
+      // Normally a null value means the source is temporarily unavailable, so we
+      // hold the current state. For rules where null means "no longer breached"
+      // (e.g. disk-fill forecast disappears when the disk stops filling), clear
+      // an active alert so it isn't stuck and can re-fire later.
+      if (rule.nullMeans === 'recovered' && active.has(rule.key)) {
+        active.delete(rule.key);
+        lastNotifiedAt.delete(rule.key);
+        const flap = recordTransition(rule.key, at);
+        push('ok', rule.onClear(rule.clear), at, !firstEvaluation && !flap, rule.key);
+        announceFlap(rule, flap, at, firstEvaluation);
+      }
+      continue;
+    }
 
     if (!active.has(rule.key) && breached(rule.direction, value, rule.enter)) {
       active.add(rule.key);
@@ -448,7 +494,9 @@ export function evaluateAlerts(input: AlertInput, at: number = Date.now()): Aler
     knownFirewall = input.firewall;
   }
 
-  return [...log];
+  // Return only the recent view for the dashboard/SSE; the full history is read
+  // separately via getAlertLog() (/api/alerts).
+  return log.slice(0, MAX_ENTRIES);
 }
 
 // Emit a one-time notice when a rule starts or stops flapping.

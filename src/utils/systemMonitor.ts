@@ -575,6 +575,14 @@ export async function getSystemInfo(): Promise<ServerData> {
   const loadBase = await getLoadAverage();
   const security = await getSecurityInfo(sockets.peers, warnings);
 
+  // Baseline for anomaly detection must exclude the current reading, so read the
+  // hourly history BEFORE recording this tick's sample (recordSample would fold
+  // the current value into the bucket the baseline is drawn from).
+  const cpuBaseline = getHistory(now)
+    .cpuHourly.map(sample => sample.usage)
+    .filter((usage): usage is number => usage !== null);
+  const cpuAnomaly = isAnomalous(cpu.usage, cpuBaseline);
+
   recordSample(cpu.usage, loadBase.avg1, now);
   recordDiskSample(disk.percentage, now);
   const diskHoursToFull = getHoursToFull(now);
@@ -586,14 +594,7 @@ export async function getSystemInfo(): Promise<ServerData> {
     avg30: rolling30m.value,
     avg30WindowSeconds: rolling30m.windowSeconds
   };
-
-  // Flag CPU that departs sharply from its own recent hourly baseline. The rule
-  // that consumes this is opt-in (ALERT_ANOMALY_ENABLE), so this is cheap otherwise.
   const history = getHistory(now);
-  const cpuBaseline = history.cpuHourly
-    .map(sample => sample.usage)
-    .filter((usage): usage is number => usage !== null);
-  const cpuAnomaly = isAnomalous(cpu.usage, cpuBaseline);
 
   const alerts = evaluateAlerts(
     {

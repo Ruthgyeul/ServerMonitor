@@ -14,12 +14,17 @@ export function GET() {
   return NextResponse.json(muteStatus(), { headers: { 'Cache-Control': 'no-store' } });
 }
 
+// Cap so an absurd duration can't push the expiry past the valid Date range
+// (which would make muteStatus() throw on toISOString). 30 days is plenty.
+const MAX_MUTE_MINUTES = 30 * 24 * 60;
+
 export async function POST(request: NextRequest) {
   const body = (await request.json().catch(() => ({}))) as { minutes?: unknown; key?: unknown };
-  const minutes = typeof body.minutes === 'number' && Number.isFinite(body.minutes) ? body.minutes : 60;
-  if (minutes <= 0) {
+  const requested = typeof body.minutes === 'number' && Number.isFinite(body.minutes) ? body.minutes : 60;
+  if (requested <= 0) {
     return NextResponse.json({ error: 'minutes must be positive' }, { status: 400 });
   }
+  const minutes = Math.min(requested, MAX_MUTE_MINUTES);
 
   if (typeof body.key === 'string' && body.key.trim() !== '') {
     muteKey(body.key.trim(), minutes);

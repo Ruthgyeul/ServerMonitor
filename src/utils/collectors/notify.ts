@@ -1,5 +1,6 @@
 import { AlertEntry, AlertLevel } from '@/types/system';
 import { logger } from '@/utils/logger';
+import { isMuted } from '@/utils/collectors/alertMute';
 
 // Alerts only showed on the dashboard's alert card until now. Unless someone
 // watches a wall panel 24/7, a threshold breach goes unnoticed. Here we push
@@ -110,6 +111,12 @@ async function flushQueue(): Promise<void> {
   const batch = queue;
   queue = [];
   if (batch.length === 0) return;
+
+  // Muting (manual or quiet hours) may have started after these were queued.
+  // Re-check the global/time-based mute at flush time so we don't page during a
+  // window that is meant to suppress notifications. (Per-key mute was already
+  // applied when each entry was enqueued in alerts.ts.)
+  if (isMuted(null)) return;
 
   // Group by channel URL so each target receives one combined message, using the
   // highest-severity format of the entries routed to it.

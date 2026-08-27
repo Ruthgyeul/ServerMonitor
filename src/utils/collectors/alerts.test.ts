@@ -199,6 +199,30 @@ describe('evaluateAlerts', () => {
     expect(entered[0].level).toBe('critical');
   });
 
+  it('clears a disk-fill alert when the forecast becomes null (no longer filling)', async () => {
+    const { evaluateAlerts } = await freshAlerts();
+    const t0 = Date.UTC(2026, 0, 2, 12, 0, 0);
+
+    evaluateAlerts(baseInput({ diskHoursToFull: 100 }), t0);
+    evaluateAlerts(baseInput({ diskHoursToFull: 10 }), t0 + 1000); // enter
+    const cleared = evaluateAlerts(baseInput({ diskHoursToFull: null }), t0 + 2000);
+    expect(cleared.some(e => e.message.includes('Disk fill rate eased'))).toBe(true);
+  });
+
+  it('keeps alert history beyond the 30-entry SSE view', async () => {
+    const { evaluateAlerts, getAlertLog } = await freshAlerts();
+    const t0 = Date.UTC(2026, 0, 2, 12, 0, 0);
+
+    evaluateAlerts(baseInput(), t0); // init known-session state
+    const sessions: { user: string; ip: string; since: string }[] = [];
+    for (let i = 0; i < 40; i += 1) {
+      sessions.push({ user: `u${i}`, ip: `10.0.0.${i}`, since: new Date(t0 + i * 1000).toISOString() });
+      const view = evaluateAlerts(baseInput({ sshSessions: [...sessions] }), t0 + (i + 1) * 1000);
+      expect(view.length).toBeLessThanOrEqual(30); // SSE view stays capped
+    }
+    expect(getAlertLog().length).toBeGreaterThan(30); // full history is deeper
+  });
+
   it('marks a rule as flapping after repeated transitions', async () => {
     const { evaluateAlerts } = await freshAlerts({ ALERT_FLAP_THRESHOLD: '4' });
     const t0 = Date.UTC(2026, 0, 2, 12, 0, 0);

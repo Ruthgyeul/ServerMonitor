@@ -15,12 +15,15 @@ const WEBHOOK_FORMATS = ['json', 'slack', 'discord'];
 // "high is bad" metric, enter must sit above clear or the hysteresis inverts.
 // Defaults mirror the built-ins in alerts.ts so a one-sided override is checked
 // against the value the other side actually uses at runtime, not skipped.
+// `direction` mirrors alerts.ts: 'above' means enter must sit above clear;
+// 'below' (battery, disk-fill: "low is bad") means enter must sit below clear.
 interface ThresholdPair {
   enterKey: string;
   clearKey: string;
   label: string;
   enterDefault: number;
   clearDefault: number;
+  direction: 'above' | 'below';
 }
 
 const THRESHOLD_PAIRS: ThresholdPair[] = [
@@ -29,35 +32,72 @@ const THRESHOLD_PAIRS: ThresholdPair[] = [
     clearKey: 'ALERT_CPU_CLEAR',
     label: 'CPU',
     enterDefault: 90,
-    clearDefault: 80
+    clearDefault: 80,
+    direction: 'above'
   },
   {
     enterKey: 'ALERT_MEM_ENTER',
     clearKey: 'ALERT_MEM_CLEAR',
     label: 'memory',
     enterDefault: 90,
-    clearDefault: 80
+    clearDefault: 80,
+    direction: 'above'
   },
   {
     enterKey: 'ALERT_DISK_ENTER',
     clearKey: 'ALERT_DISK_CLEAR',
     label: 'disk',
     enterDefault: 85,
-    clearDefault: 80
+    clearDefault: 80,
+    direction: 'above'
   },
   {
     enterKey: 'ALERT_TEMP_ENTER',
     clearKey: 'ALERT_TEMP_CLEAR',
     label: 'temperature',
     enterDefault: 74,
-    clearDefault: 70
+    clearDefault: 70,
+    direction: 'above'
   },
   {
     enterKey: 'ALERT_SWAP_ENTER',
     clearKey: 'ALERT_SWAP_CLEAR',
     label: 'swap',
     enterDefault: 80,
-    clearDefault: 60
+    clearDefault: 60,
+    direction: 'above'
+  },
+  {
+    enterKey: 'ALERT_LOAD_ENTER',
+    clearKey: 'ALERT_LOAD_CLEAR',
+    label: 'load per core',
+    enterDefault: 2,
+    clearDefault: 1.5,
+    direction: 'above'
+  },
+  {
+    enterKey: 'ALERT_GPU_TEMP_ENTER',
+    clearKey: 'ALERT_GPU_TEMP_CLEAR',
+    label: 'GPU temperature',
+    enterDefault: 85,
+    clearDefault: 78,
+    direction: 'above'
+  },
+  {
+    enterKey: 'ALERT_BATTERY_ENTER',
+    clearKey: 'ALERT_BATTERY_CLEAR',
+    label: 'battery',
+    enterDefault: 15,
+    clearDefault: 25,
+    direction: 'below'
+  },
+  {
+    enterKey: 'ALERT_DISKFILL_ENTER_HOURS',
+    clearKey: 'ALERT_DISKFILL_CLEAR_HOURS',
+    label: 'disk-fill',
+    enterDefault: 24,
+    clearDefault: 48,
+    direction: 'below'
   }
 ];
 
@@ -109,7 +149,7 @@ export function validateConfig(env: Env = process.env): string[] {
   // Alert thresholds — numeric, and enter above clear so hysteresis is sane.
   // The check uses effective values (override or built-in default), so a
   // one-sided override that inverts against the other side's default is caught.
-  for (const { enterKey, clearKey, label, enterDefault, clearDefault } of THRESHOLD_PAIRS) {
+  for (const { enterKey, clearKey, label, enterDefault, clearDefault, direction } of THRESHOLD_PAIRS) {
     const enter = env[enterKey];
     const clear = env[clearKey];
     if (isSet(enter) && !isNumeric(enter))
@@ -119,20 +159,36 @@ export function validateConfig(env: Env = process.env): string[] {
 
     const effectiveEnter = isSet(enter) && isNumeric(enter) ? Number(enter) : enterDefault;
     const effectiveClear = isSet(clear) && isNumeric(clear) ? Number(clear) : clearDefault;
-    // Only warn when an override actually caused the inversion (all-default is fine by construction).
-    if ((isSet(enter) || isSet(clear)) && effectiveEnter <= effectiveClear) {
+    // Only warn when an override actually caused the inversion (all-default is
+    // fine by construction). 'above' needs enter > clear; 'below' needs enter < clear.
+    const inverted =
+      direction === 'above' ? effectiveEnter <= effectiveClear : effectiveEnter >= effectiveClear;
+    if ((isSet(enter) || isSet(clear)) && inverted) {
+      const relation = direction === 'above' ? 'above' : 'below';
       warnings.push(
-        `${label} alert enter (${effectiveEnter}) is not above clear (${effectiveClear}); the alert will flap or never clear.`
+        `${label} alert enter (${effectiveEnter}) is not ${relation} clear (${effectiveClear}); the alert will flap or never clear.`
       );
     }
   }
 
-  // Webhook config.
+  // Webhook config. The dispatcher accepts a comma-separated list, so validate
+  // each target the same way it splits them.
   if (isSet(env.ALERT_WEBHOOK_URL)) {
-    try {
-      new URL(env.ALERT_WEBHOOK_URL);
-    } catch {
-      warnings.push('ALERT_WEBHOOK_URL is not a valid URL; alert notifications will not be delivered.');
+    const urls = env.ALERT_WEBHOOK_URL.split(',')
+      .map(url => url.trim())
+      .filter(Boolean);
+    const invalid = urls.filter(url => {
+      try {
+        new URL(url);
+        return false;
+      } catch {
+        return true;
+      }
+    });
+    if (invalid.length > 0) {
+      warnings.push(
+        `ALERT_WEBHOOK_URL has invalid target(s): ${invalid.join(', ')}; those notifications will not be delivered.`
+      );
     }
   }
   if (isSet(env.ALERT_WEBHOOK_FORMAT) && !WEBHOOK_FORMATS.includes(env.ALERT_WEBHOOK_FORMAT.toLowerCase())) {
