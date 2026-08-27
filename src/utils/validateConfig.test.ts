@@ -51,6 +51,18 @@ describe('validateConfig', () => {
     expect(warnings.some(w => w.includes('not above clear (80)'))).toBe(true);
   });
 
+  it('flags an inverted below-direction pair (battery enter must be below clear)', () => {
+    const warnings = validateConfig({ ALERT_BATTERY_ENTER: '30', ALERT_BATTERY_CLEAR: '25' });
+    expect(warnings.some(w => w.includes('not below clear'))).toBe(true);
+  });
+
+  it('accepts a comma-separated webhook list and flags only the bad target', () => {
+    expect(validateConfig({ ALERT_WEBHOOK_URL: 'https://a.test, https://b.test' })).toEqual([]);
+    expect(
+      validateConfig({ ALERT_WEBHOOK_URL: 'https://a.test, nope' }).some(w => w.includes('ALERT_WEBHOOK_URL'))
+    ).toBe(true);
+  });
+
   it('flags a non-positive IDLE_TICK_MS', () => {
     expect(validateConfig({ IDLE_TICK_MS: '-1' }).some(w => w.includes('IDLE_TICK_MS'))).toBe(true);
     expect(validateConfig({ IDLE_TICK_MS: '0' }).some(w => w.includes('IDLE_TICK_MS'))).toBe(true);

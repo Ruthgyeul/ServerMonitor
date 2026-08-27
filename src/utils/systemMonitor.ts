@@ -34,6 +34,7 @@ import {
 import { getFirewallInfo, getSshSessions } from '@/utils/collectors/security';
 import { getHistory, getLoad30mAverage, recordSample } from '@/utils/collectors/history';
 import { evaluateAlerts } from '@/utils/collectors/alerts';
+import { isAnomalous } from '@/utils/collectors/anomaly';
 
 // Cached system info
 let cachedData: ServerData | null = null;
@@ -574,6 +575,14 @@ export async function getSystemInfo(): Promise<ServerData> {
   const loadBase = await getLoadAverage();
   const security = await getSecurityInfo(sockets.peers, warnings);
 
+  // Baseline for anomaly detection must exclude the current reading, so read the
+  // hourly history BEFORE recording this tick's sample (recordSample would fold
+  // the current value into the bucket the baseline is drawn from).
+  const cpuBaseline = getHistory(now)
+    .cpuHourly.map(sample => sample.usage)
+    .filter((usage): usage is number => usage !== null);
+  const cpuAnomaly = isAnomalous(cpu.usage, cpuBaseline);
+
   recordSample(cpu.usage, loadBase.avg1, now);
   recordDiskSample(disk.percentage, now);
   const diskHoursToFull = getHoursToFull(now);
@@ -585,6 +594,7 @@ export async function getSystemInfo(): Promise<ServerData> {
     avg30: rolling30m.value,
     avg30WindowSeconds: rolling30m.windowSeconds
   };
+  const history = getHistory(now);
 
   const alerts = evaluateAlerts(
     {
@@ -595,7 +605,13 @@ export async function getSystemInfo(): Promise<ServerData> {
       temperature: cpu.temperature,
       firewall: security.firewall.status,
       sshSessions: security.sshSessions,
-      interfaces: (network.interfaces ?? []).map(({ name, state }) => ({ name, state }))
+      interfaces: (network.interfaces ?? []).map(({ name, state }) => ({ name, state })),
+      cores: cpu.cores,
+      loadAvg1: loadBase.avg1,
+      gpuTemp: gpu.temperature,
+      battery: battery?.percentage ?? null,
+      diskHoursToFull,
+      cpuAnomaly
     },
     now
   );
@@ -624,7 +640,7 @@ export async function getSystemInfo(): Promise<ServerData> {
     processSummary,
     topProcessesByMemory,
     battery,
-    history: getHistory(now),
+    history,
     alerts,
     timestamp: new Date(now).toISOString(),
     ...(warnings.length > 0 ? { warnings } : {})

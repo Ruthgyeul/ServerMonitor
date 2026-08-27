@@ -45,7 +45,8 @@ const ENV_KEYS = [
   'ALERT_WEBHOOK_FORMAT',
   'ALERT_CPU_ENTER',
   'ALERT_CPU_CLEAR',
-  'ALERT_RENOTIFY_MINUTES'
+  'ALERT_RENOTIFY_MINUTES',
+  'ALERT_FLAP_THRESHOLD'
 ];
 
 describe('evaluateAlerts', () => {
@@ -156,5 +157,81 @@ describe('evaluateAlerts', () => {
     // The recovered log must contain the earlier CPU alert. It persists even after one normal-value evaluation.
     const log = second.evaluateAlerts(baseInput(), t0 + 2000);
     expect(log.some(e => e.message.includes('CPU usage 95%'))).toBe(true);
+  });
+
+  it('alerts on a low battery (below-direction rule) and clears on recovery', async () => {
+    const { evaluateAlerts } = await freshAlerts();
+    const t0 = Date.UTC(2026, 0, 2, 12, 0, 0);
+
+    evaluateAlerts(baseInput({ battery: 50 }), t0);
+    const entered = evaluateAlerts(baseInput({ battery: 10 }), t0 + 1000);
+    expect(entered[0].message).toContain('Battery low 10%');
+
+    const cleared = evaluateAlerts(baseInput({ battery: 30 }), t0 + 2000);
+    expect(cleared[0].message).toContain('Battery recovered');
+  });
+
+  it('alerts when the disk is forecast to fill soon (below-direction rule)', async () => {
+    const { evaluateAlerts } = await freshAlerts();
+    const t0 = Date.UTC(2026, 0, 2, 12, 0, 0);
+
+    evaluateAlerts(baseInput({ diskHoursToFull: 100 }), t0);
+    const entered = evaluateAlerts(baseInput({ diskHoursToFull: 10 }), t0 + 1000);
+    expect(entered[0].message).toContain('Disk fills in ~10h');
+  });
+
+  it('alerts on high load per core', async () => {
+    const { evaluateAlerts } = await freshAlerts();
+    const t0 = Date.UTC(2026, 0, 2, 12, 0, 0);
+
+    evaluateAlerts(baseInput({ cores: 4, loadAvg1: 1 }), t0);
+    const entered = evaluateAlerts(baseInput({ cores: 4, loadAvg1: 10 }), t0 + 1000);
+    expect(entered[0].message).toContain('Load 2.50 per core');
+  });
+
+  it('alerts critically on high GPU temperature', async () => {
+    const { evaluateAlerts } = await freshAlerts();
+    const t0 = Date.UTC(2026, 0, 2, 12, 0, 0);
+
+    evaluateAlerts(baseInput({ gpuTemp: 50 }), t0);
+    const entered = evaluateAlerts(baseInput({ gpuTemp: 90 }), t0 + 1000);
+    expect(entered[0].message).toContain('GPU temp 90.0°C');
+    expect(entered[0].level).toBe('critical');
+  });
+
+  it('clears a disk-fill alert when the forecast becomes null (no longer filling)', async () => {
+    const { evaluateAlerts } = await freshAlerts();
+    const t0 = Date.UTC(2026, 0, 2, 12, 0, 0);
+
+    evaluateAlerts(baseInput({ diskHoursToFull: 100 }), t0);
+    evaluateAlerts(baseInput({ diskHoursToFull: 10 }), t0 + 1000); // enter
+    const cleared = evaluateAlerts(baseInput({ diskHoursToFull: null }), t0 + 2000);
+    expect(cleared.some(e => e.message.includes('Disk fill rate eased'))).toBe(true);
+  });
+
+  it('keeps alert history beyond the 30-entry SSE view', async () => {
+    const { evaluateAlerts, getAlertLog } = await freshAlerts();
+    const t0 = Date.UTC(2026, 0, 2, 12, 0, 0);
+
+    evaluateAlerts(baseInput(), t0); // init known-session state
+    const sessions: { user: string; ip: string; since: string }[] = [];
+    for (let i = 0; i < 40; i += 1) {
+      sessions.push({ user: `u${i}`, ip: `10.0.0.${i}`, since: new Date(t0 + i * 1000).toISOString() });
+      const view = evaluateAlerts(baseInput({ sshSessions: [...sessions] }), t0 + (i + 1) * 1000);
+      expect(view.length).toBeLessThanOrEqual(30); // SSE view stays capped
+    }
+    expect(getAlertLog().length).toBeGreaterThan(30); // full history is deeper
+  });
+
+  it('marks a rule as flapping after repeated transitions', async () => {
+    const { evaluateAlerts } = await freshAlerts({ ALERT_FLAP_THRESHOLD: '4' });
+    const t0 = Date.UTC(2026, 0, 2, 12, 0, 0);
+
+    evaluateAlerts(baseInput(), t0);
+    evaluateAlerts(baseInput({ cpu: 95 }), t0 + 1000); // enter (1)
+    evaluateAlerts(baseInput({ cpu: 70 }), t0 + 2000); // clear (2)
+    evaluateAlerts(baseInput({ cpu: 95 }), t0 + 3000); // enter (3)
+    const log = evaluateAlerts(baseInput({ cpu: 70 }), t0 + 4000); // clear (4) -> flap
+    expect(log.some(e => e.message.includes('flapping'))).toBe(true);
   });
 });
