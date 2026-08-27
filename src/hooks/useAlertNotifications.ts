@@ -57,8 +57,15 @@ export function useAlertNotifications(alerts: AlertEntry[]): AlertNotifications 
   }, [alerts]);
 
   useEffect(() => {
-    if (!enabled || alerts.length === 0) return;
+    if (alerts.length === 0) return;
     const newest = alerts[0];
+    // While disabled, keep the marker current so that turning notifications on
+    // later doesn't replay alerts that arrived meanwhile (opt-in should be silent
+    // until the next genuinely new alert).
+    if (!enabled) {
+      seenId.current = newest.id;
+      return;
+    }
     if (newest.id === seenId.current) return;
 
     // Fire for any new critical alert that arrived since we last looked.
