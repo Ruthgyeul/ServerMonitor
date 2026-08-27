@@ -189,6 +189,34 @@ read on the server.
 Adding, removing, or repointing a cluster node is now a one-line edit in
 `.env` — no code changes or redeploy of the dashboard logic required.
 
+## Alerting
+
+Threshold rules evaluate every collection tick with hysteresis (separate enter/
+clear values) so a value hovering at the line doesn't flood the log. Beyond the
+core CPU/memory/disk/temperature/swap rules, the set covers **load per core**,
+**GPU temperature**, **low battery**, **disk fill-forecast** (hours to full), and
+a composite **memory-pressure** rule (RAM and swap both high). Optional
+**statistical anomaly detection** (`ALERT_ANOMALY_ENABLE`) flags CPU that departs
+sharply from its own recent baseline even under the absolute threshold.
+
+Every alert shows on the dashboard's alert card and is persisted to
+`data/alerts.json`. The **`/alerts`** page is the full history with a level
+filter, text search, and a 48-hour incident timeline.
+
+Outbound notifications (off until `ALERT_WEBHOOK_URL` is set) support `json`,
+`slack`, and `discord` shapes, **per-severity routing** (`ALERT_WEBHOOK_URL_CRITICAL`
+etc.), and optional **batching** (`ALERT_BATCH_MS`). **Flapping suppression** stops
+a rule that toggles rapidly from paging (it stays on the on-screen log). To
+silence notifications during maintenance, set **quiet hours**
+(`ALERT_QUIET_HOURS="22:00-07:00"`) or mute at runtime:
+
+```bash
+curl -X POST localhost:3000/api/alerts/mute -H 'Content-Type: application/json' -d '{"minutes":30}'
+curl -X DELETE localhost:3000/api/alerts/mute   # lift early
+```
+
+All alert tuning lives in environment variables — see `.env.example`.
+
 ## Scripts
 
 - `scripts/diagnose.sh` — prints the raw contents of every source the API

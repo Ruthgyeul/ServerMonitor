@@ -1,4 +1,5 @@
 import React from 'react';
+import Link from 'next/link';
 import {
   Activity,
   AlignLeft,
@@ -841,6 +842,9 @@ const AlertsCard: React.FC<{ data: DashboardData; now: number | null }> = ({ dat
         </li>
       ))}
     </ul>
+    <Link href="/alerts" className="t-label mt-1 block text-right text-gray-500 hover:text-gray-300">
+      full history →
+    </Link>
   </Card>
 );
 

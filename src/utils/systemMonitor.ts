@@ -34,6 +34,7 @@ import {
 import { getFirewallInfo, getSshSessions } from '@/utils/collectors/security';
 import { getHistory, getLoad30mAverage, recordSample } from '@/utils/collectors/history';
 import { evaluateAlerts } from '@/utils/collectors/alerts';
+import { isAnomalous } from '@/utils/collectors/anomaly';
 
 // Cached system info
 let cachedData: ServerData | null = null;
@@ -586,6 +587,14 @@ export async function getSystemInfo(): Promise<ServerData> {
     avg30WindowSeconds: rolling30m.windowSeconds
   };
 
+  // Flag CPU that departs sharply from its own recent hourly baseline. The rule
+  // that consumes this is opt-in (ALERT_ANOMALY_ENABLE), so this is cheap otherwise.
+  const history = getHistory(now);
+  const cpuBaseline = history.cpuHourly
+    .map(sample => sample.usage)
+    .filter((usage): usage is number => usage !== null);
+  const cpuAnomaly = isAnomalous(cpu.usage, cpuBaseline);
+
   const alerts = evaluateAlerts(
     {
       cpu: cpu.usage,
@@ -595,7 +604,13 @@ export async function getSystemInfo(): Promise<ServerData> {
       temperature: cpu.temperature,
       firewall: security.firewall.status,
       sshSessions: security.sshSessions,
-      interfaces: (network.interfaces ?? []).map(({ name, state }) => ({ name, state }))
+      interfaces: (network.interfaces ?? []).map(({ name, state }) => ({ name, state })),
+      cores: cpu.cores,
+      loadAvg1: loadBase.avg1,
+      gpuTemp: gpu.temperature,
+      battery: battery?.percentage ?? null,
+      diskHoursToFull,
+      cpuAnomaly
     },
     now
   );
@@ -624,7 +639,7 @@ export async function getSystemInfo(): Promise<ServerData> {
     processSummary,
     topProcessesByMemory,
     battery,
-    history: getHistory(now),
+    history,
     alerts,
     timestamp: new Date(now).toISOString(),
     ...(warnings.length > 0 ? { warnings } : {})
