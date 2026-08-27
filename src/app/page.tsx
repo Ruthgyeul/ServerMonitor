@@ -29,10 +29,18 @@ function hasActiveAlert(data: DashboardData): boolean {
 }
 
 export default function DisplayPage() {
-  const { data, error, connected, lastUpdate, networkHistory, diskIoHistory } = useSystemData();
+  const { data, error, connected, lastUpdate, networkHistory, diskIoHistory, authRequired } = useSystemData();
   const now = useNow();
 
   const alerting = data !== null && hasActiveAlert(data);
+
+  useEffect(() => {
+    // The API is token-gated and this browser has no valid cookie. Send the user
+    // to the login page, remembering where they were.
+    if (authRequired) {
+      window.location.href = `/login?next=${encodeURIComponent(window.location.pathname)}`;
+    }
+  }, [authRequired]);
 
   useEffect(() => {
     document.title = alerting ? `⚠ ${BASE_TITLE}` : BASE_TITLE;

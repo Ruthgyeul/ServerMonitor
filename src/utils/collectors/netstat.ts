@@ -15,7 +15,7 @@ const TCP_LISTEN = '0A';
 // --- /proc/net/tcp parsing -----------------------------------------------
 
 // The sysfs address is little-endian hex in 4-byte words. "0100007F" is 127.0.0.1.
-function hexToIpv4(hex: string): string {
+export function hexToIpv4(hex: string): string {
   const bytes = hex.match(/../g);
   if (!bytes || bytes.length !== 4) return '0.0.0.0';
   return bytes
@@ -24,7 +24,7 @@ function hexToIpv4(hex: string): string {
     .join('.');
 }
 
-function hexToIpv6(hex: string): string {
+export function hexToIpv6(hex: string): string {
   const words = hex.match(/.{8}/g);
   if (!words || words.length !== 4) return '::';
 
@@ -61,7 +61,7 @@ function hexToIpv6(hex: string): string {
   return `${groups.slice(0, bestStart).join(':')}::${groups.slice(bestStart + bestLength).join(':')}`;
 }
 
-interface Socket {
+export interface Socket {
   localPort: number;
   remoteIp: string;
   state: string;
@@ -72,14 +72,9 @@ interface Socket {
   inode: string;
 }
 
-async function readSockets(path: string, ipv6: boolean): Promise<Socket[]> {
-  let contents: string;
-  try {
-    contents = await readFile(path, 'utf-8');
-  } catch {
-    return []; // tcp6 is absent on kernels with IPv6 disabled
-  }
-
+// Pure parser for the /proc/net/tcp{,6} table body. Kept separate from the file
+// read so the fragile hex/column parsing can be unit-tested with captured rows.
+export function parseSocketTable(contents: string, ipv6: boolean): Socket[] {
   const sockets: Socket[] = [];
   for (const line of contents.split('\n').slice(1)) {
     // /proc/net/tcp columns: sl local rem st tx:rx tr:when retr uid timeout inode ...
@@ -103,6 +98,16 @@ async function readSockets(path: string, ipv6: boolean): Promise<Socket[]> {
   return sockets;
 }
 
+async function readSockets(path: string, ipv6: boolean): Promise<Socket[]> {
+  let contents: string;
+  try {
+    contents = await readFile(path, 'utf-8');
+  } catch {
+    return []; // tcp6 is absent on kernels with IPv6 disabled
+  }
+  return parseSocketTable(contents, ipv6);
+}
+
 async function readAllSockets(): Promise<Socket[]> {
   const [v4, v6] = await Promise.all([
     readSockets('/proc/net/tcp', false),
@@ -117,9 +122,9 @@ export interface SocketSummary {
   peers: Map<string, number>;
 }
 
-export async function getSocketSummary(): Promise<SocketSummary> {
-  const sockets = await readAllSockets();
-
+// Pure reducer over parsed sockets. Split out so the counting/peer logic can be
+// tested without reading /proc.
+export function summarizeSockets(sockets: Socket[]): SocketSummary {
   const listening = new Set<number>();
   const peers = new Map<string, number>();
   let connections = 0;
@@ -138,6 +143,10 @@ export async function getSocketSummary(): Promise<SocketSummary> {
   }
 
   return { connections, listeningPorts: listening.size, peers };
+}
+
+export async function getSocketSummary(): Promise<SocketSummary> {
+  return summarizeSockets(await readAllSockets());
 }
 
 function isLoopback(ip: string): boolean {

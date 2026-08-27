@@ -4,6 +4,7 @@ import { getSystemInfo } from '@/utils/systemMonitor';
 import { isValidServerData } from '@/utils/validation';
 import { logger } from '@/utils/logger';
 import { jsonResponse } from '@/utils/http';
+import { enforceRateLimit } from '@/utils/rateLimit';
 
 // Per-collector failures are each handled with a fallback inside systemMonitor,
 // so an error that reaches here is a real fault. Returning a zero-filled "ok"
@@ -21,6 +22,9 @@ function getCorsHeaders(origin: string | undefined) {
 
 export async function GET(request: Request) {
   const origin = request.headers.get('origin') || undefined;
+
+  const limited = enforceRateLimit(request);
+  if (limited) return limited;
 
   try {
     const data = await getSystemInfo();

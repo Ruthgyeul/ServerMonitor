@@ -1,5 +1,6 @@
 import { getSystemInfo } from '@/utils/systemMonitor';
 import { isX86TemperatureInfo } from '@/types/system';
+import { enforceRateLimit } from '@/utils/rateLimit';
 
 // Prometheus scrape endpoint. This is a monitoring tool with no standard
 // exposition format, so long-term storage/alerting could not be delegated to
@@ -22,7 +23,10 @@ function line(name: string, value: number, labels?: Labels): string {
   return `${name}{${rendered}} ${value}`;
 }
 
-export async function GET() {
+export async function GET(request: Request) {
+  const limited = enforceRateLimit(request);
+  if (limited) return limited;
+
   const data = await getSystemInfo();
   const out: string[] = [];
 

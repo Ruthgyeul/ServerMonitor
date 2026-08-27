@@ -4,6 +4,15 @@
 // fs/child_process, so start only on the nodejs runtime.
 export async function register(): Promise<void> {
   if (process.env.NEXT_RUNTIME !== 'nodejs') return;
+
+  // Surface .env mistakes (bad cluster JSON, inverted alert thresholds, an
+  // invalid PING_HOST, ...) once at boot instead of letting them fail silently.
+  const [{ validateConfig }, { logger }] = await Promise.all([
+    import('@/utils/validateConfig'),
+    import('@/utils/logger')
+  ]);
+  for (const warning of validateConfig()) logger.warn('config:', warning);
+
   const { ensureCollecting } = await import('@/utils/systemStream');
   ensureCollecting();
 }

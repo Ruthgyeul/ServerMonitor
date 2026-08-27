@@ -26,7 +26,7 @@ export interface CpuUsage {
 let previousSample: { total: CpuTimes; perCore: CpuTimes[] } | null = null;
 
 // /proc/stat cpu fields: user nice system idle iowait irq softirq steal ...
-function parseCpuLine(line: string): CpuTimes {
+export function parseCpuLine(line: string): CpuTimes {
   const values = line.trim().split(/\s+/).slice(1).map(Number);
   if (values.length < 4 || values.some(Number.isNaN)) {
     throw new Error(`unparsable /proc/stat cpu line: ${line}`);
@@ -87,18 +87,11 @@ function usageBetween(previous: CpuTimes, current: CpuTimes): number {
   return round(clamp((1 - idleDelta / totalDelta) * 100, 0, 100), 1);
 }
 
-export async function getCpuUsage(): Promise<CpuUsage> {
-  let previous = previousSample;
+type CpuSample = { total: CpuTimes; perCore: CpuTimes[] };
 
-  // On the first call, take two quick samples so we don't return 0%.
-  if (!previous) {
-    previous = await readCpuStat();
-    await new Promise(resolve => setTimeout(resolve, 200));
-  }
-
-  const [current, frequencyMhz] = await Promise.all([readCpuStat(), readFrequencyMhz()]);
-  previousSample = current;
-
+// Pure: derive usage from two /proc/stat samples. Separated from the reads and
+// the cpufreq lookup so the delta maths can be unit-tested with fixed jiffies.
+export function computeCpuUsage(previous: CpuSample, current: CpuSample): Omit<CpuUsage, 'frequencyMhz'> {
   // The core count can change if a core goes offline, so use the shorter one.
   const coreCount = Math.min(previous.perCore.length, current.perCore.length);
   const perCore = Array.from({ length: coreCount }, (_, index) =>
@@ -114,7 +107,21 @@ export async function getCpuUsage(): Promise<CpuUsage> {
     total: usageBetween(previous.total, current.total),
     perCore,
     iowait: share(current.total.iowait - previous.total.iowait),
-    steal: share(current.total.steal - previous.total.steal),
-    frequencyMhz
+    steal: share(current.total.steal - previous.total.steal)
   };
+}
+
+export async function getCpuUsage(): Promise<CpuUsage> {
+  let previous = previousSample;
+
+  // On the first call, take two quick samples so we don't return 0%.
+  if (!previous) {
+    previous = await readCpuStat();
+    await new Promise(resolve => setTimeout(resolve, 200));
+  }
+
+  const [current, frequencyMhz] = await Promise.all([readCpuStat(), readFrequencyMhz()]);
+  previousSample = current;
+
+  return { ...computeCpuUsage(previous, current), frequencyMhz };
 }
