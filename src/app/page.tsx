@@ -3,8 +3,11 @@
 import React, { useEffect } from 'react';
 
 import { Dashboard } from '@/components/dashboard/Dashboard';
+import { DashboardControls } from '@/components/dashboard/DashboardControls';
 import { useNow } from '@/hooks/useNow';
 import { useSystemData } from '@/hooks/useSystemData';
+import { useAlertNotifications } from '@/hooks/useAlertNotifications';
+import { useKioskRotate } from '@/hooks/useKioskRotate';
 import type { DashboardData } from '@/utils/dashboardData';
 
 // So an alert is visible from the tab alone: when there's a current problem,
@@ -31,6 +34,9 @@ function hasActiveAlert(data: DashboardData): boolean {
 export default function DisplayPage() {
   const { data, error, connected, lastUpdate, networkHistory, diskIoHistory, authRequired } = useSystemData();
   const now = useNow();
+  const notify = useAlertNotifications(data?.alerts ?? []);
+  // Kiosk rotation: with ?rotate=<seconds> the panel cycles to /cluster and back.
+  useKioskRotate('/cluster');
 
   const alerting = data !== null && hasActiveAlert(data);
 
@@ -76,14 +82,17 @@ export default function DisplayPage() {
   }
 
   return (
-    <Dashboard
-      data={data}
-      connected={connected}
-      lastUpdate={lastUpdate}
-      now={now}
-      networkHistory={networkHistory}
-      diskIoHistory={diskIoHistory}
-    />
+    <>
+      <Dashboard
+        data={data}
+        connected={connected}
+        lastUpdate={lastUpdate}
+        now={now}
+        networkHistory={networkHistory}
+        diskIoHistory={diskIoHistory}
+      />
+      <DashboardControls notifyEnabled={notify.enabled} onToggleNotify={notify.toggle} />
+    </>
   );
 }
 
