@@ -22,4 +22,19 @@ describe('parseAptSimulation', () => {
     ].join('\n');
     expect(parseAptSimulation(output)).toEqual({ total: 2, security: 1 });
   });
+
+  it('matches the pocket, not a package name containing "security"', () => {
+    const output = [
+      'Inst libsecurity1 [1.0] (1.1 Ubuntu:22.04/jammy-updates [amd64])', // name only, not a security update
+      'Inst openssl [3.0] (3.0.2 Ubuntu:22.04/jammy-security [amd64])'
+    ].join('\n');
+    expect(parseAptSimulation(output)).toEqual({ total: 2, security: 1 });
+  });
+
+  it('returns zero on a fully patched host (no Inst lines)', () => {
+    expect(parseAptSimulation('Reading package lists...\n0 upgraded, 0 newly installed.')).toEqual({
+      total: 0,
+      security: 0
+    });
+  });
 });

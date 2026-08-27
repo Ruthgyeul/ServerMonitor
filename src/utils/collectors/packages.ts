@@ -21,7 +21,10 @@ export function parseAptSimulation(output: string): PackagesInfo {
   for (const line of output.split('\n')) {
     if (!line.startsWith('Inst ')) continue;
     total += 1;
-    if (/security/i.test(line)) security += 1;
+    // Only the parenthesized repo/pocket annotation decides "security" — not the
+    // package name (which might merely contain "security").
+    const annotation = line.match(/\(([^)]*)\)/)?.[1] ?? '';
+    if (/security/i.test(annotation)) security += 1;
   }
   return { total, security };
 }
@@ -37,8 +40,10 @@ export const getPackagesInfo = withTtl(30 * 60_000, async (): Promise<PackagesIn
   }
 
   try {
-    const output = await run('apt-get -s upgrade 2>/dev/null || true', 15_000);
-    if (output.includes('Inst ')) return parseAptSimulation(output);
+    // No `|| true`: if apt-get runs at all (throws only when absent), a fully
+    // patched host has zero "Inst " lines and should report 0, not disappear.
+    const output = await run('apt-get -s upgrade 2>/dev/null', 15_000);
+    return parseAptSimulation(output);
   } catch {
     // apt not present
   }

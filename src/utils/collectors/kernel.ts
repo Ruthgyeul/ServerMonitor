@@ -23,8 +23,14 @@ export function countFailedLogins(output: string): number {
 
 export const getKernelErrorCount = withTtl(60_000, async (): Promise<number | null> => {
   try {
-    // -p 3 = err priority. No `|| true`, so a permission failure throws → null.
-    const output = await run('journalctl -k -p 3 --since=-24h --no-pager -n 2000 2>/dev/null', 10_000);
+    // _TRANSPORT=kernel (not -k) so the 24h window spans reboots, not just the
+    // current boot. -q suppresses status lines like "-- No entries --" that would
+    // otherwise be counted as one error. -p 3 = err priority. No `|| true`, so a
+    // command failure throws → null.
+    const output = await run(
+      'journalctl _TRANSPORT=kernel -p 3 --since=-24h --no-pager -q -n 2000 2>/dev/null',
+      10_000
+    );
     return countNonEmptyLines(output);
   } catch {
     return null;
@@ -33,8 +39,10 @@ export const getKernelErrorCount = withTtl(60_000, async (): Promise<number | nu
 
 export const getFailedLoginCount = withTtl(60_000, async (): Promise<number | null> => {
   try {
+    // -q suppresses the "-- No entries --" hint (which would otherwise be a stray
+    // counted line on a quiet host).
     const output = await run(
-      'journalctl _SYSTEMD_UNIT=ssh.service _SYSTEMD_UNIT=sshd.service --since=-24h --no-pager -n 5000 2>/dev/null',
+      'journalctl _SYSTEMD_UNIT=ssh.service _SYSTEMD_UNIT=sshd.service --since=-24h --no-pager -q -n 5000 2>/dev/null',
       10_000
     );
     return countFailedLogins(output);

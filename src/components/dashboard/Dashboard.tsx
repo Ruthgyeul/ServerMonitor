@@ -574,11 +574,13 @@ const TrendSparkline: React.FC<{ samples?: { value: number | null }[]; color: st
   color,
   label
 }) => {
-  const values = (samples ?? []).map(sample => sample.value).filter((v): v is number => v !== null);
-  if (values.length < 2) return null;
+  const slots = (samples ?? []).map(sample => sample.value);
+  // Need two real points to draw; keep the null slots so gaps stay at their true
+  // position in the 24h window rather than compressing.
+  if (slots.filter((v): v is number => v !== null).length < 2) return null;
   return (
     <div className="mt-1 h-4" title={`${label} — last 24h`}>
-      <Sparkline series={[{ key: label, values, color }]} />
+      <Sparkline series={[{ key: label, values: slots, color }]} />
     </div>
   );
 };

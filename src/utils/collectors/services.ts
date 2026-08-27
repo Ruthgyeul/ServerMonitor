@@ -23,15 +23,16 @@ export function parseFailedUnits(output: string): string[] {
 export const getServicesInfo = withTtl(30_000, async (): Promise<ServicesInfo> => {
   let output: string;
   try {
-    output = await run(
-      'systemctl list-units --type=service --state=failed --no-legend --plain 2>/dev/null || true'
-    );
+    // No `|| true`: on a non-systemd host (or one where systemctl can't reach the
+    // manager) the command fails and we return null (unknown), rather than
+    // presenting an unavailable check as a healthy "0 failed". A real 0-failure
+    // run exits 0 with empty output.
+    output = await run('systemctl list-units --type=service --state=failed --no-legend --plain 2>/dev/null');
   } catch {
-    return { failed: null, failedUnits: [] }; // no systemd (container/busybox)
+    return { failed: null, failedUnits: [] };
   }
 
-  // Empty output can mean "no failed units" OR "systemctl unavailable"; the
-  // `|| true` above makes both empty. Treat empty as zero failed — the common case.
-  const failedUnits = parseFailedUnits(output).slice(0, 10);
-  return { failed: failedUnits.length, failedUnits };
+  // Count the full set; only the detail list is bounded.
+  const units = parseFailedUnits(output);
+  return { failed: units.length, failedUnits: units.slice(0, 10) };
 });

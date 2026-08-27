@@ -608,12 +608,16 @@ export async function getSystemInfo(): Promise<ServerData> {
   const cpuAnomaly = isAnomalous(cpu.usage, cpuBaseline);
 
   recordSample(cpu.usage, loadBase.avg1, now);
+  // A failed collector returns a zero-filled fallback; recording that as a real
+  // hourly observation would depress the trend average. Skip (null) any metric
+  // whose collector reported a failure this tick.
+  const collectorFailed = (name: string) => warnings.some(warning => warning.startsWith(`${name}:`));
   recordTrend(
     {
-      mem: memory.percentage,
-      disk: disk.percentage,
+      mem: collectorFailed('memory') ? null : memory.percentage,
+      disk: collectorFailed('disk') ? null : disk.percentage,
       temp: typeof cpu.temperature === 'number' ? cpu.temperature : null,
-      net: network.download + network.upload
+      net: collectorFailed('network') ? null : network.download + network.upload
     },
     now
   );
