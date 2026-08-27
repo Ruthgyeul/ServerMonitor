@@ -69,7 +69,12 @@ export function useSystemData(): SystemDataState {
       probed = true;
       fetch('/api/system/stream', { method: 'GET', headers: { Accept: 'text/event-stream' } })
         .then(response => {
-          if (response.status === 401) setState(previous => ({ ...previous, authRequired: true }));
+          if (response.status === 401) {
+            setState(previous => ({ ...previous, authRequired: true }));
+          }
+          // Otherwise this is the long-lived SSE endpoint: cancel the body so a
+          // second stream doesn't sit open alongside the reconnecting EventSource.
+          void response.body?.cancel();
         })
         .catch(() => {
           /* network error — leave it to the normal error path */

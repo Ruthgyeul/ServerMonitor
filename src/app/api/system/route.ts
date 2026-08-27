@@ -23,7 +23,7 @@ function getCorsHeaders(origin: string | undefined) {
 export async function GET(request: Request) {
   const origin = request.headers.get('origin') || undefined;
 
-  const limited = enforceRateLimit(request);
+  const limited = enforceRateLimit(request, getCorsHeaders(origin));
   if (limited) return limited;
 
   try {

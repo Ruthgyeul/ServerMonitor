@@ -42,7 +42,13 @@ describe('parseSocketTable', () => {
     const sockets = parseSocketTable(TCP_TABLE, false);
     expect(sockets).toHaveLength(4);
     expect(sockets[0]).toMatchObject({ localPort: 22, state: '0A', remoteIp: '0.0.0.0' });
-    expect(sockets[1]).toMatchObject({ localPort: 8080, state: '01', remoteIp: '10.0.2.15', uid: 1000, inode: '2002' });
+    expect(sockets[1]).toMatchObject({
+      localPort: 8080,
+      state: '01',
+      remoteIp: '10.0.2.15',
+      uid: 1000,
+      inode: '2002'
+    });
   });
 
   it('skips the header and blank lines', () => {

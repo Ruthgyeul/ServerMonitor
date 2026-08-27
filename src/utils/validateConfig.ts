@@ -13,12 +13,52 @@ const WEBHOOK_FORMATS = ['json', 'slack', 'discord'];
 
 // The paired enter/clear alert thresholds. Each should be numeric and, for a
 // "high is bad" metric, enter must sit above clear or the hysteresis inverts.
-const THRESHOLD_PAIRS: [enter: string, clear: string, label: string][] = [
-  ['ALERT_CPU_ENTER', 'ALERT_CPU_CLEAR', 'CPU'],
-  ['ALERT_MEM_ENTER', 'ALERT_MEM_CLEAR', 'memory'],
-  ['ALERT_DISK_ENTER', 'ALERT_DISK_CLEAR', 'disk'],
-  ['ALERT_TEMP_ENTER', 'ALERT_TEMP_CLEAR', 'temperature'],
-  ['ALERT_SWAP_ENTER', 'ALERT_SWAP_CLEAR', 'swap']
+// Defaults mirror the built-ins in alerts.ts so a one-sided override is checked
+// against the value the other side actually uses at runtime, not skipped.
+interface ThresholdPair {
+  enterKey: string;
+  clearKey: string;
+  label: string;
+  enterDefault: number;
+  clearDefault: number;
+}
+
+const THRESHOLD_PAIRS: ThresholdPair[] = [
+  {
+    enterKey: 'ALERT_CPU_ENTER',
+    clearKey: 'ALERT_CPU_CLEAR',
+    label: 'CPU',
+    enterDefault: 90,
+    clearDefault: 80
+  },
+  {
+    enterKey: 'ALERT_MEM_ENTER',
+    clearKey: 'ALERT_MEM_CLEAR',
+    label: 'memory',
+    enterDefault: 90,
+    clearDefault: 80
+  },
+  {
+    enterKey: 'ALERT_DISK_ENTER',
+    clearKey: 'ALERT_DISK_CLEAR',
+    label: 'disk',
+    enterDefault: 85,
+    clearDefault: 80
+  },
+  {
+    enterKey: 'ALERT_TEMP_ENTER',
+    clearKey: 'ALERT_TEMP_CLEAR',
+    label: 'temperature',
+    enterDefault: 74,
+    clearDefault: 70
+  },
+  {
+    enterKey: 'ALERT_SWAP_ENTER',
+    clearKey: 'ALERT_SWAP_CLEAR',
+    label: 'swap',
+    enterDefault: 80,
+    clearDefault: 60
+  }
 ];
 
 function isNumeric(raw: string): boolean {
@@ -67,14 +107,22 @@ export function validateConfig(env: Env = process.env): string[] {
   }
 
   // Alert thresholds — numeric, and enter above clear so hysteresis is sane.
-  for (const [enterKey, clearKey, label] of THRESHOLD_PAIRS) {
+  // The check uses effective values (override or built-in default), so a
+  // one-sided override that inverts against the other side's default is caught.
+  for (const { enterKey, clearKey, label, enterDefault, clearDefault } of THRESHOLD_PAIRS) {
     const enter = env[enterKey];
     const clear = env[clearKey];
-    if (isSet(enter) && !isNumeric(enter)) warnings.push(`${enterKey} "${enter}" is not a number; using the default.`);
-    if (isSet(clear) && !isNumeric(clear)) warnings.push(`${clearKey} "${clear}" is not a number; using the default.`);
-    if (isSet(enter) && isSet(clear) && isNumeric(enter) && isNumeric(clear) && Number(enter) <= Number(clear)) {
+    if (isSet(enter) && !isNumeric(enter))
+      warnings.push(`${enterKey} "${enter}" is not a number; using the default.`);
+    if (isSet(clear) && !isNumeric(clear))
+      warnings.push(`${clearKey} "${clear}" is not a number; using the default.`);
+
+    const effectiveEnter = isSet(enter) && isNumeric(enter) ? Number(enter) : enterDefault;
+    const effectiveClear = isSet(clear) && isNumeric(clear) ? Number(clear) : clearDefault;
+    // Only warn when an override actually caused the inversion (all-default is fine by construction).
+    if ((isSet(enter) || isSet(clear)) && effectiveEnter <= effectiveClear) {
       warnings.push(
-        `${label} alert enter (${enter}) is not above clear (${clear}); the alert will flap or never clear.`
+        `${label} alert enter (${effectiveEnter}) is not above clear (${effectiveClear}); the alert will flap or never clear.`
       );
     }
   }
@@ -103,14 +151,18 @@ export function validateConfig(env: Env = process.env): string[] {
     }
   }
 
-  // IDLE_TICK_MS — numeric; falls back to 15000 otherwise.
-  if (isSet(env.IDLE_TICK_MS) && !isNumeric(env.IDLE_TICK_MS)) {
-    warnings.push(`IDLE_TICK_MS "${env.IDLE_TICK_MS}" is not a number; using the 15000ms default.`);
+  // IDLE_TICK_MS — must be a positive interval. A non-numeric value falls back
+  // to 15000, but a zero/negative one passes Number() and makes setTimeout fire
+  // immediately, running the collectors in a tight loop while idle.
+  if (isSet(env.IDLE_TICK_MS) && (!isNumeric(env.IDLE_TICK_MS) || Number(env.IDLE_TICK_MS) <= 0)) {
+    warnings.push(`IDLE_TICK_MS "${env.IDLE_TICK_MS}" is not a positive number; using the 15000ms default.`);
   }
 
   // A token that is too short offers little protection.
   if (isSet(env.API_AUTH_TOKEN) && env.API_AUTH_TOKEN.length < 16) {
-    warnings.push('API_AUTH_TOKEN is shorter than 16 characters; consider a longer secret (e.g. openssl rand -hex 32).');
+    warnings.push(
+      'API_AUTH_TOKEN is shorter than 16 characters; consider a longer secret (e.g. openssl rand -hex 32).'
+    );
   }
 
   return warnings;

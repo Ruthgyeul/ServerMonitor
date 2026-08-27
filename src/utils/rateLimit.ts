@@ -1,15 +1,15 @@
 // Per-IP token-bucket rate limiting for the public JSON endpoints
-// (/api/system, /api/metrics). CORS and the optional token gate don't stop a
-// script hammering the endpoint from an allowed origin or an open deployment;
-// this caps the request rate so collection (which shells out to ps/df/sensors)
-// can't be driven into a busy loop.
+// (/api/system, /api/metrics) and for dashboard login attempts. CORS and the
+// optional token gate don't stop a script hammering the endpoint from an allowed
+// origin or an open deployment; this caps the request rate so collection (which
+// shells out to ps/df/sensors) can't be driven into a busy loop, and it slows
+// password guessing at /api/auth/login.
 //
 // In-memory and per-process — good enough for a single self-hosted instance;
 // front it with a reverse proxy limiter if you run several replicas.
 //
-// Tuned by RATE_LIMIT_RPM (requests per minute per IP). 0 disables it entirely.
-// The default is generous so server-to-server cluster polling (~60/min per node)
-// and several dashboards are unaffected.
+// Tuned by RATE_LIMIT_RPM (requests per minute per IP). 0 disables it entirely;
+// a malformed value falls back to the default rather than silently failing open.
 
 interface Bucket {
   tokens: number;
@@ -26,11 +26,14 @@ export function createRateLimiter(rpm: number, burst?: number): RateLimiter {
   const refillPerSecond = rpm / 60;
   const buckets = new Map<string, Bucket>();
 
-  // Drop buckets untouched for a while so a stream of unique IPs can't grow the
-  // map without bound. Cheap: only sweeps once the map gets sizeable.
+  // Drop buckets untouched for a while so a stream of unique keys can't grow the
+  // map without bound. Throttled to at most once a minute so the O(n) sweep
+  // can't run on every request and become its own CPU sink.
   const IDLE_MS = 10 * 60 * 1000;
-  function prune(now: number): void {
-    if (buckets.size < 10_000) return;
+  let lastPruneAt = 0;
+  function maybePrune(now: number): void {
+    if (buckets.size < 10_000 || now - lastPruneAt < 60_000) return;
+    lastPruneAt = now;
     for (const [key, bucket] of buckets) {
       if (now - bucket.updatedAt > IDLE_MS) buckets.delete(key);
     }
@@ -48,7 +51,7 @@ export function createRateLimiter(rpm: number, burst?: number): RateLimiter {
       if (bucket.tokens >= 1) {
         bucket.tokens -= 1;
         buckets.set(key, bucket);
-        prune(now);
+        maybePrune(now);
         return { allowed: true, retryAfterSeconds: 0 };
       }
 
@@ -60,31 +63,61 @@ export function createRateLimiter(rpm: number, burst?: number): RateLimiter {
   };
 }
 
-// The first hop of X-Forwarded-For (set by a reverse proxy), else the platform
-// real-ip header, else a shared bucket. Behind a proxy that doesn't set these,
-// all clients share one bucket — acceptable for a coarse safety cap.
-export function clientIp(request: Request): string {
+// Whether to trust client-supplied forwarding headers. On a directly-exposed
+// deployment a caller controls X-Forwarded-For and could mint a fresh bucket per
+// request, both bypassing the cap and growing the map — so we trust these
+// headers only when RATE_LIMIT_TRUST_PROXY is set (i.e. a reverse proxy that
+// overwrites them sits in front). Otherwise every caller shares one bucket, a
+// coarse global cap that is still safe.
+const TRUST_PROXY = /^(1|true|yes)$/i.test(process.env.RATE_LIMIT_TRUST_PROXY ?? '');
+
+export function clientIp(request: Request, trustProxy: boolean = TRUST_PROXY): string {
+  if (!trustProxy) return 'all';
   const forwarded = request.headers.get('x-forwarded-for');
   if (forwarded) return forwarded.split(',')[0].trim();
-  return request.headers.get('x-real-ip')?.trim() || 'unknown';
+  return request.headers.get('x-real-ip')?.trim() || 'all';
 }
 
-const RPM = Number(process.env.RATE_LIMIT_RPM ?? 300);
-// A single shared limiter for the process. Disabled (null) when RPM <= 0.
-const limiter: RateLimiter | null = Number.isFinite(RPM) && RPM > 0 ? createRateLimiter(RPM) : null;
+// Parse RPM: unset -> default; a real number -> that (0 or less disables);
+// anything malformed -> default, so a typo never silently disables the limit.
+const RATE_LIMIT_DEFAULT_RPM = 300;
+function resolveRpm(raw: string | undefined): number {
+  if (raw === undefined || raw.trim() === '') return RATE_LIMIT_DEFAULT_RPM;
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) ? parsed : RATE_LIMIT_DEFAULT_RPM;
+}
 
-// Returns a 429 Response when the caller is over the limit, or null to proceed.
-export function enforceRateLimit(request: Request): Response | null {
-  if (!limiter) return null;
-  const { allowed, retryAfterSeconds } = limiter.take(clientIp(request));
-  if (allowed) return null;
+const RPM = resolveRpm(process.env.RATE_LIMIT_RPM);
+// A single shared limiter for the public API. Disabled (null) when RPM <= 0.
+const apiLimiter: RateLimiter | null = RPM > 0 ? createRateLimiter(RPM) : null;
 
+// A stricter limiter for login attempts, so a dashboard password can't be
+// brute-forced. Always on when login is reachable; ~10 attempts/min per key.
+const loginLimiter = createRateLimiter(10, 5);
+
+function limitedResponse(retryAfterSeconds: number, extraHeaders?: Record<string, string>): Response {
   return new Response(JSON.stringify({ error: 'Too Many Requests' }), {
     status: 429,
     headers: {
       'Content-Type': 'application/json',
       'Retry-After': String(retryAfterSeconds),
-      'Cache-Control': 'no-store'
+      'Cache-Control': 'no-store',
+      ...extraHeaders
     }
   });
+}
+
+// Returns a 429 Response when the caller is over the public-API limit, or null
+// to proceed. extraHeaders (e.g. CORS) are merged so an allowed origin still
+// sees a usable 429 instead of a generic CORS failure.
+export function enforceRateLimit(request: Request, extraHeaders?: Record<string, string>): Response | null {
+  if (!apiLimiter) return null;
+  const { allowed, retryAfterSeconds } = apiLimiter.take(clientIp(request));
+  return allowed ? null : limitedResponse(retryAfterSeconds, extraHeaders);
+}
+
+// Returns a 429 Response when login attempts from this caller are too frequent.
+export function enforceLoginRateLimit(request: Request): Response | null {
+  const { allowed, retryAfterSeconds } = loginLimiter.take(clientIp(request));
+  return allowed ? null : limitedResponse(retryAfterSeconds);
 }

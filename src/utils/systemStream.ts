@@ -15,7 +15,13 @@ import { logger } from '@/utils/logger';
 type Listener = (data: ServerData) => void;
 
 const ACTIVE_TICK_MS = 1000; // someone is watching: real-time
-const IDLE_TICK_MS = Number(process.env.IDLE_TICK_MS) || 15000; // nobody watching: save resources
+// nobody watching: save resources. Guard against a zero/negative/non-numeric
+// override, which would otherwise make setTimeout fire immediately and spin the
+// collectors in a tight loop while idle.
+const IDLE_TICK_MS = (() => {
+  const parsed = Number(process.env.IDLE_TICK_MS);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 15000;
+})();
 
 const listeners = new Set<Listener>();
 let running = false;

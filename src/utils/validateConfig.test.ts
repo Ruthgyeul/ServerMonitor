@@ -26,7 +26,9 @@ describe('validateConfig', () => {
   });
 
   it('flags malformed cluster entries', () => {
-    const warnings = validateConfig({ NEXT_PUBLIC_CLUSTER_SERVERS: '[{"name":"a","ip":"1.1.1.1","type":"bad"}]' });
+    const warnings = validateConfig({
+      NEXT_PUBLIC_CLUSTER_SERVERS: '[{"name":"a","ip":"1.1.1.1","type":"bad"}]'
+    });
     expect(warnings[0]).toContain('malformed');
   });
 
@@ -41,6 +43,18 @@ describe('validateConfig', () => {
 
   it('flags a non-numeric threshold', () => {
     expect(validateConfig({ ALERT_MEM_ENTER: 'high' }).some(w => w.includes('ALERT_MEM_ENTER'))).toBe(true);
+  });
+
+  it('flags a one-sided override that inverts against the default clear', () => {
+    // ALERT_CPU_CLEAR defaults to 80, so an enter of 70 alone still inverts.
+    const warnings = validateConfig({ ALERT_CPU_ENTER: '70' });
+    expect(warnings.some(w => w.includes('not above clear (80)'))).toBe(true);
+  });
+
+  it('flags a non-positive IDLE_TICK_MS', () => {
+    expect(validateConfig({ IDLE_TICK_MS: '-1' }).some(w => w.includes('IDLE_TICK_MS'))).toBe(true);
+    expect(validateConfig({ IDLE_TICK_MS: '0' }).some(w => w.includes('IDLE_TICK_MS'))).toBe(true);
+    expect(validateConfig({ IDLE_TICK_MS: '15000' }).some(w => w.includes('IDLE_TICK_MS'))).toBe(false);
   });
 
   it('flags an invalid webhook URL and unknown format', () => {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { clientIp, createRateLimiter } from '@/utils/rateLimit';
+import { clientIp, createRateLimiter, enforceLoginRateLimit } from '@/utils/rateLimit';
 
 describe('createRateLimiter', () => {
   it('allows up to the burst capacity, then blocks', () => {
@@ -34,14 +34,32 @@ describe('createRateLimiter', () => {
   });
 });
 
+describe('enforceLoginRateLimit', () => {
+  it('returns a 429 after the login attempt burst is exhausted', () => {
+    const request = new Request('http://x', { method: 'POST' });
+    let last: Response | null = null;
+    // Burst is 5; the sixth attempt within the same tick should be limited.
+    for (let i = 0; i < 6; i += 1) last = enforceLoginRateLimit(request);
+    expect(last?.status).toBe(429);
+    expect(last?.headers.get('Retry-After')).toBeTruthy();
+  });
+});
+
 describe('clientIp', () => {
-  it('uses the first X-Forwarded-For hop', () => {
+  it('uses the first X-Forwarded-For hop when a proxy is trusted', () => {
     const request = new Request('http://x', { headers: { 'x-forwarded-for': '203.0.113.7, 10.0.0.1' } });
-    expect(clientIp(request)).toBe('203.0.113.7');
+    expect(clientIp(request, true)).toBe('203.0.113.7');
   });
 
-  it('falls back to x-real-ip, then unknown', () => {
-    expect(clientIp(new Request('http://x', { headers: { 'x-real-ip': '198.51.100.2' } }))).toBe('198.51.100.2');
-    expect(clientIp(new Request('http://x'))).toBe('unknown');
+  it('falls back to x-real-ip, then a shared key, when a proxy is trusted', () => {
+    expect(clientIp(new Request('http://x', { headers: { 'x-real-ip': '198.51.100.2' } }), true)).toBe(
+      '198.51.100.2'
+    );
+    expect(clientIp(new Request('http://x'), true)).toBe('all');
+  });
+
+  it('ignores spoofable forwarding headers when no proxy is trusted', () => {
+    const request = new Request('http://x', { headers: { 'x-forwarded-for': '203.0.113.7' } });
+    expect(clientIp(request, false)).toBe('all');
   });
 });

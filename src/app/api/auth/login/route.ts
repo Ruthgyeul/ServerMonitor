@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 import { timingSafeEqual } from '@/utils/timingSafeEqual';
+import { enforceLoginRateLimit } from '@/utils/rateLimit';
+import { isHttps } from '@/utils/requestScheme';
 
 // Optional login that lets a secured API and the browser dashboard coexist.
 //
@@ -38,6 +40,10 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Login is not enabled' }, { status: 404 });
   }
 
+  // Slow down password guessing before doing any comparison.
+  const limited = enforceLoginRateLimit(request);
+  if (limited) return limited;
+
   const password = await readPassword(request);
   if (!password || !timingSafeEqual(password, PASSWORD)) {
     return NextResponse.json({ error: 'Invalid password' }, { status: 401 });
@@ -46,10 +52,12 @@ export async function POST(request: NextRequest) {
   const response = NextResponse.json({ ok: true });
   // If no API token is configured the gate is open anyway; still set a cookie so
   // the flow is consistent, but it only matters when API_AUTH_TOKEN is set.
+  // Secure is keyed to the observed scheme so a plain-HTTP LAN deployment can
+  // still receive (and keep) the cookie.
   response.cookies.set('api_auth_token', TOKEN ?? '', {
     httpOnly: true,
     sameSite: 'lax',
-    secure: process.env.NODE_ENV === 'production',
+    secure: isHttps(request),
     path: '/',
     maxAge: 60 * 60 * 24 * 7 // a week
   });

@@ -9,7 +9,10 @@ import { useSearchParams } from 'next/navigation';
 
 function LoginForm() {
   const params = useSearchParams();
-  const next = params.get('next') || '/';
+  // Only same-origin absolute paths. Reject protocol-relative ("//host") and
+  // backslash variants so a crafted ?next= can't open-redirect after login.
+  const rawNext = params.get('next') || '/';
+  const next = /^\/(?![/\\])/.test(rawNext) ? rawNext : '/';
 
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -27,7 +30,8 @@ function LoginForm() {
       });
       if (response.ok) {
         // Full navigation so the new cookie is attached to the SSE request.
-        window.location.href = next.startsWith('/') ? next : '/';
+        // `next` is already validated to a safe same-origin path above.
+        window.location.href = next;
         return;
       }
       setError(response.status === 404 ? 'Login is not enabled on this server.' : 'Invalid password.');
