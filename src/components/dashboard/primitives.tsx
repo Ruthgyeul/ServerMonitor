@@ -72,7 +72,9 @@ export const Bar: React.FC<BarProps> = ({ percentage, color, className, children
 
 interface SparklineSeries {
   key: string;
-  values: number[];
+  // null entries are gaps (the metric was unavailable that slot) — the line
+  // breaks there rather than interpolating across the missing time.
+  values: (number | null)[];
   color: string;
 }
 
@@ -88,7 +90,12 @@ export const Sparkline: React.FC<SparklineProps> = ({ series, className, emptyLa
   const height = 34;
   const length = Math.max(...series.map(entry => entry.values.length), 0);
 
-  if (length < 2) {
+  // Need at least two real (non-null) points somewhere to draw a line.
+  const realCount = series.reduce(
+    (total, entry) => total + entry.values.filter((value): value is number => value !== null).length,
+    0
+  );
+  if (length < 2 || realCount < 2) {
     return (
       <div className={cn('t-micro flex h-full items-center justify-center text-gray-500', className)}>
         {emptyLabel}
@@ -96,16 +103,26 @@ export const Sparkline: React.FC<SparklineProps> = ({ series, className, emptyLa
     );
   }
 
-  const max = Math.max(1, ...series.flatMap(entry => entry.values)) * 1.2;
+  const reals = series.flatMap(entry => entry.values.filter((value): value is number => value !== null));
+  const max = Math.max(1, ...reals) * 1.2;
 
-  const path = (values: number[]) =>
-    values
-      .map((value, index) => {
-        const x = (index / (length - 1)) * width;
-        const y = height - (Math.max(0, Math.min(max, value)) / max) * height;
-        return `${index === 0 ? 'M' : 'L'}${x.toFixed(1)},${y.toFixed(1)}`;
-      })
-      .join(' ');
+  // Keep each point at its true x-position (by index) and start a new sub-path
+  // after a gap, so missing slots read as breaks rather than compressing time.
+  const path = (values: (number | null)[]) => {
+    let d = '';
+    let penDown = false;
+    values.forEach((value, index) => {
+      if (value === null) {
+        penDown = false;
+        return;
+      }
+      const x = (index / (length - 1)) * width;
+      const y = height - (Math.max(0, Math.min(max, value)) / max) * height;
+      d += `${penDown ? 'L' : 'M'}${x.toFixed(1)},${y.toFixed(1)} `;
+      penDown = true;
+    });
+    return d.trim();
+  };
 
   return (
     <svg

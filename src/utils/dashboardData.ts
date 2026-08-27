@@ -14,7 +14,12 @@ import {
   ProcessSummary,
   BatteryInfo,
   TemperatureInfo,
-  TemperatureValue
+  TemperatureValue,
+  MemoryDetail,
+  ServicesInfo,
+  PackagesInfo,
+  SmartDevice,
+  ReadOnlyMount
 } from '@/types/system';
 
 // The API's new fields are all optional (old-node compatible). Rather than
@@ -58,6 +63,13 @@ export interface DashboardData {
   processSummary: ProcessSummary;
   topProcessesByMemory: Process[];
   battery: BatteryInfo | null;
+  memoryDetail: MemoryDetail | null;
+  services: ServicesInfo;
+  packages: PackagesInfo | null;
+  smart: SmartDevice[];
+  readOnlyMounts: ReadOnlyMount[];
+  kernelErrors: number | null;
+  failedLogins: number | null;
   history: HistoryInfo;
   alerts: AlertEntry[];
   timestamp: string;
@@ -120,6 +132,13 @@ export function toDashboardData(raw: ServerData): DashboardData {
     processSummary: raw.processSummary ?? { total: 0, running: 0, sleeping: 0, zombie: 0, threads: null },
     topProcessesByMemory: raw.topProcessesByMemory ?? [],
     battery: raw.battery ?? null,
+    memoryDetail: raw.memoryDetail ?? null,
+    services: raw.services ?? { failed: null, failedUnits: [] },
+    packages: raw.packages ?? null,
+    smart: raw.smart ?? [],
+    readOnlyMounts: raw.readOnlyMounts ?? [],
+    kernelErrors: raw.kernelErrors ?? null,
+    failedLogins: raw.failedLogins ?? null,
     history: raw.history ?? EMPTY_HISTORY,
     alerts: raw.alerts ?? [],
     timestamp: raw.timestamp ?? new Date().toISOString(),

@@ -47,29 +47,45 @@ export async function collect<T>(
 }
 
 // The dashboard polls once a second. Running process-spawning collectors like
-// `who`, `last`, `nvidia-smi` every second would make the monitored server
-// busier, so values that rarely change are cached and reused for a TTL.
+// `who`, `last`, `nvidia-smi`, `smartctl`, `apt-get` every second would make the
+// monitored server busier, so values that rarely change are cached for a TTL.
+//
+// Stale-while-revalidate: once a value exists, an expired entry returns the stale
+// value immediately and refreshes in the background. Only the very first call
+// (before any value exists) awaits the collector. This keeps a slow refresh
+// (apt/SMART/journal, up to seconds) from blocking the 1s collection loop, since
+// getSystemInfo awaits every collector before the next tick is scheduled.
 export function withTtl<T>(ttlMs: number, fn: () => Promise<T>): () => Promise<T> {
   let value: T;
+  let hasValue = false;
   let expiresAt = 0;
   let inflight: Promise<T> | null = null;
 
-  return async () => {
-    if (expiresAt > Date.now()) return value;
+  const refresh = (): Promise<T> => {
     // Even if several collectors call within the same tick, spawn the process only once.
     if (inflight) return inflight;
-
     inflight = fn()
       .then(result => {
         value = result;
+        hasValue = true;
         expiresAt = Date.now() + ttlMs;
         return result;
       })
       .finally(() => {
         inflight = null;
       });
-
     return inflight;
+  };
+
+  return async () => {
+    if (hasValue && expiresAt > Date.now()) return value; // fresh
+    if (hasValue) {
+      // Stale: kick off a background refresh (swallow its error — the stale value
+      // is still served) and return the last good value now.
+      void refresh().catch(() => {});
+      return value;
+    }
+    return refresh(); // no value yet: must await the first collection
   };
 }
 

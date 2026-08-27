@@ -35,7 +35,10 @@ const SAVE_INTERVAL_MS = 30 * 1000;
 // project into the output bundle (the "unexpected file in NFT list" warning).
 const DATA_DIR = process.env.DATA_DIR || path.join(/*turbopackIgnore: true*/ process.cwd(), 'data');
 const STORE_FILE = process.env.HISTORY_FILE || path.join(DATA_DIR, 'history.json');
-const STORE_VERSION = 1;
+// v2 adds the per-metric trend buckets. A v1 file still loads (its trend series
+// just start empty and fill over time).
+const STORE_VERSION = 2;
+const SUPPORTED_VERSIONS = new Set([1, 2]);
 
 interface Bucket {
   sum: number;
@@ -44,6 +47,18 @@ interface Bucket {
 
 const loadBuckets = new Map<number, Bucket>();
 const cpuBuckets = new Map<number, Bucket>();
+
+// Per-metric trend buckets (memory %, disk %, temperature °C, network KB/s).
+// Same hourly granularity/retention as CPU; drawn as 24h sparklines per card.
+// Kept in one record so the persistence/serialisation loops stay generic.
+const TREND_KEYS = ['mem', 'disk', 'temp', 'net'] as const;
+type TrendKey = (typeof TREND_KEYS)[number];
+const trendBuckets: Record<TrendKey, Map<number, Bucket>> = {
+  mem: new Map(),
+  disk: new Map(),
+  temp: new Map(),
+  net: new Map()
+};
 
 // --- 30-minute moving average --------------------------------------------
 // The kernel only gives 1/5/15-minute load averages, so we compute the 30-minute
@@ -110,6 +125,11 @@ interface StoreShape {
   v: number;
   loadBuckets: SerializedBucket[];
   cpuBuckets: SerializedBucket[];
+  // Added in store v2 (optional so a v1 file still loads its load/cpu history).
+  memBuckets?: SerializedBucket[];
+  diskBuckets?: SerializedBucket[];
+  tempBuckets?: SerializedBucket[];
+  netBuckets?: SerializedBucket[];
 }
 
 function serialize(buckets: Map<number, Bucket>): SerializedBucket[] {
@@ -139,9 +159,14 @@ function ensureLoaded(): void {
   try {
     const raw = fs.readFileSync(/*turbopackIgnore: true*/ STORE_FILE, 'utf-8');
     const parsed = JSON.parse(raw) as StoreShape;
-    if (parsed && parsed.v === STORE_VERSION) {
+    if (parsed && SUPPORTED_VERSIONS.has(parsed.v)) {
       hydrate(loadBuckets, parsed.loadBuckets, LOAD_BUCKET_MS, LOAD_RETENTION);
       hydrate(cpuBuckets, parsed.cpuBuckets, HOUR_BUCKET_MS, CPU_RETENTION);
+      // v1 files simply have these undefined; hydrate no-ops on a non-array.
+      hydrate(trendBuckets.mem, parsed.memBuckets, HOUR_BUCKET_MS, CPU_RETENTION);
+      hydrate(trendBuckets.disk, parsed.diskBuckets, HOUR_BUCKET_MS, CPU_RETENTION);
+      hydrate(trendBuckets.temp, parsed.tempBuckets, HOUR_BUCKET_MS, CPU_RETENTION);
+      hydrate(trendBuckets.net, parsed.netBuckets, HOUR_BUCKET_MS, CPU_RETENTION);
     }
   } catch {
     // If the file is missing (first run) or unreadable, start empty.
@@ -152,15 +177,23 @@ let lastSaveAt = 0;
 let saveTimer: ReturnType<typeof setTimeout> | null = null;
 let writing = false;
 
+function buildPayload(): StoreShape {
+  return {
+    v: STORE_VERSION,
+    loadBuckets: serialize(loadBuckets),
+    cpuBuckets: serialize(cpuBuckets),
+    memBuckets: serialize(trendBuckets.mem),
+    diskBuckets: serialize(trendBuckets.disk),
+    tempBuckets: serialize(trendBuckets.temp),
+    netBuckets: serialize(trendBuckets.net)
+  };
+}
+
 async function writeStore(): Promise<void> {
   if (writing) return;
   writing = true;
   lastSaveAt = Date.now();
-  const payload: StoreShape = {
-    v: STORE_VERSION,
-    loadBuckets: serialize(loadBuckets),
-    cpuBuckets: serialize(cpuBuckets)
-  };
+  const payload = buildPayload();
   try {
     await fs.promises.mkdir(DATA_DIR, { recursive: true });
     // Write to a temp file and rename so no half-written file remains (atomic replace).
@@ -191,11 +224,7 @@ function scheduleSave(): void {
 // the scheduled save hasn't run yet, the recent window isn't lost.
 function flushSync(): void {
   try {
-    const payload: StoreShape = {
-      v: STORE_VERSION,
-      loadBuckets: serialize(loadBuckets),
-      cpuBuckets: serialize(cpuBuckets)
-    };
+    const payload = buildPayload();
     fs.mkdirSync(DATA_DIR, { recursive: true });
     fs.writeFileSync(STORE_FILE, JSON.stringify(payload), 'utf-8');
   } catch {
@@ -233,6 +262,27 @@ export function recordSample(cpuUsage: number, load1: number, at: number = Date.
   scheduleSave();
 }
 
+// Record the per-metric trend samples for this tick. Nulls (unavailable/N/A
+// sources) are skipped so a bucket only ever averages real readings.
+export function recordTrend(
+  samples: { mem?: number | null; disk?: number | null; temp?: number | null; net?: number | null },
+  at: number = Date.now()
+): void {
+  ensureLoaded();
+  hookExit();
+
+  const hourKey = Math.floor(at / HOUR_BUCKET_MS) * HOUR_BUCKET_MS;
+  const oldest = hourKey - (CPU_RETENTION - 1) * HOUR_BUCKET_MS;
+  for (const key of TREND_KEYS) {
+    const value = samples[key];
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      add(trendBuckets[key], hourKey, value);
+      prune(trendBuckets[key], oldest);
+    }
+  }
+  scheduleSave();
+}
+
 function series(buckets: Map<number, Bucket>, bucketMs: number, count: number, now: number, digits: number) {
   const newestKey = Math.floor(now / bucketMs) * bucketMs;
   return Array.from({ length: count }, (_, index) => {
@@ -253,5 +303,11 @@ export function getHistory(now: number = Date.now()): HistoryInfo {
   const cpuHourly: CpuHourSample[] = series(cpuBuckets, HOUR_BUCKET_MS, CPU_DISPLAY, now, 1).map(
     ({ at, value }) => ({ at, usage: value })
   );
-  return { load, cpuHourly };
+  const trends = {
+    mem: series(trendBuckets.mem, HOUR_BUCKET_MS, CPU_DISPLAY, now, 1),
+    disk: series(trendBuckets.disk, HOUR_BUCKET_MS, CPU_DISPLAY, now, 1),
+    temp: series(trendBuckets.temp, HOUR_BUCKET_MS, CPU_DISPLAY, now, 1),
+    net: series(trendBuckets.net, HOUR_BUCKET_MS, CPU_DISPLAY, now, 1)
+  };
+  return { load, cpuHourly, trends };
 }

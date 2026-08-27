@@ -32,7 +32,13 @@ import {
   SocketSummary
 } from '@/utils/collectors/netstat';
 import { getFirewallInfo, getSshSessions } from '@/utils/collectors/security';
-import { getHistory, getLoad30mAverage, recordSample } from '@/utils/collectors/history';
+import { getMemBreakdown } from '@/utils/collectors/memdetail';
+import { getReadOnlyMounts } from '@/utils/collectors/mounts';
+import { getServicesInfo } from '@/utils/collectors/services';
+import { getKernelErrorCount, getFailedLoginCount } from '@/utils/collectors/kernel';
+import { getPackagesInfo } from '@/utils/collectors/packages';
+import { getSmartInfo } from '@/utils/collectors/smart';
+import { getHistory, getLoad30mAverage, recordSample, recordTrend } from '@/utils/collectors/history';
 import { evaluateAlerts } from '@/utils/collectors/alerts';
 import { isAnomalous } from '@/utils/collectors/anomaly';
 
@@ -575,6 +581,24 @@ export async function getSystemInfo(): Promise<ServerData> {
   const loadBase = await getLoadAverage();
   const security = await getSecurityInfo(sockets.peers, warnings);
 
+  // New collectors (2.3). Each wrapped so a failure just yields its fallback and
+  // records a warning, never dropping the rest of the response.
+  const [memoryDetail, services, packages, smart, readOnlyMounts, kernelErrors, failedLogins] =
+    await Promise.all([
+      collect(
+        'memoryDetail',
+        getMemBreakdown,
+        { cached: null, buffers: null, available: null, shared: null, slab: null, swapCached: null },
+        warnings
+      ),
+      collect('services', getServicesInfo, { failed: null, failedUnits: [] }, warnings),
+      collect('packages', getPackagesInfo, null, warnings),
+      collect('smart', getSmartInfo, [], warnings),
+      collect('readOnlyMounts', getReadOnlyMounts, [], warnings),
+      collect<number | null>('kernelErrors', getKernelErrorCount, null, warnings),
+      collect<number | null>('failedLogins', getFailedLoginCount, null, warnings)
+    ]);
+
   // Baseline for anomaly detection must exclude the current reading, so read the
   // hourly history BEFORE recording this tick's sample (recordSample would fold
   // the current value into the bucket the baseline is drawn from).
@@ -584,6 +608,19 @@ export async function getSystemInfo(): Promise<ServerData> {
   const cpuAnomaly = isAnomalous(cpu.usage, cpuBaseline);
 
   recordSample(cpu.usage, loadBase.avg1, now);
+  // A failed collector returns a zero-filled fallback; recording that as a real
+  // hourly observation would depress the trend average. Skip (null) any metric
+  // whose collector reported a failure this tick.
+  const collectorFailed = (name: string) => warnings.some(warning => warning.startsWith(`${name}:`));
+  recordTrend(
+    {
+      mem: collectorFailed('memory') ? null : memory.percentage,
+      disk: collectorFailed('disk') ? null : disk.percentage,
+      temp: typeof cpu.temperature === 'number' ? cpu.temperature : null,
+      net: collectorFailed('network') ? null : network.download + network.upload
+    },
+    now
+  );
   recordDiskSample(disk.percentage, now);
   const diskHoursToFull = getHoursToFull(now);
 
@@ -640,6 +677,13 @@ export async function getSystemInfo(): Promise<ServerData> {
     processSummary,
     topProcessesByMemory,
     battery,
+    memoryDetail,
+    services,
+    packages,
+    smart,
+    readOnlyMounts,
+    kernelErrors,
+    failedLogins,
     history,
     alerts,
     timestamp: new Date(now).toISOString(),
