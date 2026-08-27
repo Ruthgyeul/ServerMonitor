@@ -165,6 +165,10 @@ function currentAlerts(data: DashboardData): string[] {
   }
   if (data.swap.total > 0 && data.swap.percentage > 80) alerts.push('Swap high');
   if (data.security.firewall.status === 'inactive') alerts.push('Firewall inactive');
+  // New 2.3 health signals.
+  if (data.readOnlyMounts.length > 0) alerts.push(`${data.readOnlyMounts.length} read-only mount`);
+  if (data.services.failed && data.services.failed > 0) alerts.push(`${data.services.failed} service failed`);
+  if (data.smart.some(drive => drive.healthy === false)) alerts.push('SMART failing');
 
   return alerts;
 }
@@ -562,6 +566,23 @@ const CoresCard: React.FC<{ data: DashboardData }> = ({ data }) => {
   );
 };
 
+// A compact 24h trend line drawn from the persisted per-metric history. Renders
+// nothing until at least two hourly points exist, so it never adds height on a
+// fresh start (keeps the kiosk layout budget intact).
+const TrendSparkline: React.FC<{ samples?: { value: number | null }[]; color: string; label: string }> = ({
+  samples,
+  color,
+  label
+}) => {
+  const values = (samples ?? []).map(sample => sample.value).filter((v): v is number => v !== null);
+  if (values.length < 2) return null;
+  return (
+    <div className="mt-1 h-4" title={`${label} — last 24h`}>
+      <Sparkline series={[{ key: label, values, color }]} />
+    </div>
+  );
+};
+
 const TemperatureCard: React.FC<{ data: DashboardData }> = ({ data }) => {
   const temperature = data.cpu.temperature;
   const color = tempColor(temperature);
@@ -592,6 +613,7 @@ const TemperatureCard: React.FC<{ data: DashboardData }> = ({ data }) => {
             ? `${(temperature - TEMP_CRITICAL).toFixed(1)}° over alert threshold`
             : `${(TEMP_CRITICAL - temperature).toFixed(1)}° to alert threshold`}
       </div>
+      <TrendSparkline samples={data.history.trends?.temp} color="#fb923c" label="CPU temp" />
     </Card>
   );
 };

@@ -18,6 +18,11 @@ that aggregates several nodes on one screen.
   - network throughput chart, interfaces, link utilisation, ping, error
     rates, established connections and listening ports
   - temperature against its alert threshold, fan RPM, uptime and last reboot
+  - 24-hour trend history per metric (memory/disk/temp/network), persisted like
+    the load/CPU history, plus host-health signals — failed systemd services,
+    read-only mounts, disk SMART health/temperature, pending (security) package
+    updates, kernel error count, and failed-SSH-login count — surfaced in the
+    banner and exported via `/api/metrics`
   - alert log, top processes, SSH sessions, top traffic peers, firewall state
   - keeps the last known values on screen when the stream drops, and says so
     in the header instead of blanking the display

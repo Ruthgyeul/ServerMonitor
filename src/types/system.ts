@@ -141,6 +141,43 @@ export interface ProcessSummary {
   threads: number | null;
 }
 
+// Finer memory breakdown (MB). null when the field is absent from /proc/meminfo.
+export interface MemoryDetail {
+  cached: number | null;
+  buffers: number | null;
+  available: number | null;
+  shared: number | null;
+  slab: number | null;
+  swapCached: number | null;
+}
+
+// Failed systemd services. failed is null when systemd isn't present.
+export interface ServicesInfo {
+  failed: number | null;
+  failedUnits: string[];
+}
+
+// Pending package updates, with a security subtotal.
+export interface PackagesInfo {
+  total: number;
+  security: number;
+}
+
+// Per-drive SMART summary. healthy null = no self-assessment available.
+export interface SmartDevice {
+  device: string;
+  healthy: boolean | null;
+  temperature: TemperatureValue;
+  powerOnHours: number | null;
+}
+
+// A filesystem currently mounted read-only (a silent-failure signal).
+export interface ReadOnlyMount {
+  mount: string;
+  device: string;
+  fstype: string;
+}
+
 export type AlertLevel = 'ok' | 'info' | 'warning' | 'critical';
 
 export interface AlertEntry {
@@ -164,9 +201,24 @@ export interface CpuHourSample {
   usage: number | null;
 }
 
+// A generic per-metric hourly trend point (memory %, disk %, temp °C, net KB/s).
+export interface TrendSample {
+  at: string; // ISO 8601, start of the 1-hour bucket
+  value: number | null; // null if the server wasn't up / metric unavailable that hour
+}
+
+export interface HistoryTrends {
+  mem: TrendSample[];
+  disk: TrendSample[];
+  temp: TrendSample[];
+  net: TrendSample[];
+}
+
 export interface HistoryInfo {
   load: LoadSample[]; // last 48 hours, 1-hour buckets
   cpuHourly: CpuHourSample[]; // last 24 hours, 1-hour buckets
+  // Added in 2.3: per-metric 24h trend series (optional: old-node compatible).
+  trends?: HistoryTrends;
 }
 
 export interface ServerData {
@@ -238,6 +290,14 @@ export interface ServerData {
   battery?: BatteryInfo | null;
   history?: HistoryInfo;
   alerts?: AlertEntry[];
+  // Added in 2.3 (all optional: old-node compatible).
+  memoryDetail?: MemoryDetail;
+  services?: ServicesInfo;
+  packages?: PackagesInfo | null;
+  smart?: SmartDevice[];
+  readOnlyMounts?: ReadOnlyMount[];
+  kernelErrors?: number | null;
+  failedLogins?: number | null;
   timestamp?: string;
   // When only some collectors fail, tells you which metric is empty and why.
   // Lets you diagnose a headless server with just `curl localhost:3000/api/system`.

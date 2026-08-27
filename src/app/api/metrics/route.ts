@@ -131,6 +131,38 @@ export async function GET(request: Request) {
 
   if (data.battery) g('server_battery_percent', 'Battery charge level.', data.battery.percentage);
 
+  // New in 2.3.
+  if (data.memoryDetail) {
+    g('server_memory_cached_mb', 'Page cache in MB.', data.memoryDetail.cached);
+    g('server_memory_available_mb', 'Available memory in MB.', data.memoryDetail.available);
+    g('server_memory_slab_mb', 'Kernel slab memory in MB.', data.memoryDetail.slab);
+  }
+  if (data.services) g('server_failed_units', 'Failed systemd units.', data.services.failed);
+  if (data.packages) {
+    g('server_pending_updates', 'Pending package updates.', data.packages.total);
+    g('server_pending_security_updates', 'Pending security updates.', data.packages.security);
+  }
+  g('server_kernel_errors_24h', 'Kernel error-priority journal lines in the last 24h.', data.kernelErrors);
+  g('server_failed_logins_24h', 'Failed SSH logins in the last 24h.', data.failedLogins);
+  if (data.readOnlyMounts) {
+    metric('server_readonly_mounts', 'Filesystems currently mounted read-only.', 'gauge', [
+      line('server_readonly_mounts', data.readOnlyMounts.length)
+    ]);
+  }
+  if (data.smart) {
+    const health: string[] = [];
+    const temp: string[] = [];
+    for (const drive of data.smart) {
+      if (drive.healthy !== null)
+        health.push(line('server_smart_healthy', drive.healthy ? 1 : 0, { device: drive.device }));
+      if (typeof drive.temperature === 'number') {
+        temp.push(line('server_smart_temperature_celsius', drive.temperature, { device: drive.device }));
+      }
+    }
+    metric('server_smart_healthy', 'SMART self-assessment (1 = passed).', 'gauge', health);
+    metric('server_smart_temperature_celsius', 'Drive temperature.', 'gauge', temp);
+  }
+
   const alerts = data.alerts ?? [];
   const activeAlerts = alerts.filter(a => a.level === 'warning' || a.level === 'critical').length;
   metric('server_active_alerts', 'Alerts currently at warning/critical.', 'gauge', [

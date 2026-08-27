@@ -144,6 +144,51 @@ describe('load history buckets', () => {
   });
 });
 
+describe('trend history', () => {
+  beforeEach(() => {
+    delete process.env.DATA_DIR;
+    delete process.env.HISTORY_FILE;
+  });
+
+  it('records per-metric trends and averages within the hour', async () => {
+    const { recordTrend, getHistory } = await freshHistory();
+    const now = Date.UTC(2026, 0, 2, 12, 0, 0);
+
+    recordTrend({ mem: 40, disk: 50, temp: 55, net: 100 }, now);
+    recordTrend({ mem: 60, disk: 50, temp: 55, net: 300 }, now + 60_000);
+
+    const trends = getHistory(now).trends!;
+    expect(trends.mem).toHaveLength(24);
+    expect(trends.mem.at(-1)!.value).toBe(50); // (40+60)/2
+    expect(trends.net.at(-1)!.value).toBe(200);
+  });
+
+  it('skips null samples so a bucket only averages real readings', async () => {
+    const { recordTrend, getHistory } = await freshHistory();
+    const now = Date.UTC(2026, 0, 2, 12, 0, 0);
+
+    recordTrend({ mem: 30, temp: null }, now); // temp N/A this tick
+    expect(getHistory(now).trends!.temp.at(-1)!.value).toBeNull();
+    expect(getHistory(now).trends!.mem.at(-1)!.value).toBe(30);
+  });
+
+  it('loads a v1 store (no trends) without error, trends starting empty', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'history-test-'));
+    const file = join(dir, 'history.json');
+    const now = Math.floor(Date.now() / HOUR) * HOUR;
+    writeFileSync(file, JSON.stringify({ v: 1, loadBuckets: [[now, 5, 1]], cpuBuckets: [[now, 20, 1]] }));
+
+    vi.resetModules();
+    process.env.DATA_DIR = dir;
+    process.env.HISTORY_FILE = file;
+    const { getHistory } = await import('@/utils/collectors/history');
+
+    const history = getHistory(now);
+    expect(history.load.at(-1)!.avg1).toBe(5); // v1 data still recovered
+    expect(history.trends!.mem.every(sample => sample.value === null)).toBe(true);
+  });
+});
+
 describe('getLoad30mAverage', () => {
   it('reports no value when there are no samples', async () => {
     const { getLoad30mAverage } = await freshHistory();
