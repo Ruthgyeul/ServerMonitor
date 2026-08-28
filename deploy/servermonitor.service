@@ -1,0 +1,32 @@
+[Unit]
+Description=ServerMonitor dashboard
+Documentation=https://github.com/Ruthgyeul/ServerMonitor
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# These four lines are filled in by scripts/install.sh (or edit them by hand).
+User=__RUN_USER__
+WorkingDirectory=__INSTALL_DIR__
+ExecStart=__NPM__ run start
+Environment=PORT=__PORT__
+# .env is optional — the leading `-` means "don't fail if it's missing".
+EnvironmentFile=-__INSTALL_DIR__/.env
+Environment=NODE_ENV=production
+Environment=NEXT_TELEMETRY_DISABLED=1
+Restart=on-failure
+RestartSec=5
+
+# Read access to the kernel journal, so the firewall / kernel-error /
+# failed-login collectors work without root. Harmless if absent.
+SupplementaryGroups=systemd-journal adm
+
+# Light hardening. Kept conservative on purpose: the app persists history/alerts
+# under WorkingDirectory/data, which may live in the run user's home, so we don't
+# set ProtectHome/ProtectSystem (they would make that directory read-only and
+# break persistence). Tighten these if you install outside a home directory.
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target

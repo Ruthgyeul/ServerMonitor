@@ -204,6 +204,43 @@ read on the server.
 Adding, removing, or repointing a cluster node is now a one-line edit in
 `.env` — no code changes or redeploy of the dashboard logic required.
 
+## Bare-metal deploy (systemd)
+
+To run ServerMonitor directly on a host (no Docker) as a service that starts on
+boot and restarts on failure:
+
+```bash
+git clone https://github.com/Ruthgyeul/ServerMonitor.git /opt/servermonitor
+cd /opt/servermonitor
+cp .env.example .env   # edit as needed
+sudo ./scripts/install.sh
+```
+
+`scripts/install.sh` checks for Node.js 18+, runs `npm ci` and `npm run build`
+as the service user, creates the `data/` directory, then renders and installs
+`deploy/servermonitor.service` into `/etc/systemd/system/` and enables it.
+
+It is configurable via environment variables:
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `RUN_USER` | the checkout's owner | Service account the app runs as |
+| `PORT` | `3000` | Port to listen on |
+| `SERVICE` | `servermonitor` | systemd unit name |
+
+Then:
+
+```bash
+systemctl status servermonitor
+journalctl -u servermonitor -f
+sudo systemctl restart servermonitor   # after editing .env
+```
+
+The unit adds the service user to the `systemd-journal` and `adm` groups so the
+firewall / kernel-error / failed-login collectors can read the journal without
+running as root. Running on bare metal (rather than in a container) is also what
+lets the `systemctl`/`journalctl`/`who`/`last` collectors report real values.
+
 ## Alerting
 
 Threshold rules evaluate every collection tick with hysteresis (separate enter/
