@@ -15,6 +15,7 @@ import {
   TriangleAlert
 } from 'lucide-react';
 
+import { TerminalTitleBar } from '@/components/common/TerminalWindow';
 import { Gauge, Sparkline } from '@/components/dashboard/primitives';
 import { useNow } from '@/hooks/useNow';
 import { useKioskRotate } from '@/hooks/useKioskRotate';
@@ -142,7 +143,7 @@ export default function ClusterPage() {
 
   return (
     <div className="terminal-bg min-h-screen text-gray-100">
-      <TerminalTitleBar />
+      <TerminalTitleBar host="cluster" path="~/monitor/cluster" />
       <ClusterHeader online={onlineCount} total={total} now={now} />
 
       {nodes !== null && nodes.length === 0 ? (
@@ -259,23 +260,6 @@ const NodeModal: React.FC<{ node: ClusterNode; onClose: () => void }> = ({ node,
 };
 
 // --- Top chrome / header ---------------------------------------------------
-
-// The same terminal-window chrome as the main dashboard. Only the path changes to the cluster one.
-const TerminalTitleBar: React.FC = () => (
-  <div className="term-titlebar">
-    <div className="flex shrink-0 items-center gap-[7px]">
-      <span className="term-dot" style={{ background: '#ff5f56' }} />
-      <span className="term-dot" style={{ background: '#ffbd2e' }} />
-      <span className="term-dot" style={{ background: '#27c93f' }} />
-    </div>
-    <span className="min-w-0 flex-1 truncate text-center font-mono">
-      <span style={{ color: '#34d399' }}>root@cluster</span>
-      <span style={{ color: '#5c6478' }}> — ~/monitor/cluster — </span>
-      <span style={{ color: '#8b93a7' }}>zsh</span>
-    </span>
-    <span className="shrink-0 font-mono text-gray-500">⎇ main</span>
-  </div>
-);
 
 interface ClusterHeaderProps {
   online: number;

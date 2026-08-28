@@ -2,6 +2,8 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 
+import { BrandLine, TerminalScreen, TerminalWindow } from '@/components/common/TerminalWindow';
+
 // Public status page (#64). Renders the sanitised /api/status summary — an
 // uptime-style page safe to share externally. No reconnaissance data ever
 // reaches here; see src/app/api/status/route.ts.
@@ -59,7 +61,7 @@ export default function StatusPage() {
     phase === 'error'
       ? '#6b7280'
       : phase === 'loading'
-        ? '#60a5fa'
+        ? '#38bdf8'
         : status?.status === 'operational'
           ? '#34d399'
           : '#f59e0b';
@@ -75,36 +77,49 @@ export default function StatusPage() {
   const fmt = (value: number | null) => (value === null ? '—' : `${value}%`);
 
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center gap-6 bg-gray-900 p-6 text-gray-100">
-      <div className="flex flex-col items-center gap-3">
-        <div
-          className={phase === 'loading' ? 'h-4 w-4 animate-pulse rounded-full' : 'h-4 w-4 rounded-full'}
-          style={{ backgroundColor: dotColor }}
-          aria-hidden
-        />
-        <h1 className="text-xl font-semibold">{heading}</h1>
-        {status && phase === 'ok' && (
-          <p className="text-xs text-gray-400">
-            up {status.uptime.days}d {status.uptime.hours}h {status.uptime.minutes}m
-            {status.activeAlerts > 0 && ` · ${status.activeAlerts} active alert(s)`}
-          </p>
-        )}
-      </div>
+    <TerminalScreen>
+      <TerminalWindow>
+        <div className="flex flex-col gap-4">
+          <BrandLine subtitle="Public status" />
 
-      {status && phase === 'ok' && (
-        <div className="grid w-full max-w-md grid-cols-3 gap-3">
-          <Metric label="CPU" value={fmt(status.cpu)} />
-          <Metric label="Memory" value={fmt(status.memory)} />
-          <Metric label="Disk" value={fmt(status.disk)} />
+          <div className="flex items-center gap-2 font-mono">
+            <span
+              className={
+                phase === 'loading'
+                  ? 'h-2.5 w-2.5 shrink-0 animate-[pulseDot_1s_ease-in-out_infinite] rounded-full'
+                  : 'h-2.5 w-2.5 shrink-0 rounded-full'
+              }
+              style={{ backgroundColor: dotColor }}
+              aria-hidden
+            />
+            <span className="text-base font-bold" style={{ color: dotColor }}>
+              {heading}
+            </span>
+          </div>
+
+          {status && phase === 'ok' && (
+            <p className="font-mono text-xs text-gray-400">
+              up {status.uptime.days}d {status.uptime.hours}h {status.uptime.minutes}m
+              {status.activeAlerts > 0 && ` · ${status.activeAlerts} active alert(s)`}
+            </p>
+          )}
+
+          {status && phase === 'ok' && (
+            <div className="grid grid-cols-3 gap-3">
+              <Metric label="CPU" value={fmt(status.cpu)} />
+              <Metric label="Memory" value={fmt(status.memory)} />
+              <Metric label="Disk" value={fmt(status.disk)} />
+            </div>
+          )}
         </div>
-      )}
-    </div>
+      </TerminalWindow>
+    </TerminalScreen>
   );
 }
 
 const Metric: React.FC<{ label: string; value: string }> = ({ label, value }) => (
-  <div className="rounded-lg border border-gray-800 bg-gray-950/50 p-3 text-center">
-    <div className="text-lg font-bold">{value}</div>
-    <div className="text-[11px] text-gray-500">{label}</div>
+  <div className="rounded-md border border-gray-700 bg-gray-900 p-3 text-center">
+    <div className="font-mono text-base font-bold text-gray-100">{value}</div>
+    <div className="mt-0.5 text-xs text-gray-500">{label}</div>
   </div>
 );
