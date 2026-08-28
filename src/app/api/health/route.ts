@@ -8,8 +8,9 @@ import { getLoopHealth } from '@/utils/systemStream';
 // orchestration/uptime probe. This route triggers no collection and returns
 // process liveness and the collection loop's health immediately.
 //
-// proxy.ts's token gate only matches /api/system*, so this path is outside it
-// — an orchestrator can probe it without a token. It exposes no sensitive data.
+// The auth gate only applies to the sensitive routes (/api/system*, /api/alerts*,
+// /api/cluster); this path is outside it — an orchestrator can probe it without
+// a token. It exposes no sensitive data.
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';

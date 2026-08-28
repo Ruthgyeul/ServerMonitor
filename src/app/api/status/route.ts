@@ -7,8 +7,8 @@ import { enforceRateLimit } from '@/utils/rateLimit';
 // uptime-style summary safe to share externally. It exposes only coarse health
 // (a status word, rounded CPU/memory/disk, uptime, an active-alert COUNT) and
 // never any reconnaissance data: no IPs, process names, ports, alert messages,
-// firewall or SSH detail. It stays outside the proxy token gate on purpose so a
-// public status page works even when /api/system is locked down.
+// firewall or SSH detail. It stays outside the auth gate on purpose so a public
+// status page works even when /api/system is locked down.
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';

@@ -1,6 +1,5 @@
-// Constant-time string comparison. Used by the proxy token gate and the login
-// route. Kept dependency-free (no node:crypto) so it also runs on the Edge
-// runtime the proxy/middleware uses.
+// Constant-time string comparison. Used by the API auth gate and the login
+// route. Kept dependency-free (no node:crypto) so it stays cheap and portable.
 //
 // The time taken is made as uniform as possible across differing lengths and
 // values, so a token can't be recovered one character at a time via timing.

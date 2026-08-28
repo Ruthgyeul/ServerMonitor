@@ -3,9 +3,10 @@
 import React, { Suspense, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 
-// Minimal login for deployments that gate the API with API_AUTH_TOKEN. Posts the
-// password to /api/auth/login, which sets the HttpOnly cookie the proxy accepts;
-// the dashboard then streams normally. See src/app/api/auth/login/route.ts.
+// Minimal login for deployments that gate the API (DASHBOARD_PASSWORD, or
+// API_AUTH_TOKEN). Posts the password to /api/auth/login, which sets the HttpOnly
+// cookie the gate accepts; the dashboard then streams normally. See
+// src/app/api/auth/login/route.ts.
 
 function LoginForm() {
   const params = useSearchParams();

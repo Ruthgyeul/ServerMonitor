@@ -1,6 +1,7 @@
 import { ServerData } from '@/types/system';
 import { corsHeaders } from '@/utils/cors';
 import { subscribe } from '@/utils/systemStream';
+import { requireApiAuth } from '@/utils/apiAuth';
 
 // This route is an SSE stream: the server holds the connection open and pushes
 // data. Unlike polling, only one connection per client is kept, and the actual
@@ -14,6 +15,9 @@ export const runtime = 'nodejs';
 const KEEPALIVE_MS = 15000;
 
 export async function GET(request: Request) {
+  const unauthorized = requireApiAuth(request);
+  if (unauthorized) return unauthorized;
+
   const origin = request.headers.get('origin') || undefined;
   const encoder = new TextEncoder();
 

@@ -80,6 +80,15 @@ export default function ClusterPage() {
     let received: ClusterNode[] = [];
     try {
       const response = await fetch('/api/cluster', { cache: 'no-store' });
+      if (response.status === 401) {
+        // Full navigation on purpose: leave the gated page so login can set the
+        // auth cookie. Preserve the query string (e.g. ?node=) so a deep link
+        // survives the login round-trip.
+        const here = window.location.pathname + window.location.search;
+        // eslint-disable-next-line @next/next/no-location-assign-relative-destination
+        window.location.href = `/login?next=${encodeURIComponent(here)}`;
+        return;
+      }
       if (response.ok) {
         const payload = (await response.json()) as { nodes: ClusterNode[] };
         received = payload.nodes ?? [];

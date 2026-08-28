@@ -5,6 +5,7 @@ import { isValidServerData } from '@/utils/validation';
 import { logger } from '@/utils/logger';
 import { jsonResponse } from '@/utils/http';
 import { enforceRateLimit } from '@/utils/rateLimit';
+import { requireApiAuth } from '@/utils/apiAuth';
 
 // Per-collector failures are each handled with a fallback inside systemMonitor,
 // so an error that reaches here is a real fault. Returning a zero-filled "ok"
@@ -22,6 +23,9 @@ function getCorsHeaders(origin: string | undefined) {
 
 export async function GET(request: Request) {
   const origin = request.headers.get('origin') || undefined;
+
+  const unauthorized = requireApiAuth(request);
+  if (unauthorized) return unauthorized;
 
   const limited = enforceRateLimit(request, getCorsHeaders(origin));
   if (limited) return limited;

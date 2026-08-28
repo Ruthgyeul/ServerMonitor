@@ -95,6 +95,13 @@ const apiLimiter: RateLimiter | null = RPM > 0 ? createRateLimiter(RPM) : null;
 // brute-forced. Always on when login is reachable; ~10 attempts/min per key.
 const loginLimiter = createRateLimiter(10, 5);
 
+// The same strict budget for FAILED API authentication. The gated routes accept
+// a token derived from DASHBOARD_PASSWORD, so without this a caller could submit
+// guesses straight to a gated route (bypassing the login limiter) and brute-force
+// the password online. Charged only on a wrong credential, so normal traffic
+// with a valid cookie is never affected.
+const authFailureLimiter = createRateLimiter(10, 5);
+
 function limitedResponse(retryAfterSeconds: number, extraHeaders?: Record<string, string>): Response {
   return new Response(JSON.stringify({ error: 'Too Many Requests' }), {
     status: 429,
@@ -119,5 +126,13 @@ export function enforceRateLimit(request: Request, extraHeaders?: Record<string,
 // Returns a 429 Response when login attempts from this caller are too frequent.
 export function enforceLoginRateLimit(request: Request): Response | null {
   const { allowed, retryAfterSeconds } = loginLimiter.take(clientIp(request));
+  return allowed ? null : limitedResponse(retryAfterSeconds);
+}
+
+// Call only after an API auth attempt has FAILED with a presented credential.
+// Returns a 429 when wrong-token submissions from this caller are too frequent,
+// else null (let the caller return its 401).
+export function enforceAuthFailureLimit(request: Request): Response | null {
+  const { allowed, retryAfterSeconds } = authFailureLimiter.take(clientIp(request));
   return allowed ? null : limitedResponse(retryAfterSeconds);
 }
