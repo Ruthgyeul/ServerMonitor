@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 
 import { timingSafeEqual } from '@/utils/timingSafeEqual';
+import { enforceAuthFailureLimit } from '@/utils/rateLimit';
 
 // Server-side auth gate for the sensitive API routes (/api/system*, /api/alerts*,
 // /api/cluster). This runs inside the Node route handlers rather than in edge
@@ -66,7 +67,15 @@ function presentedToken(request: Request): string | null {
   // EventSource / fetch send the cookie automatically on same-origin requests.
   const cookieHeader = request.headers.get('cookie') ?? '';
   const match = cookieHeader.match(/(?:^|;\s*)api_auth_token=([^;]*)/);
-  return match ? decodeURIComponent(match[1]) : null;
+  if (!match) return null;
+  try {
+    return decodeURIComponent(match[1]);
+  } catch {
+    // A malformed percent-escape (e.g. a stale/proxy-mangled value ending in
+    // "%") would otherwise throw and 500 the route. Treat it as no credential so
+    // the caller returns a clean 401 and the dashboard redirects to login.
+    return null;
+  }
 }
 
 // Returns a 401 Response when the request isn't authorized, or null to proceed.
@@ -78,6 +87,16 @@ export function requireApiAuth(request: Request): Response | null {
 
   const token = presentedToken(request);
   if (token !== null && timingSafeEqual(token, expected)) return null;
+
+  // A credential was presented and it was wrong — that's a guess. Rate-limit
+  // repeated wrong guesses so the password-derived token can't be brute-forced
+  // against the gated routes at line speed. A request with no credential (a
+  // fresh browser) skips this and gets a clean 401 so the dashboard can redirect
+  // to login without spending the guess budget.
+  if (token !== null) {
+    const limited = enforceAuthFailureLimit(request);
+    if (limited) return limited;
+  }
 
   return new Response(JSON.stringify({ error: 'Unauthorized' }), {
     status: 401,

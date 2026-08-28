@@ -119,6 +119,14 @@ describe('requireApiAuth', () => {
     expect(requireApiAuth(request({ cookie: 'api_auth_token=a%20b' }))).toBeNull();
   });
 
+  it('returns 401 (not a 500) on a malformed cookie encoding', () => {
+    setEnv({ token: 'raw-token' });
+    // A trailing "%" is an invalid percent-escape; decodeURIComponent throws.
+    // It must be treated as no credential, not crash the route.
+    const result = requireApiAuth(request({ cookie: 'api_auth_token=abc%' }));
+    expect(result?.status).toBe(401);
+  });
+
   it('lets a CORS preflight (OPTIONS) through even when gated', () => {
     setEnv({ password: 'pw' });
     expect(requireApiAuth(request({}, 'OPTIONS'))).toBeNull();
