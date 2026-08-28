@@ -20,10 +20,26 @@ import { timingSafeEqual } from '@/utils/timingSafeEqual';
 
 const COOKIE_NAME = 'api_auth_token';
 
+// A fixed application salt. This derivation only has to be deterministic (same
+// password -> same token) and non-reversible so the login cookie and the gate
+// agree without any shared state; it is not a stored password database, so a
+// static salt is appropriate here.
+const DERIVATION_SALT = 'servermonitor:v1:session-token';
+
+// scrypt is a deliberately slow, memory-hard KDF, so recovering the password
+// from the token by brute force is expensive (unlike a bare SHA-256). The result
+// is memoised per password: the value comes from a trusted env var and never
+// changes at runtime, so the costly derivation runs once, not on every request.
+const derivedCache = new Map<string, string>();
+
 // A stable, non-reversible session token derived from the dashboard password, so
 // the raw password never becomes the cookie value.
 export function sessionTokenFromPassword(password: string): string {
-  return crypto.createHash('sha256').update(`servermonitor:${password}`).digest('hex');
+  const cached = derivedCache.get(password);
+  if (cached) return cached;
+  const token = crypto.scryptSync(password, DERIVATION_SALT, 32).toString('hex');
+  derivedCache.set(password, token);
+  return token;
 }
 
 // The value a request must present (bearer or cookie) to pass, or null when the
