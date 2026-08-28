@@ -55,10 +55,10 @@ function LoginForm() {
         onChange={event => setPassword(event.target.value)}
         placeholder="Password"
         aria-label="Dashboard password"
-        className="t-body w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-2 font-mono text-gray-100 outline-none transition-colors focus:border-[#38bdf8] focus:ring-1 focus:ring-[#38bdf8]/40"
+        className="w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-2 font-mono text-sm text-gray-100 outline-none transition-colors focus:border-[#38bdf8] focus:ring-1 focus:ring-[#38bdf8]/40"
       />
       {error && (
-        <div className="t-micro flex items-center gap-1.5 text-red-400">
+        <div className="flex items-center gap-1.5 text-xs text-red-400">
           <span aria-hidden>▸</span>
           {error}
         </div>
@@ -66,7 +66,7 @@ function LoginForm() {
       <button
         type="submit"
         disabled={submitting || password.length === 0}
-        className="t-body flex items-center justify-center gap-2 rounded-md bg-[#38bdf8] px-3 py-2 font-medium text-gray-900 transition-colors hover:bg-[#7dd3fc] disabled:opacity-50 disabled:hover:bg-[#38bdf8]"
+        className="flex items-center justify-center gap-2 rounded-md bg-[#38bdf8] px-3 py-2 text-sm font-medium text-gray-900 transition-colors hover:bg-[#7dd3fc] disabled:opacity-50 disabled:hover:bg-[#38bdf8]"
       >
         {submitting && (
           <span className="h-1.5 w-1.5 animate-[pulseDot_1s_ease-in-out_infinite] rounded-full bg-gray-900" />

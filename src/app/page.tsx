@@ -108,11 +108,11 @@ const StartupState: React.FC<{ error: string | null }> = ({ error }) => (
     <BrandLine />
     {error ? (
       <>
-        <div className="t-body font-bold text-red-400">Cannot reach /api/system</div>
-        <div className="t-micro max-w-[600px] text-center text-gray-400">{error}</div>
+        <div className="text-sm font-bold text-red-400">Cannot reach /api/system</div>
+        <div className="max-w-[600px] text-center text-xs text-gray-400">{error}</div>
       </>
     ) : (
-      <div className="t-body flex items-center gap-2 text-gray-400">
+      <div className="flex items-center gap-2 text-sm text-gray-400">
         <span className="h-1.5 w-1.5 animate-[pulseDot_1s_ease-in-out_infinite] rounded-full bg-[#38bdf8]" />
         Connecting to /api/system…
       </div>

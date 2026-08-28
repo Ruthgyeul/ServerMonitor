@@ -3,6 +3,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 
+import { TerminalHeaderBar, TerminalTitleBar } from '@/components/common/TerminalWindow';
 import type { AlertEntry, AlertLevel } from '@/types/system';
 
 // Alert history view. The dashboard card shows only the most recent alerts and
@@ -72,15 +73,18 @@ export default function AlertsPage() {
   }, [alerts, level, query]);
 
   return (
-    <div className="min-h-screen bg-gray-900 p-4 text-gray-100 sm:p-6">
-      <div className="mx-auto max-w-3xl">
-        <header className="mb-4 flex items-center justify-between">
-          <h1 className="text-lg font-semibold">Alert history</h1>
-          <Link href="/" className="text-xs text-blue-400 hover:underline">
+    <div className="terminal-bg min-h-screen text-gray-100">
+      <TerminalTitleBar path="~/monitor/alerts" />
+      <TerminalHeaderBar
+        title="Alert history"
+        right={
+          <Link href="/" className="t-label text-gray-400 transition-colors hover:text-gray-200">
             ← Dashboard
           </Link>
-        </header>
+        }
+      />
 
+      <div className="mx-auto max-w-3xl p-4 sm:p-6">
         {/* 48h incident timeline */}
         <Timeline alerts={alerts} now={now} />
 
@@ -88,7 +92,7 @@ export default function AlertsPage() {
         <div className="mb-4 mt-4 flex flex-wrap items-center gap-2">
           <button
             onClick={() => setLevel('all')}
-            className={`rounded px-2 py-1 text-xs ${level === 'all' ? 'bg-gray-700' : 'bg-gray-800'}`}
+            className={`t-label rounded px-2 py-1 font-mono uppercase tracking-[0.06em] ${level === 'all' ? 'bg-gray-700 text-gray-100' : 'bg-gray-800 text-gray-400'}`}
           >
             all
           </button>
@@ -96,7 +100,7 @@ export default function AlertsPage() {
             <button
               key={l}
               onClick={() => setLevel(l)}
-              className={`rounded px-2 py-1 text-xs ${level === l ? 'bg-gray-700' : 'bg-gray-800'}`}
+              className={`t-label rounded px-2 py-1 font-mono uppercase tracking-[0.06em] ${level === l ? 'bg-gray-700' : 'bg-gray-800'}`}
               style={{ color: LEVEL_COLOR[l] }}
             >
               {l}
@@ -106,15 +110,15 @@ export default function AlertsPage() {
             value={query}
             onChange={event => setQuery(event.target.value)}
             placeholder="Search messages…"
-            className="ml-auto w-48 rounded border border-gray-700 bg-gray-800 px-2 py-1 text-xs outline-none focus:border-blue-500"
+            className="t-body ml-auto w-48 rounded border border-gray-700 bg-gray-900 px-2 py-1 font-mono outline-none transition-colors focus:border-[#38bdf8] focus:ring-1 focus:ring-[#38bdf8]/40"
           />
         </div>
 
-        {error && <div className="mb-3 text-xs text-red-400">Could not load alerts: {error}</div>}
+        {error && <div className="t-label mb-3 text-red-400">Could not load alerts: {error}</div>}
 
-        <ul className="divide-y divide-gray-800 rounded-lg border border-gray-800">
+        <ul className="divide-y divide-gray-700 rounded-lg border border-gray-700 bg-gray-800">
           {filtered.length === 0 ? (
-            <li className="p-4 text-center text-xs text-gray-500">No alerts match.</li>
+            <li className="t-body p-4 text-center text-gray-500">No alerts match.</li>
           ) : (
             filtered.map(alert => (
               <li key={alert.id} className="flex items-center gap-3 p-3">
@@ -123,8 +127,8 @@ export default function AlertsPage() {
                   style={{ backgroundColor: LEVEL_COLOR[alert.level] }}
                   aria-hidden
                 />
-                <span className="flex-1 text-sm">{alert.message}</span>
-                <time className="shrink-0 text-xs text-gray-500" dateTime={alert.at}>
+                <span className="t-body flex-1">{alert.message}</span>
+                <time className="t-label shrink-0 font-mono text-gray-500" dateTime={alert.at}>
                   {new Date(alert.at).toLocaleString()}
                 </time>
               </li>
@@ -143,12 +147,12 @@ const Timeline: React.FC<{ alerts: AlertEntry[]; now: number }> = ({ alerts, now
     .filter(({ t }) => t >= start && t <= now);
 
   return (
-    <div className="rounded-lg border border-gray-800 bg-gray-950/40 p-3">
-      <div className="mb-1 flex justify-between text-[10px] text-gray-500">
+    <div className="rounded-lg border border-gray-700 bg-gray-800 p-3">
+      <div className="t-micro mb-1 flex justify-between font-mono text-gray-500">
         <span>48h ago</span>
         <span>now</span>
       </div>
-      <div className="relative h-6 w-full rounded bg-gray-800/60">
+      <div className="relative h-6 w-full rounded bg-gray-900">
         {marks.map(({ alert, t }) => {
           const left = ((t - start) / WINDOW_MS) * 100;
           return (
@@ -161,7 +165,7 @@ const Timeline: React.FC<{ alerts: AlertEntry[]; now: number }> = ({ alerts, now
           );
         })}
         {marks.length === 0 && (
-          <span className="absolute inset-0 flex items-center justify-center text-[10px] text-gray-600">
+          <span className="t-micro absolute inset-0 flex items-center justify-center text-gray-600">
             no incidents in the last 48h
           </span>
         )}
