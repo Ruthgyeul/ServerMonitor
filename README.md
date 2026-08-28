@@ -31,6 +31,16 @@ that aggregates several nodes on one screen.
   nodes) side by side. The browser polls a single same-origin endpoint
   (`/api/cluster`); the server fans out to each node, so node IPs stay
   server-side and nodes no longer need to CORS-allow the dashboard origin.
+- **Public status page** (`/status`) — a sanitised, uptime-style summary safe to
+  share externally: a status word, rounded CPU/memory/disk, uptime, and an
+  active-alert count. It exposes **no** reconnaissance data (no IPs, process
+  names, ports, or alert messages) and stays reachable even when `/api/system`
+  is token-gated.
+- **Kiosk & wall-panel touches** — optional desktop notifications + a beep on a
+  new critical alert (toggle in the corner), a one-click JSON snapshot export,
+  gauge tiles that pulse when a metric is critical, `?rotate=<seconds>` to
+  auto-cycle between the dashboard and cluster views, and a click-through /
+  deep-linkable (`/cluster?node=<name>`) node detail modal on the cluster view.
 - **JSON API** (`/api/system`) — returns the current metrics for the host,
   with a configurable CORS allow-list for cross-node requests.
 - **Kiosk launch script** — boots the dashboard full-screen in Firefox for

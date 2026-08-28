@@ -308,9 +308,17 @@ const GaugeCard: React.FC<GaugeTileProps> = ({
   detail
 }) => {
   const color = percentage === null ? COLORS.muted : statusColor(percentage);
+  // Emphasise a gauge in the critical band with a pulsing ring. `ring` is a
+  // box-shadow, so it adds no size — the fixed/kiosk layout is unaffected.
+  const alerting = percentage !== null && color === COLORS.critical;
 
   return (
-    <section className="gauge-card dash-card flex min-w-0 flex-col items-center rounded-lg border border-gray-700 bg-gray-800">
+    <section
+      className={cn(
+        'gauge-card dash-card flex min-w-0 flex-col items-center rounded-lg border border-gray-700 bg-gray-800',
+        alerting && 'animate-[alertBlink_1.2s_ease-in-out_infinite] ring-2 ring-red-500/50'
+      )}
+    >
       <div className="flex w-full items-center gap-1">
         <Icon className="dash-icon shrink-0" color={iconColor} strokeWidth={2} />
         <span className="t-micro truncate text-gray-300">{label}</span>

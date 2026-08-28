@@ -17,6 +17,7 @@ import {
 
 import { Gauge, Sparkline } from '@/components/dashboard/primitives';
 import { useNow } from '@/hooks/useNow';
+import { useKioskRotate } from '@/hooks/useKioskRotate';
 import { cn } from '@/lib/utils';
 import { NetworkHistoryEntry, ServerData } from '@/types/system';
 import { formatClock, formatRate } from '@/utils/format';
@@ -48,7 +49,32 @@ export default function ClusterPage() {
   // null = before the first response (connecting), [] = the server confirmed there are no nodes.
   const [nodes, setNodes] = useState<ClusterNode[] | null>(null);
   const [networkHistory, setNetworkHistory] = useState<Record<string, NetworkHistoryEntry[]>>({});
+  // Which node's detail modal is open. Initialised lazily from ?node= for
+  // deep-linking (safe against hydration: the modal only renders once nodes have
+  // loaded client-side, so it isn't in the initial SSR HTML).
+  const [selected, setSelected] = useState<string | null>(() => {
+    if (typeof window === 'undefined') return null;
+    try {
+      return new URLSearchParams(window.location.search).get('node');
+    } catch {
+      return null;
+    }
+  });
   const now = useNow();
+  useKioskRotate('/');
+
+  // Keep the URL in sync so the open node is shareable/bookmarkable.
+  const openNode = useCallback((name: string | null) => {
+    setSelected(name);
+    try {
+      const url = new URL(window.location.href);
+      if (name) url.searchParams.set('node', name);
+      else url.searchParams.delete('node');
+      window.history.replaceState(null, '', url.toString());
+    } catch {
+      /* ignore */
+    }
+  }, []);
 
   const refresh = useCallback(async () => {
     let received: ClusterNode[] = [];
@@ -115,13 +141,113 @@ export default function ClusterPage() {
       ) : (
         <div className="grid grid-cols-1 gap-3 p-3 sm:grid-cols-2 lg:grid-cols-4">
           {(nodes ?? []).map(node => (
-            <ServerCard key={node.name} node={node} history={networkHistory[node.name] ?? []} />
+            <ServerCard
+              key={node.name}
+              node={node}
+              history={networkHistory[node.name] ?? []}
+              onSelect={() => openNode(node.name)}
+            />
           ))}
         </div>
       )}
+
+      {selected &&
+        (() => {
+          const node = (nodes ?? []).find(candidate => candidate.name === selected);
+          return node ? <NodeModal node={node} onClose={() => openNode(null)} /> : null;
+        })()}
     </div>
   );
 }
+
+// --- Node detail modal -----------------------------------------------------
+
+const NodeModal: React.FC<{ node: ClusterNode; onClose: () => void }> = ({ node, onClose }) => {
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => event.key === 'Escape' && onClose();
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  const rows: [string, string][] = [];
+  if (node.result.ok) {
+    const d = node.result.data;
+    rows.push(['CPU', `${d.cpu.usage.toFixed(1)}% · ${d.cpu.cores} cores`]);
+    rows.push(['Memory', `${d.memory.percentage.toFixed(1)}%`]);
+    rows.push(['Disk', `${d.disk.percentage.toFixed(1)}%`]);
+    rows.push(['Temp', d.cpu.temperature === 'N/A' ? 'N/A' : `${d.cpu.temperature.toFixed(1)}°C`]);
+    if (d.load)
+      rows.push([
+        'Load',
+        `${d.load.avg1.toFixed(2)} / ${d.load.avg5.toFixed(2)} / ${d.load.avg15.toFixed(2)}`
+      ]);
+    if (d.swap) rows.push(['Swap', `${d.swap.percentage.toFixed(1)}%`]);
+    rows.push(['Uptime', formatUptime(d.uptime)]);
+    rows.push(['Ping', `${d.network.ping.toFixed(0)} ms`]);
+    if (d.host) rows.push(['OS', `${d.host.os} · ${d.host.kernel}`]);
+  }
+
+  const topProcesses = node.result.ok
+    ? node.result.data.processes.filter(p => p.cpu > 0 || p.memory > 0).slice(0, 8)
+    : [];
+
+  return (
+    <div
+      className="fixed inset-0 z-30 flex items-center justify-center bg-black/60 p-4"
+      onClick={onClose}
+      role="dialog"
+      aria-modal="true"
+    >
+      <div
+        className="max-h-[85vh] w-full max-w-lg overflow-auto rounded-lg border border-gray-700 bg-gray-900 p-4"
+        onClick={event => event.stopPropagation()}
+      >
+        <div className="mb-3 flex items-center justify-between">
+          <h2 className="t-value font-bold text-gray-100">
+            {node.name} <span className="t-micro font-normal text-gray-500">{node.host}</span>
+          </h2>
+          <button
+            onClick={onClose}
+            aria-label="Close"
+            className="rounded px-2 text-gray-400 hover:text-white"
+          >
+            ✕
+          </button>
+        </div>
+
+        {!node.result.ok ? (
+          <p className="t-body text-red-400">{node.result.error}</p>
+        ) : (
+          <>
+            <dl className="grid grid-cols-2 gap-x-4 gap-y-1">
+              {rows.map(([label, value]) => (
+                <div key={label} className="flex justify-between gap-2 border-b border-gray-800 py-1">
+                  <dt className="t-micro text-gray-400">{label}</dt>
+                  <dd className="t-micro truncate font-mono text-gray-200">{value}</dd>
+                </div>
+              ))}
+            </dl>
+            {topProcesses.length > 0 && (
+              <div className="mt-3">
+                <div className="t-micro mb-1 text-gray-400">Top processes</div>
+                <ul className="space-y-0.5">
+                  {topProcesses.map((process, index) => (
+                    <li key={index} className="t-micro flex justify-between gap-2 font-mono text-gray-300">
+                      <span className="truncate">{shortProcessName(process.name)}</span>
+                      <span className="shrink-0 text-gray-500">
+                        {process.cpu.toFixed(0)}% · {process.memory.toFixed(0)}%
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    </div>
+  );
+};
 
 // --- Top chrome / header ---------------------------------------------------
 
@@ -199,16 +325,17 @@ const EmptyCluster: React.FC = () => (
 interface ServerCardProps {
   node: ClusterNode;
   history: NetworkHistoryEntry[];
+  onSelect: () => void;
 }
 
-const ServerCard: React.FC<ServerCardProps> = ({ node, history }) => {
+const ServerCard: React.FC<ServerCardProps> = ({ node, history, onSelect }) => {
   const { result } = node;
 
   // On a connection failure, show the reason. Like the main dashboard keeping
   // its last value, the frame is always drawn here too.
   if (!result.ok) {
     return (
-      <ServerShell name={node.name} host={node.host} status="offline">
+      <ServerShell name={node.name} host={node.host} status="offline" onSelect={onSelect}>
         <p className="t-body text-red-400">{result.error}</p>
       </ServerShell>
     );
@@ -224,7 +351,7 @@ const ServerCard: React.FC<ServerCardProps> = ({ node, history }) => {
   const topProcess = result.data.processes.find(process => process.cpu > 0 || process.memory > 0);
 
   return (
-    <ServerShell name={node.name} host={node.host} status="online">
+    <ServerShell name={node.name} host={node.host} status="online" onSelect={onSelect}>
       <div className="grid grid-cols-3 gap-2">
         <MiniGauge
           icon={Cpu}
@@ -299,8 +426,16 @@ const ServerShell: React.FC<{
   host: string;
   status: ServerStatus;
   children: React.ReactNode;
-}> = ({ name, host, status, children }) => (
-  <section className="dash-card flex flex-col rounded-lg border border-gray-700 bg-gray-800">
+  onSelect?: () => void;
+}> = ({ name, host, status, children, onSelect }) => (
+  <section
+    className={cn(
+      'dash-card flex flex-col rounded-lg border border-gray-700 bg-gray-800',
+      onSelect && 'cursor-pointer transition-colors hover:border-gray-500'
+    )}
+    onClick={onSelect}
+    title={onSelect ? 'Open node detail' : undefined}
+  >
     <div className="dash-card-head flex items-center justify-between gap-2">
       <div className="flex min-w-0 items-center gap-1.5">
         <Server className="dash-icon shrink-0" color={STATUS_COLOR[status]} strokeWidth={2} />
