@@ -44,6 +44,9 @@ export default function DisplayPage() {
     // The API is token-gated and this browser has no valid cookie. Send the user
     // to the login page, remembering where they were.
     if (authRequired) {
+      // A full navigation on purpose: leave the (data-less, gated) SPA entirely
+      // so the login page can set the auth cookie the stream needs.
+      // eslint-disable-next-line @next/next/no-location-assign-relative-destination
       window.location.href = `/login?next=${encodeURIComponent(window.location.pathname)}`;
     }
   }, [authRequired]);

@@ -35,6 +35,9 @@ export default function AlertsPage() {
       fetch('/api/alerts')
         .then(response => {
           if (response.status === 401) {
+            // Full navigation on purpose: leave the gated page so login can set
+            // the auth cookie.
+            // eslint-disable-next-line @next/next/no-location-assign-relative-destination
             window.location.href = '/login?next=/alerts';
             return null;
           }
