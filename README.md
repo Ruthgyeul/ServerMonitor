@@ -210,6 +210,10 @@ To run ServerMonitor directly on a host (no Docker) as a service that starts on
 boot and restarts on failure:
 
 ```bash
+# /opt is root-owned, so create the target and hand it to your deploy user first
+# (the installer then defaults RUN_USER to that owner rather than root).
+sudo mkdir -p /opt/servermonitor
+sudo chown "$USER" /opt/servermonitor
 git clone https://github.com/Ruthgyeul/ServerMonitor.git /opt/servermonitor
 cd /opt/servermonitor
 cp .env.example .env   # edit as needed
@@ -233,7 +237,15 @@ Then:
 ```bash
 systemctl status servermonitor
 journalctl -u servermonitor -f
-sudo systemctl restart servermonitor   # after editing .env
+sudo systemctl restart servermonitor   # after editing a server-only value in .env
+```
+
+`NEXT_PUBLIC_*` values (cluster servers, site metadata) are inlined at build
+time, so changing one needs a **rebuild**, not just a restart — rerun the
+installer, which rebuilds and restarts:
+
+```bash
+sudo ./scripts/install.sh
 ```
 
 The unit adds the service user to the `systemd-journal` and `adm` groups so the
