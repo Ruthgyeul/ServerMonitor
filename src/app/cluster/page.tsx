@@ -80,6 +80,13 @@ export default function ClusterPage() {
     let received: ClusterNode[] = [];
     try {
       const response = await fetch('/api/cluster', { cache: 'no-store' });
+      if (response.status === 401) {
+        // Full navigation on purpose: leave the gated page so login can set the
+        // auth cookie.
+        // eslint-disable-next-line @next/next/no-location-assign-relative-destination
+        window.location.href = '/login?next=/cluster';
+        return;
+      }
       if (response.ok) {
         const payload = (await response.json()) as { nodes: ClusterNode[] };
         received = payload.nodes ?? [];

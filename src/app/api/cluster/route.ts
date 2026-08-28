@@ -1,6 +1,7 @@
 import { ServerData } from '@/types/system';
 import { ClusterServer, getClusterHost, getClusterServers, getClusterUrl } from '@/config/clusterConfig';
 import { jsonResponse } from '@/utils/http';
+import { expectedSessionToken, requireApiAuth } from '@/utils/apiAuth';
 
 // Until now the cluster view polled each node's /api/system directly from the
 // browser. That meant (a) every node had to CORS-allow the dashboard origin,
@@ -30,10 +31,13 @@ async function fetchNode(server: ClusterServer): Promise<ClusterNode> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
 
-  // If a node has the API_AUTH_TOKEN gate enabled, the server attaches the
-  // token on its behalf (something the browser couldn't do). If unset, no header is added.
+  // If a node has an auth gate enabled, the server attaches the shared token on
+  // its behalf (something the browser couldn't do). This is the same token the
+  // local gate expects — the raw API_AUTH_TOKEN when set, otherwise the token
+  // derived from a shared DASHBOARD_PASSWORD. If the gate is off, no header is added.
   const headers: Record<string, string> = {};
-  if (process.env.API_AUTH_TOKEN) headers.Authorization = `Bearer ${process.env.API_AUTH_TOKEN}`;
+  const token = expectedSessionToken();
+  if (token) headers.Authorization = `Bearer ${token}`;
 
   try {
     const response = await fetch(url, { signal: controller.signal, headers, cache: 'no-store' });
@@ -60,6 +64,9 @@ async function fetchNode(server: ClusterServer): Promise<ClusterNode> {
 }
 
 export async function GET(request: Request) {
+  const unauthorized = requireApiAuth(request);
+  if (unauthorized) return unauthorized;
+
   const servers = getClusterServers();
   const nodes = await Promise.all(servers.map(fetchNode));
 

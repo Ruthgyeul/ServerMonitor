@@ -188,8 +188,8 @@ read on the server.
 | `NEXT_PUBLIC_CLUSTER_PORT` | `src/config/clusterConfig.ts` | Port for **bare-host** cluster nodes' `/api/system` (default `3000`). Ignored for `ip` entries that already include a scheme. |
 | `NEXT_PUBLIC_CLUSTER_PROTOCOL` | `src/config/clusterConfig.ts` | Scheme (`http`/`https`) for **bare-host** cluster nodes (default `http`). Ignored for `ip` entries that already include a scheme. |
 | `ALLOWED_ORIGINS` | `src/app/api/system/route.ts` | Comma-separated list of origins allowed to call `/api/system` (CORS allow-list). CORS only limits cross-origin browser reads — it does not authenticate. See [Securing the API](#securing-the-api). |
-| `API_AUTH_TOKEN` | `src/proxy.ts` | Optional shared secret. When set, every `/api/system*` request must present it as `Authorization: Bearer <token>` or an `api_auth_token` cookie. Unset by default. On its own it breaks the built-in browser dashboard — pair it with `DASHBOARD_PASSWORD` — see [Securing the API](#securing-the-api). |
-| `DASHBOARD_PASSWORD` | `src/app/api/auth/login/route.ts` | Optional login password. When set (with `API_AUTH_TOKEN`), `/login` accepts it and drops an HttpOnly `api_auth_token` cookie so the token-gated API and the browser dashboard work together. The token never reaches client JS. Unset by default (no login page). |
+| `API_AUTH_TOKEN` | `src/utils/apiAuth.ts` | Optional shared secret for machine-to-machine access. When set, every request to the sensitive routes (`/api/system*`, `/api/alerts*`, `/api/cluster`) must present it as `Authorization: Bearer <token>` or an `api_auth_token` cookie. Unset by default. The browser dashboard works via `/login` (which sets the cookie); or pair it with `DASHBOARD_PASSWORD`. See [Securing the API](#securing-the-api). |
+| `DASHBOARD_PASSWORD` | `src/app/api/auth/login/route.ts` | Optional login password. **Set on its own it is enough to protect the dashboard** — `/login` verifies it and drops an HttpOnly `api_auth_token` cookie carrying a token *derived* from the password (the raw password never becomes the cookie value, and never reaches client JS). Anonymous requests to the sensitive routes then get `401`. Unset by default (no login page). |
 | `RATE_LIMIT_RPM` | `src/utils/rateLimit.ts` | Per-IP request/minute cap on the public JSON endpoints (`/api/system`, `/api/metrics`), protecting the collectors from a busy loop. `0` disables it. Default `300` — generous enough for cluster polling and several dashboards. |
 | `NEXT_PUBLIC_SITE_URL` | `src/config/siteConfig.ts` | Canonical site URL used for metadata, Open Graph tags, `robots.txt` and `sitemap.xml`. |
 | `NEXT_PUBLIC_SITE_NAME` | `src/config/siteConfig.ts` | Full site/app name shown in page titles and metadata. |
@@ -292,29 +292,35 @@ All alert tuning lives in environment variables — see `.env.example`.
 
 ## Securing the API
 
-`/api/system` and `/api/system/stream` return sensitive host reconnaissance:
-SSH session source IPs and usernames, listening ports, top traffic peer IPs,
-firewall state, and the running process list. **The endpoint is unauthenticated
-by default**, and the `ALLOWED_ORIGINS` CORS list only restricts cross-origin
-reads from browsers — it does nothing against `curl` or any script. Anyone who
-can reach the port can read everything.
+`/api/system`, `/api/system/stream`, `/api/alerts*`, and `/api/cluster` return
+sensitive host reconnaissance: SSH session source IPs and usernames, listening
+ports, top traffic peer IPs, firewall state, and the running process list.
+**These endpoints are unauthenticated by default**, and the `ALLOWED_ORIGINS`
+CORS list only restricts cross-origin reads from browsers — it does nothing
+against `curl` or any script. Anyone who can reach the port can read everything.
 
 Pick at least one of these, in rough order of preference:
 
-1. **Network isolation (recommended).** Bind the app to `localhost` and expose
-   it only through a reverse proxy (nginx/Caddy/Traefik) that terminates TLS and
-   enforces auth (Basic auth, mTLS, OAuth2 proxy), or keep it reachable only
-   over a VPN / private network. This keeps the browser dashboard fully working.
-2. **Optional token gate.** Set `API_AUTH_TOKEN` (e.g. `openssl rand -hex 32`).
-   Every `/api/system*` request then needs `Authorization: Bearer <token>` or an
-   `api_auth_token` cookie. This suits machine-to-machine polling or a reverse
-   proxy that injects the token. On its own it disables the built-in browser
-   dashboard, which cannot carry a secret token from the browser.
-3. **Token gate + login (keeps the dashboard).** Set `API_AUTH_TOKEN` **and**
-   `DASHBOARD_PASSWORD`. The `/login` page verifies the password server-side and
-   drops the token as an HttpOnly `api_auth_token` cookie the browser then sends
-   automatically, so the gated API and the dashboard both work; the token itself
-   never reaches client JavaScript. `curl` without the cookie still gets `401`.
+1. **Password login (simplest — protects the dashboard on its own).** Set
+   `DASHBOARD_PASSWORD`. The `/login` page verifies it server-side and drops an
+   HttpOnly `api_auth_token` cookie carrying a token *derived* from the password
+   (the raw password never becomes the cookie value and never reaches client
+   JavaScript). Anonymous requests to the sensitive routes then get `401`, and
+   the browser dashboard works normally after login. `curl` without the cookie
+   still gets `401`.
+2. **Network isolation.** Bind the app to `localhost` and expose it only through
+   a reverse proxy (nginx/Caddy/Traefik) that terminates TLS and enforces auth
+   (Basic auth, mTLS, OAuth2 proxy), or keep it reachable only over a VPN /
+   private network. This keeps the browser dashboard fully working.
+3. **Token gate (machine-to-machine).** Set `API_AUTH_TOKEN`
+   (e.g. `openssl rand -hex 32`). Every request to the sensitive routes then
+   needs `Authorization: Bearer <token>` or an `api_auth_token` cookie. This
+   suits machine-to-machine polling or a reverse proxy that injects the token.
+   The browser dashboard still works via `/login` when `DASHBOARD_PASSWORD` is
+   also set.
+
+The gate runs inside the Node route handlers (`src/utils/apiAuth.ts`), so it
+reads its configuration from the runtime environment on every request.
 
 A coarse per-IP rate limit (`RATE_LIMIT_RPM`, default 300) also guards
 `/api/system` and `/api/metrics` so an open deployment can't be driven into a
@@ -338,8 +344,10 @@ The `/cluster` page fetches a single same-origin endpoint (`/api/cluster`),
 and the dashboard **server** fetches each node's `/api/system`. Because those
 node requests are server-to-server, nodes no longer need to CORS-allow the
 dashboard origin for the cluster view, and node IPs never reach the browser.
-If a node has `API_AUTH_TOKEN` set, the dashboard forwards its own
-`API_AUTH_TOKEN` as the bearer token when polling that node.
+If the nodes are gated, the dashboard server forwards the token it expects
+locally as the bearer token when polling each node — the raw `API_AUTH_TOKEN`
+when set, otherwise the token derived from a shared `DASHBOARD_PASSWORD`. For a
+gated cluster, give every node the same secret.
 
 ## Learn more
 

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 import { clearMute, muteAll, muteKey, muteStatus } from '@/utils/collectors/alertMute';
+import { requireApiAuth } from '@/utils/apiAuth';
 
 // Manual alert muting ("snooze"), e.g. during maintenance. Muting suppresses the
 // external webhook only — the on-screen alert log keeps recording. Same-origin
@@ -10,7 +11,10 @@ import { clearMute, muteAll, muteKey, muteStatus } from '@/utils/collectors/aler
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-export function GET() {
+export function GET(request: Request) {
+  const unauthorized = requireApiAuth(request);
+  if (unauthorized) return unauthorized;
+
   return NextResponse.json(muteStatus(), { headers: { 'Cache-Control': 'no-store' } });
 }
 
@@ -19,6 +23,9 @@ export function GET() {
 const MAX_MUTE_MINUTES = 30 * 24 * 60;
 
 export async function POST(request: NextRequest) {
+  const unauthorized = requireApiAuth(request);
+  if (unauthorized) return unauthorized;
+
   const body = (await request.json().catch(() => ({}))) as { minutes?: unknown; key?: unknown };
   const requested = typeof body.minutes === 'number' && Number.isFinite(body.minutes) ? body.minutes : 60;
   if (requested <= 0) {
@@ -34,7 +41,10 @@ export async function POST(request: NextRequest) {
   return NextResponse.json(muteStatus());
 }
 
-export function DELETE() {
+export function DELETE(request: Request) {
+  const unauthorized = requireApiAuth(request);
+  if (unauthorized) return unauthorized;
+
   clearMute();
   return NextResponse.json(muteStatus());
 }
