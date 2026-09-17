@@ -19,14 +19,14 @@ const geistMono = Geist_Mono({
   subsets: ['latin']
 });
 
-// On mobile, CSS pixels must follow the device width for the responsive layout
-// to fold as intended. The scale is pinned to 1 so users can't pinch/double-tap to zoom.
+// On mobile, CSS pixels follow the device width so the responsive layout folds
+// as intended at the initial scale. Zoom is left to the user (WCAG 1.4.4)
+// rather than pinned off — low-vision/mobile visitors can still pinch/
+// double-tap to zoom in on small text; it doesn't affect the 7" kiosk panel,
+// which is never touched.
 export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
-  maximumScale: 1,
-  minimumScale: 1,
-  userScalable: false,
   themeColor: '#0a0d13'
 };
 

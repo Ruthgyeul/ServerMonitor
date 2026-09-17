@@ -21,10 +21,10 @@ const TIMEOUT_MS = 5000;
 const BATCH_MS = Number(process.env.ALERT_BATCH_MS) || 0;
 
 const LEVEL_PREFIX: Record<AlertLevel, string> = {
-  ok: '✅',
-  info: 'ℹ️',
-  warning: '⚠️',
-  critical: '🚨'
+  ok: '[OK]',
+  info: '[INFO]',
+  warning: '[WARN]',
+  critical: '[CRIT]'
 };
 
 function splitUrls(raw: string | undefined): string[] {

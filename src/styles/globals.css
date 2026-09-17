@@ -386,6 +386,14 @@ body {
   .dash-tip::after {
     transition: none;
   }
+  /* Status/alert pulse animations (bg-*, animate-[pulseDot_...]/[alertBlink_...]
+     utilities in Dashboard.tsx, cluster/page.tsx, status/page.tsx, login/page.tsx,
+     StartupState.tsx). Matched by class substring since Tailwind emits the
+     keyframe name literally inside the arbitrary-value utility class. */
+  [class*='animate-[pulseDot'],
+  [class*='animate-[alertBlink'] {
+    animation: none !important;
+  }
 }
 
 /* ---------------------------------------------------------------------------

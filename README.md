@@ -195,7 +195,8 @@ read on the server.
 | `ALLOWED_ORIGINS` | `src/app/api/system/route.ts` | Comma-separated list of origins allowed to call `/api/system` (CORS allow-list). CORS only limits cross-origin browser reads — it does not authenticate. See [Securing the API](#securing-the-api). |
 | `API_AUTH_TOKEN` | `src/utils/apiAuth.ts` | Optional shared secret for machine-to-machine access. When set, every request to the sensitive routes (`/api/system*`, `/api/alerts*`, `/api/cluster`) must present it as `Authorization: Bearer <token>` or an `api_auth_token` cookie. Unset by default. On its own the built-in browser dashboard can't reach it (the browser has no way to attach the token, and `/login` is disabled unless `DASHBOARD_PASSWORD` is also set) — either also set `DASHBOARD_PASSWORD` to use the login page, or have a reverse proxy inject the token/cookie. See [Securing the API](#securing-the-api). |
 | `DASHBOARD_PASSWORD` | `src/app/api/auth/login/route.ts` | Optional login password. **Set on its own it is enough to protect the dashboard** — `/login` verifies it and drops an HttpOnly `api_auth_token` cookie carrying a token *derived* from the password (the raw password never becomes the cookie value, and never reaches client JS). Anonymous requests to the sensitive routes then get `401`. Unset by default (no login page). |
-| `RATE_LIMIT_RPM` | `src/utils/rateLimit.ts` | Per-IP request/minute cap on the public JSON endpoints (`/api/system`, `/api/metrics`), protecting the collectors from a busy loop. `0` disables it. Default `300` — generous enough for cluster polling and several dashboards. |
+| `RATE_LIMIT_RPM` | `src/utils/rateLimit.ts` | Per-IP request/minute cap on the public JSON endpoints (`/api/system`, `/api/metrics`, `/api/cluster`), protecting the collectors from a busy loop. `0` disables it. Default `300` — generous enough for cluster polling and several dashboards. |
+| `RATE_LIMIT_TRUST_PROXY` | `src/utils/rateLimit.ts` | Whether rate limiting (including login/auth-failure attempts) reads `X-Forwarded-For`/`X-Real-IP` to key buckets per client IP. Off by default, meaning every caller shares one bucket — safe against abuse, but a self-DoS risk: one visitor spamming the wrong `DASHBOARD_PASSWORD` can temporarily lock out everyone else's login too. Turn on only behind a reverse proxy you control that overwrites these headers; never on a directly-exposed deployment (a client could otherwise mint a fresh "IP" per request and bypass the limit entirely). |
 | `KIOSK_BYPASS_ENABLED` | `server.js`, `src/utils/apiAuth.ts` | Set to `1`/`true` to open a second HTTP listener bound to `127.0.0.1` only; requests that arrive through it skip `DASHBOARD_PASSWORD`/`API_AUTH_TOKEN` entirely. Only takes effect with `npm start`/`node server.js` (`next dev` never opens it). Unset by default. See [Securing the API](#securing-the-api). |
 | `KIOSK_BYPASS_PORT` | `server.js` | Port for the loopback-only listener above. Must differ from `PORT`. Default `3001`. |
 | `NEXT_PUBLIC_SITE_URL` | `src/config/siteConfig.ts` | Canonical site URL used for metadata, Open Graph tags, `robots.txt` and `sitemap.xml`. |
@@ -342,8 +343,11 @@ reverse-proxy or port-forward `KIOSK_BYPASS_PORT` to anything other than this
 same host; doing so would let whoever reaches the proxy skip the password too.
 
 A coarse per-IP rate limit (`RATE_LIMIT_RPM`, default 300) also guards
-`/api/system` and `/api/metrics` so an open deployment can't be driven into a
-collection busy loop.
+`/api/system`, `/api/metrics`, and `/api/cluster` so an open deployment can't
+be driven into a collection busy loop — `/api/cluster` matters especially,
+since each hit fans out to every configured node. By default every caller
+shares one bucket rather than being split per IP (see `RATE_LIMIT_TRUST_PROXY`
+above for the trade-off and when it's safe to turn on).
 
 The app also sends hardening response headers (`X-Frame-Options: DENY`,
 `X-Content-Type-Options: nosniff`, a `frame-ancestors 'none'` CSP,

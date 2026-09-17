@@ -213,7 +213,7 @@ const Header: React.FC<HeaderProps> = ({ data, connected, lastUpdate, now }) => 
         <Server size={16} color="#38bdf8" strokeWidth={2} className="shrink-0" />
         <span className="t-value shrink-0 font-bold text-emerald-400 select-none">❯</span>
         <h1 className="t-value truncate font-bold">Server Monitor</h1>
-        <div className="h-[7px] w-[7px] shrink-0 animate-[pulseDot_2s_ease-in-out_infinite] rounded-full bg-green-400" />
+        <div className="h-[7px] w-[7px] shrink-0 animate-[pulseDot_2s_ease-in-out_infinite] rounded-full bg-emerald-400" />
       </div>
 
       {/* Don't render the time before mount (avoids a hydration mismatch). */}
@@ -229,7 +229,7 @@ const Header: React.FC<HeaderProps> = ({ data, connected, lastUpdate, now }) => 
             className={cn(
               'h-1.5 w-1.5 rounded-full',
               connected
-                ? 'animate-[pulseDot_2s_ease-in-out_infinite] bg-green-400'
+                ? 'animate-[pulseDot_2s_ease-in-out_infinite] bg-emerald-400'
                 : 'animate-[pulseDot_0.6s_ease-in-out_infinite] bg-red-400'
             )}
           />
@@ -608,7 +608,7 @@ const TemperatureCard: React.FC<{ data: DashboardData }> = ({ data }) => {
         className="my-1 overflow-visible"
       >
         <div
-          className="absolute top-[-1px] h-[7px] w-px bg-yellow-400"
+          className="absolute top-[-1px] h-[7px] w-px bg-amber-400"
           style={{ left: `${(TEMP_WARN / TEMP_SCALE_MAX) * 100}%` }}
         />
         <div
@@ -723,7 +723,7 @@ const DiskIoCard: React.FC<{ data: DashboardData; history: DiskIoPoint[] }> = ({
       title="DISK I/O"
       right={
         <span className="t-micro shrink-0 whitespace-nowrap font-mono">
-          <span className="text-blue-400">R {io.read}</span>{' '}
+          <span className="text-sky-400">R {io.read}</span>{' '}
           <span className="text-pink-400">W {io.write}</span> <span className="text-gray-500">{io.unit}</span>
         </span>
       }
@@ -752,7 +752,7 @@ const NetworkCard: React.FC<{ data: DashboardData; history: NetworkHistoryEntry[
     title="NETWORK ACTIVITY"
     right={
       <span className="t-micro shrink-0 whitespace-nowrap font-mono">
-        <span className="text-blue-400">↓ {formatRate(data.network.download)}</span>{' '}
+        <span className="text-sky-400">↓ {formatRate(data.network.download)}</span>{' '}
         <span className="text-emerald-400">↑ {formatRate(data.network.upload)}</span>
       </span>
     }
@@ -761,7 +761,7 @@ const NetworkCard: React.FC<{ data: DashboardData; history: NetworkHistoryEntry[
         which the instantaneous rate alone can't tell you — is visible at a glance. */}
     <div className="t-micro flex items-center justify-center gap-4 text-gray-400">
       <span className="flex items-center gap-1">
-        <span className="h-[7px] w-[7px] rounded-full bg-blue-500" />
+        <span className="h-[7px] w-[7px] rounded-full bg-sky-500" />
         Download · {formatBytes(data.network.totalRxBytes)}
       </span>
       <span className="flex items-center gap-1">
@@ -778,13 +778,13 @@ const NetworkCard: React.FC<{ data: DashboardData; history: NetworkHistoryEntry[
 // A one-line summary bar placed separately below the chart in the design.
 const NetworkStripCard: React.FC<{ data: DashboardData }> = ({ data }) => (
   <section className="dash-card flex flex-wrap items-center justify-around gap-x-4 gap-y-1 rounded-lg border border-gray-700 bg-gray-800">
-    <StripItem value={data.network.ping.toFixed(1)} unit="ms ping" color="text-yellow-400" />
+    <StripItem value={data.network.ping.toFixed(1)} unit="ms ping" color="text-amber-400" />
     <StripItem
       value={`${data.network.errorRates.rx}/${data.network.errorRates.tx}%`}
       unit="err"
       color="text-red-400"
     />
-    <StripItem value={String(data.network.connections)} unit="conns" color="text-green-400" />
+    <StripItem value={String(data.network.connections)} unit="conns" color="text-emerald-400" />
     <StripItem value={String(data.network.listeningPorts)} unit="ports" color="text-sky-400" />
   </section>
 );
@@ -814,7 +814,10 @@ const InterfacesCard: React.FC<{ data: DashboardData }> = ({ data }) => {
               {entry.name} <span className="text-gray-500">{entry.ip ?? '—'}</span>
             </span>
             <span
-              className={cn('shrink-0 font-mono', entry.state === 'up' ? 'text-green-400' : 'text-gray-500')}
+              className={cn(
+                'shrink-0 font-mono',
+                entry.state === 'up' ? 'text-emerald-400' : 'text-gray-500'
+              )}
             >
               {entry.state !== 'up'
                 ? entry.state
@@ -922,11 +925,11 @@ const ProcessesCard: React.FC<{ data: DashboardData }> = ({ data }) => {
         <span>Name</span>
         <div className="flex gap-2">
           <span
-            className={cn('w-[5ch] text-right', sortBy === 'cpu' ? 'text-yellow-400' : 'text-yellow-400/60')}
+            className={cn('w-[5ch] text-right', sortBy === 'cpu' ? 'text-amber-400' : 'text-amber-400/60')}
           >
             CPU
           </span>
-          <span className={cn('w-[5ch] text-right', sortBy === 'mem' ? 'text-blue-400' : 'text-blue-400/60')}>
+          <span className={cn('w-[5ch] text-right', sortBy === 'mem' ? 'text-sky-400' : 'text-sky-400/60')}>
             RAM
           </span>
         </div>
@@ -943,8 +946,8 @@ const ProcessesCard: React.FC<{ data: DashboardData }> = ({ data }) => {
               <span className="block truncate text-gray-400">{process.name}</span>
             </span>
             <div className="flex shrink-0 gap-2 font-mono">
-              <span className="w-[5ch] text-right text-yellow-400">{process.cpu.toFixed(1)}</span>
-              <span className="w-[5ch] text-right text-blue-400">{process.memory.toFixed(1)}</span>
+              <span className="w-[5ch] text-right text-amber-400">{process.cpu.toFixed(1)}</span>
+              <span className="w-[5ch] text-right text-sky-400">{process.memory.toFixed(1)}</span>
             </div>
           </li>
         ))}

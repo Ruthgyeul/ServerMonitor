@@ -278,7 +278,7 @@ const ClusterHeader: React.FC<ClusterHeaderProps> = ({ online, total, now }) => 
         <Server size={16} color="#38bdf8" strokeWidth={2} className="shrink-0" />
         <span className="t-value shrink-0 font-bold text-emerald-400 select-none">❯</span>
         <h1 className="t-value truncate font-bold">Cluster Monitor</h1>
-        <div className="h-[7px] w-[7px] shrink-0 animate-[pulseDot_2s_ease-in-out_infinite] rounded-full bg-green-400" />
+        <div className="h-[7px] w-[7px] shrink-0 animate-[pulseDot_2s_ease-in-out_infinite] rounded-full bg-emerald-400" />
       </div>
 
       {/* Don't render the time before mount (avoids a hydration mismatch). */}
@@ -292,7 +292,7 @@ const ClusterHeader: React.FC<ClusterHeaderProps> = ({ online, total, now }) => 
             className={cn(
               'h-1.5 w-1.5 rounded-full',
               allUp
-                ? 'animate-[pulseDot_2s_ease-in-out_infinite] bg-green-400'
+                ? 'animate-[pulseDot_2s_ease-in-out_infinite] bg-emerald-400'
                 : 'animate-[pulseDot_0.6s_ease-in-out_infinite] bg-red-400'
             )}
           />
@@ -378,7 +378,7 @@ const ServerCard: React.FC<ServerCardProps> = ({ node, history, onSelect }) => {
             NET
           </span>
           <span className="whitespace-nowrap font-mono">
-            <span className="text-blue-400">↓ {formatRate(network.download)}</span>{' '}
+            <span className="text-sky-400">↓ {formatRate(network.download)}</span>{' '}
             <span className="text-emerald-400">↑ {formatRate(network.upload)}</span>
           </span>
         </div>
@@ -440,7 +440,7 @@ const ServerShell: React.FC<{
         <span
           className={cn(
             'h-1.5 w-1.5 rounded-full',
-            status === 'online' && 'animate-[pulseDot_2s_ease-in-out_infinite] bg-green-400',
+            status === 'online' && 'animate-[pulseDot_2s_ease-in-out_infinite] bg-emerald-400',
             status === 'offline' && 'animate-[pulseDot_0.6s_ease-in-out_infinite] bg-red-400',
             status === 'connecting' && 'bg-gray-500'
           )}
