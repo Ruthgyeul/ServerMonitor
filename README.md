@@ -276,14 +276,20 @@ lets the `systemctl`/`journalctl`/`who`/`last` collectors report real values.
 Threshold rules evaluate every collection tick with hysteresis (separate enter/
 clear values) so a value hovering at the line doesn't flood the log. Beyond the
 core CPU/memory/disk/temperature/swap rules, the set covers **load per core**,
-**GPU temperature**, **low battery**, **disk fill-forecast** (hours to full), and
-a composite **memory-pressure** rule (RAM and swap both high). Optional
-**statistical anomaly detection** (`ALERT_ANOMALY_ENABLE`) flags CPU that departs
-sharply from its own recent baseline even under the absolute threshold.
+**GPU temperature**, **low battery**, **disk and memory fill-forecast** (hours
+to full — the memory one catches a slow leak before it becomes an OOM kill), a
+**port-scan detector** (a source IP hitting many distinct ports in a short
+window, from the firewall log — see `PORT_SCAN_THRESHOLD`/`PORT_SCAN_WINDOW_MINUTES`),
+and a composite **memory-pressure** rule (RAM and swap both high). Optional
+**statistical anomaly detection** (`ALERT_ANOMALY_ENABLE`) flags CPU or memory
+that departs sharply from its own recent baseline even under the absolute threshold.
 
 Every alert shows on the dashboard's alert card and is persisted to
 `data/alerts.json`. The **`/alerts`** page is the full history with a level
-filter, text search, and a 48-hour incident timeline.
+filter, text search, and a 48-hour incident timeline. **`/alerts/settings`**
+lets you tune any threshold from the browser — changes apply on the next tick,
+no restart needed (they're stored in `data/alert-overrides.json` and take
+priority over the matching `.env` value, which stays the default).
 
 Outbound notifications (off until `ALERT_WEBHOOK_URL` is set) support `json`,
 `slack`, and `discord` shapes, **per-severity routing** (`ALERT_WEBHOOK_URL_CRITICAL`

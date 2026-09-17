@@ -286,3 +286,62 @@ export const getFirewallInfo = withTtl(30_000, async (): Promise<FirewallInfo> =
   ]);
   return { status, backend, blockedAttempts };
 });
+
+// --- Port scan detection ----------------------------------------------------
+//
+// A single source IP hitting many DISTINCT destination ports in a short window
+// looks like reconnaissance rather than normal traffic (a normal client talks
+// to one or a handful of ports). This only sees anything once the firewall is
+// actually dropping and logging those attempts (ufw logging on / iptables LOG
+// target), same prerequisite as countBlockedAttempts above.
+
+const PORT_SCAN_DISTINCT_PORTS = Number(process.env.PORT_SCAN_THRESHOLD) || 10;
+// journalctl's --since accepts relative specs like "-10min" directly.
+const PORT_SCAN_WINDOW = process.env.PORT_SCAN_WINDOW_MINUTES
+  ? `-${Number(process.env.PORT_SCAN_WINDOW_MINUTES)}min`
+  : '-10min';
+
+export interface PortScanSuspect {
+  ip: string;
+  distinctPorts: number;
+  hits: number;
+}
+
+// Pure: each line is expected to contain "SRC=<ip> ... DPT=<port>" (the
+// standard UFW/iptables kernel LOG format). Groups by source IP and flags any
+// IP that hit at least `threshold` distinct destination ports in the scanned window.
+export function parsePortScanLines(output: string, threshold: number): PortScanSuspect[] {
+  const bySource = new Map<string, { ports: Set<number>; hits: number }>();
+  for (const line of output.split('\n')) {
+    const src = line.match(/SRC=([0-9a-fA-F.:]+)/)?.[1];
+    const dpt = line.match(/DPT=(\d+)/)?.[1];
+    if (!src || !dpt) continue;
+    const entry = bySource.get(src) ?? { ports: new Set<number>(), hits: 0 };
+    entry.ports.add(parseInt(dpt, 10));
+    entry.hits += 1;
+    bySource.set(src, entry);
+  }
+
+  return [...bySource.entries()]
+    .filter(([, entry]) => entry.ports.size >= threshold)
+    .map(([ip, entry]) => ({ ip, distinctPorts: entry.ports.size, hits: entry.hits }))
+    .sort((a, b) => b.distinctPorts - a.distinctPorts);
+}
+
+// Scanning the kernel log is relatively expensive, so throttle it the same way
+// as countBlockedAttempts.
+export const getPortScanSuspects = withTtl(60_000, async (): Promise<PortScanSuspect[]> => {
+  let output: string;
+  try {
+    // Same BLOCK/DROP filter as countBlockedAttempts above — without it this
+    // would match ANY kernel log line carrying SRC=/DPT= fields, including
+    // ACCEPTed traffic, and flag ordinary multi-port clients as scanners.
+    output = await run(
+      `journalctl -k --since=${PORT_SCAN_WINDOW} --no-pager 2>/dev/null | grep -E 'UFW BLOCK|nft.*drop|DPT=.*DROP' | grep -E 'SRC=.*DPT=' || true`,
+      10_000
+    );
+  } catch {
+    return [];
+  }
+  return parsePortScanLines(output, PORT_SCAN_DISTINCT_PORTS);
+});

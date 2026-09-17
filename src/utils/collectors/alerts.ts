@@ -4,15 +4,21 @@ import path from 'path';
 import { AlertEntry, AlertLevel, FirewallInfo, SshSession, TemperatureValue } from '@/types/system';
 import { dispatchAlert } from '@/utils/collectors/notify';
 import { isMuted } from '@/utils/collectors/alertMute';
+import { getOverride } from '@/utils/collectors/alertOverrides';
 
 // The recent view streamed with every /api/system response (kept small so the
 // SSE payload stays light). The dashboard alert card reads this.
 const MAX_ENTRIES = 30;
 
-// Thresholds can be overridden by environment variables. Unset uses the
-// defaults below — an operator should be able to tune them to a host's
-// characteristics without editing the source.
+// Thresholds can be overridden by environment variables, or at runtime via the
+// web UI (POST /api/alerts/config -> alertOverrides.ts), which takes priority
+// over the environment variable. Unset uses the defaults below — an operator
+// should be able to tune them to a host's characteristics without editing the
+// source. Called fresh on every rule evaluation (see Rule.enter/clear below),
+// not memoized, so a runtime override takes effect on the very next tick.
 function num(key: string, fallback: number): number {
+  const override = getOverride(key);
+  if (override !== undefined) return override;
   const raw = process.env[key];
   if (raw === undefined || raw.trim() === '') return fallback;
   const value = Number(raw);
@@ -33,8 +39,11 @@ interface Rule {
   label: string;
   level: AlertLevel;
   direction: 'above' | 'below';
-  enter: number;
-  clear: number;
+  // Functions, not plain numbers, so a threshold read fresh from num() on
+  // every evaluation — including a runtime override set after this RULES
+  // array was built — is honored without a process restart.
+  enter: () => number;
+  clear: () => number;
   onEnter: (value: number) => string;
   onClear: (value: number) => string;
   compute?: (values: Values) => number | null;
@@ -60,8 +69,8 @@ const RULES: Rule[] = [
     label: 'CPU',
     level: 'warning',
     direction: 'above',
-    enter: num('ALERT_CPU_ENTER', 90),
-    clear: num('ALERT_CPU_CLEAR', 80),
+    enter: () => num('ALERT_CPU_ENTER', 90),
+    clear: () => num('ALERT_CPU_CLEAR', 80),
     onEnter: value => `CPU usage ${value.toFixed(0)}%`,
     onClear: () => 'CPU usage back to normal'
   },
@@ -70,8 +79,8 @@ const RULES: Rule[] = [
     label: 'Memory',
     level: 'warning',
     direction: 'above',
-    enter: num('ALERT_MEM_ENTER', 90),
-    clear: num('ALERT_MEM_CLEAR', 80),
+    enter: () => num('ALERT_MEM_ENTER', 90),
+    clear: () => num('ALERT_MEM_CLEAR', 80),
     onEnter: value => `Memory usage ${value.toFixed(0)}%`,
     onClear: () => 'Memory usage back to normal'
   },
@@ -80,8 +89,8 @@ const RULES: Rule[] = [
     label: 'Disk',
     level: 'warning',
     direction: 'above',
-    enter: num('ALERT_DISK_ENTER', 85),
-    clear: num('ALERT_DISK_CLEAR', 80),
+    enter: () => num('ALERT_DISK_ENTER', 85),
+    clear: () => num('ALERT_DISK_CLEAR', 80),
     onEnter: value => `Disk usage crossed ${value.toFixed(0)}%`,
     onClear: () => 'Disk usage back to normal'
   },
@@ -90,8 +99,8 @@ const RULES: Rule[] = [
     label: 'CPU temp',
     level: 'critical',
     direction: 'above',
-    enter: num('ALERT_TEMP_ENTER', 74),
-    clear: num('ALERT_TEMP_CLEAR', 70),
+    enter: () => num('ALERT_TEMP_ENTER', 74),
+    clear: () => num('ALERT_TEMP_CLEAR', 70),
     onEnter: value => `CPU temp ${value.toFixed(1)}°C`,
     onClear: () => 'CPU temp back to normal'
   },
@@ -100,8 +109,8 @@ const RULES: Rule[] = [
     label: 'Swap',
     level: 'warning',
     direction: 'above',
-    enter: num('ALERT_SWAP_ENTER', 80),
-    clear: num('ALERT_SWAP_CLEAR', 60),
+    enter: () => num('ALERT_SWAP_ENTER', 80),
+    clear: () => num('ALERT_SWAP_CLEAR', 60),
     onEnter: value => `Swap usage ${value.toFixed(0)}%`,
     onClear: () => 'Swap usage back to normal'
   },
@@ -111,8 +120,8 @@ const RULES: Rule[] = [
     label: 'Load',
     level: 'warning',
     direction: 'above',
-    enter: num('ALERT_LOAD_ENTER', 2),
-    clear: num('ALERT_LOAD_CLEAR', 1.5),
+    enter: () => num('ALERT_LOAD_ENTER', 2),
+    clear: () => num('ALERT_LOAD_CLEAR', 1.5),
     compute: v => v.loadPerCore,
     onEnter: value => `Load ${value.toFixed(2)} per core`,
     onClear: () => 'Load back to normal'
@@ -122,8 +131,8 @@ const RULES: Rule[] = [
     label: 'GPU temp',
     level: 'critical',
     direction: 'above',
-    enter: num('ALERT_GPU_TEMP_ENTER', 85),
-    clear: num('ALERT_GPU_TEMP_CLEAR', 78),
+    enter: () => num('ALERT_GPU_TEMP_ENTER', 85),
+    clear: () => num('ALERT_GPU_TEMP_CLEAR', 78),
     compute: v => v.gpuTemp,
     onEnter: value => `GPU temp ${value.toFixed(1)}°C`,
     onClear: () => 'GPU temp back to normal'
@@ -134,8 +143,8 @@ const RULES: Rule[] = [
     label: 'Battery',
     level: 'warning',
     direction: 'below',
-    enter: num('ALERT_BATTERY_ENTER', 15),
-    clear: num('ALERT_BATTERY_CLEAR', 25),
+    enter: () => num('ALERT_BATTERY_ENTER', 15),
+    clear: () => num('ALERT_BATTERY_CLEAR', 25),
     compute: v => v.battery,
     onEnter: value => `Battery low ${value.toFixed(0)}%`,
     onClear: () => 'Battery recovered'
@@ -146,13 +155,27 @@ const RULES: Rule[] = [
     label: 'Disk fill',
     level: 'warning',
     direction: 'below',
-    enter: num('ALERT_DISKFILL_ENTER_HOURS', 24),
-    clear: num('ALERT_DISKFILL_CLEAR_HOURS', 48),
+    enter: () => num('ALERT_DISKFILL_ENTER_HOURS', 24),
+    clear: () => num('ALERT_DISKFILL_CLEAR_HOURS', 48),
     compute: v => v.diskFill,
     // A null forecast means the disk is no longer filling → treat as recovered.
     nullMeans: 'recovered',
     onEnter: value => `Disk fills in ~${value.toFixed(0)}h at the current rate`,
     onClear: () => 'Disk fill rate eased'
+  },
+  // "low is bad": estimated hours until memory fills, mirroring diskFill.
+  {
+    key: 'memFill',
+    label: 'Memory fill',
+    level: 'warning',
+    direction: 'below',
+    enter: () => num('ALERT_MEMFILL_ENTER_HOURS', 24),
+    clear: () => num('ALERT_MEMFILL_CLEAR_HOURS', 48),
+    compute: v => v.memFill,
+    // A null forecast means memory is no longer trending toward full.
+    nullMeans: 'recovered',
+    onEnter: value => `Memory fills in ~${value.toFixed(0)}h at the current rate (possible leak)`,
+    onClear: () => 'Memory fill rate eased'
   },
   // Statistical anomaly (opt-in via ALERT_ANOMALY_ENABLE): CPU far from its own
   // recent baseline even if under the absolute threshold. Passed in as a boolean.
@@ -161,12 +184,25 @@ const RULES: Rule[] = [
     label: 'CPU anomaly',
     level: 'warning',
     direction: 'above',
-    enter: 0.5,
-    clear: 0.5,
+    enter: () => 0.5,
+    clear: () => 0.5,
     when: () => ANOMALY_ENABLED,
     compute: v => v.cpuAnomaly,
     onEnter: () => 'CPU usage anomalous vs its recent baseline',
     onClear: () => 'CPU usage back near baseline'
+  },
+  // Same idea, mirrored for memory (same opt-in flag).
+  {
+    key: 'memAnomaly',
+    label: 'Memory anomaly',
+    level: 'warning',
+    direction: 'above',
+    enter: () => 0.5,
+    clear: () => 0.5,
+    when: () => ANOMALY_ENABLED,
+    compute: v => v.memAnomaly,
+    onEnter: () => 'Memory usage anomalous vs its recent baseline',
+    onClear: () => 'Memory usage back near baseline'
   },
   // Composite: RAM and swap both high at once — thrashing, distinct from either
   // individual warning. Modelled as a boolean (1/0) so it flows through the same
@@ -176,8 +212,8 @@ const RULES: Rule[] = [
     label: 'Memory pressure',
     level: 'critical',
     direction: 'above',
-    enter: 0.5,
-    clear: 0.5,
+    enter: () => 0.5,
+    clear: () => 0.5,
     compute: v =>
       v.memory === null || v.swap === null
         ? null
@@ -212,6 +248,7 @@ const log: AlertEntry[] = [];
 let knownSessions: Set<string> | null = null;
 let knownFirewall: FirewallInfo['status'] | null = null;
 let knownIfaceDown: Set<string> | null = null;
+let knownPortScanIps: Set<string> | null = null;
 let sequence = 0;
 // Per-rule last external-notify time. Used for the re-notify cooldown.
 const lastNotifiedAt = new Map<string, number>();
@@ -356,14 +393,18 @@ export interface AlertInput {
   sshSessions: SshSession[];
   // For interface-down detection. Only the name and state are needed (optional: old-input compatible).
   interfaces?: { name: string; state: 'up' | 'down' | 'unknown' }[];
+  // Currently-flagged port-scan source IPs (see security.ts). Optional: old-input compatible.
+  portScanSuspects?: { ip: string; distinctPorts: number; hits: number }[];
   // Added for the expanded rule set (all optional: old-input compatible).
   cores?: number;
   loadAvg1?: number;
   gpuTemp?: TemperatureValue;
   battery?: number | null;
   diskHoursToFull?: number | null;
-  // Precomputed CPU anomaly flag (see anomaly.ts); undefined = not evaluated.
+  memHoursToFull?: number | null;
+  // Precomputed anomaly flags (see anomaly.ts); undefined = not evaluated.
   cpuAnomaly?: boolean;
+  memAnomaly?: boolean;
 }
 
 function toNumber(value: TemperatureValue | number | null | undefined): number | null {
@@ -387,7 +428,9 @@ export function evaluateAlerts(input: AlertInput, at: number = Date.now()): Aler
     gpuTemp: toNumber(input.gpuTemp),
     battery: input.battery ?? null,
     diskFill: input.diskHoursToFull ?? null,
-    cpuAnomaly: input.cpuAnomaly === undefined ? null : input.cpuAnomaly ? 1 : 0
+    memFill: input.memHoursToFull ?? null,
+    cpuAnomaly: input.cpuAnomaly === undefined ? null : input.cpuAnomaly ? 1 : 0,
+    memAnomaly: input.memAnomaly === undefined ? null : input.memAnomaly ? 1 : 0
   };
 
   // Expire flapping for rules that have settled (no transitions left within the
@@ -413,19 +456,19 @@ export function evaluateAlerts(input: AlertInput, at: number = Date.now()): Aler
         active.delete(rule.key);
         lastNotifiedAt.delete(rule.key);
         const flap = recordTransition(rule.key, at);
-        push('ok', rule.onClear(rule.clear), at, !firstEvaluation && !flap, rule.key);
+        push('ok', rule.onClear(rule.clear()), at, !firstEvaluation && !flap, rule.key);
         announceFlap(rule, flap, at, firstEvaluation);
       }
       continue;
     }
 
-    if (!active.has(rule.key) && breached(rule.direction, value, rule.enter)) {
+    if (!active.has(rule.key) && breached(rule.direction, value, rule.enter())) {
       active.add(rule.key);
       lastNotifiedAt.set(rule.key, at);
       const flap = recordTransition(rule.key, at);
       push(rule.level, rule.onEnter(value), at, !firstEvaluation && !flap, rule.key);
       announceFlap(rule, flap, at, firstEvaluation);
-    } else if (active.has(rule.key) && recovered(rule.direction, value, rule.clear)) {
+    } else if (active.has(rule.key) && recovered(rule.direction, value, rule.clear())) {
       active.delete(rule.key);
       lastNotifiedAt.delete(rule.key);
       const flap = recordTransition(rule.key, at);
@@ -479,6 +522,47 @@ export function evaluateAlerts(input: AlertInput, at: number = Date.now()): Aler
   } else if (knownIfaceDown === null) {
     // If interface info isn't available yet, initialize to an empty set so the first-evaluation flag isn't left unconsumed.
     knownIfaceDown = new Set();
+  }
+
+  // Port-scan suspects: alert only when an IP NEWLY appears in the flagged
+  // list, and drop it from "known" the moment it's no longer flagged — so a
+  // scan that stops and later resumes alerts again instead of staying
+  // silently suppressed forever (same idiom as the interface-down handling above).
+  if (input.portScanSuspects) {
+    const currentIps = new Set(input.portScanSuspects.map(suspect => suspect.ip));
+    if (knownPortScanIps === null) {
+      // Unlike the SSH-session/interface-down precedent above (which stays
+      // silent about state already present at startup), log — but don't
+      // externally notify — any suspect already active on the first
+      // evaluation: a scan already underway when this process starts is
+      // security-relevant enough that it shouldn't be swallowed just
+      // because it isn't a fresh transition.
+      for (const suspect of input.portScanSuspects) {
+        push(
+          'warning',
+          `Possible port scan from ${suspect.ip} (${suspect.distinctPorts} ports)`,
+          at,
+          false,
+          'portscan'
+        );
+      }
+      knownPortScanIps = currentIps;
+    } else {
+      for (const suspect of input.portScanSuspects) {
+        if (!knownPortScanIps.has(suspect.ip)) {
+          push(
+            'warning',
+            `Possible port scan from ${suspect.ip} (${suspect.distinctPorts} ports)`,
+            at,
+            true,
+            'portscan'
+          );
+        }
+      }
+      knownPortScanIps = currentIps;
+    }
+  } else if (knownPortScanIps === null) {
+    knownPortScanIps = new Set();
   }
 
   if (input.firewall !== 'unknown' && input.firewall !== knownFirewall) {

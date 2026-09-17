@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   mergeSessions,
   parseBlockedCount,
+  parsePortScanLines,
   parseUfwConf,
   parseWhoOutput,
   type Session
@@ -69,5 +70,53 @@ describe('parseBlockedCount', () => {
 
   it('returns null when no journal lines were seen (no access)', () => {
     expect(parseBlockedCount('0 0')).toBeNull();
+  });
+});
+
+describe('parsePortScanLines', () => {
+  it('flags a source IP that hit at least `threshold` distinct ports', () => {
+    const lines = [
+      '[UFW BLOCK] SRC=10.0.0.5 DST=1.2.3.4 DPT=22',
+      '[UFW BLOCK] SRC=10.0.0.5 DST=1.2.3.4 DPT=80',
+      '[UFW BLOCK] SRC=10.0.0.5 DST=1.2.3.4 DPT=443'
+    ].join('\n');
+
+    expect(parsePortScanLines(lines, 3)).toEqual([{ ip: '10.0.0.5', distinctPorts: 3, hits: 3 }]);
+  });
+
+  it('does not flag an IP below the threshold', () => {
+    const lines = ['[UFW BLOCK] SRC=10.0.0.5 DPT=22', '[UFW BLOCK] SRC=10.0.0.5 DPT=80'].join('\n');
+    expect(parsePortScanLines(lines, 3)).toEqual([]);
+  });
+
+  it('counts the same port hit repeatedly only once toward distinctPorts, but tallies every hit', () => {
+    const lines = [
+      '[UFW BLOCK] SRC=10.0.0.5 DPT=22',
+      '[UFW BLOCK] SRC=10.0.0.5 DPT=22',
+      '[UFW BLOCK] SRC=10.0.0.5 DPT=80'
+    ].join('\n');
+    expect(parsePortScanLines(lines, 2)).toEqual([{ ip: '10.0.0.5', distinctPorts: 2, hits: 3 }]);
+  });
+
+  it('tracks multiple source IPs independently and sorts by distinctPorts descending', () => {
+    const lines = [
+      '[UFW BLOCK] SRC=10.0.0.5 DPT=22',
+      '[UFW BLOCK] SRC=10.0.0.5 DPT=80',
+      '[UFW BLOCK] SRC=10.0.0.5 DPT=443',
+      '[UFW BLOCK] SRC=10.0.0.9 DPT=22',
+      '[UFW BLOCK] SRC=10.0.0.9 DPT=23'
+    ].join('\n');
+    expect(parsePortScanLines(lines, 2)).toEqual([
+      { ip: '10.0.0.5', distinctPorts: 3, hits: 3 },
+      { ip: '10.0.0.9', distinctPorts: 2, hits: 2 }
+    ]);
+  });
+
+  it('ignores lines without both SRC and DPT', () => {
+    expect(parsePortScanLines('some unrelated kernel log line', 1)).toEqual([]);
+  });
+
+  it('returns an empty list for empty output', () => {
+    expect(parsePortScanLines('', 1)).toEqual([]);
   });
 });
