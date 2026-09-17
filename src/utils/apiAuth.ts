@@ -80,10 +80,27 @@ function presentedToken(request: Request): string | null {
 
 // Returns a 401 Response when the request isn't authorized, or null to proceed.
 // A no-op when the gate is off.
+const LOOPBACK_HEADER = 'x-internal-loopback';
+
+// Both conditions matter, not just the header. The header alone would be
+// forgeable by any client that reaches this app WITHOUT going through
+// server.js at all — e.g. `next dev` or a bare `next start` run directly,
+// which never strip or set this header, so a client sending
+// "X-Internal-Loopback: 1" would sail straight through unfiltered. The env
+// marker closes that gap: it's set in-process by server.js only (never read
+// from a client header, request body, or .env file), so it can only be true
+// when this exact custom server booted — meaning the header, in turn, can
+// only be true when it was set by that server's 127.0.0.1-only listener.
+export function isTrustedLoopbackRequest(request: Request): boolean {
+  if (process.env.__SERVERMONITOR_CUSTOM_SERVER !== '1') return false;
+  return request.headers.get(LOOPBACK_HEADER) === '1';
+}
+
 export function requireApiAuth(request: Request): Response | null {
   const expected = expectedSessionToken();
   if (!expected) return null; // gate off
   if (request.method === 'OPTIONS') return null; // CORS preflight
+  if (isTrustedLoopbackRequest(request)) return null; // kiosk: genuine loopback connection
 
   const token = presentedToken(request);
   if (token !== null && timingSafeEqual(token, expected)) return null;

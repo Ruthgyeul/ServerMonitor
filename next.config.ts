@@ -30,8 +30,11 @@ const securityHeaders = [
 
 const nextConfig: NextConfig = {
   poweredByHeader: false, // don't advertise the stack/version via "X-Powered-By: Next.js"
-  // Minimize the Docker image: only the files needed to run the server are pruned into .next/standalone.
-  output: 'standalone',
+  // No `output: 'standalone'`: the app runs through a custom server (server.js,
+  // for the loopback-only kiosk bypass listener — see src/utils/apiAuth.ts),
+  // and Next's standalone tracing isn't officially compatible with a custom
+  // server since it doesn't bundle the full `next` package a custom server
+  // needs. The Docker runner stage installs full production dependencies instead.
   async headers() {
     return [
       {

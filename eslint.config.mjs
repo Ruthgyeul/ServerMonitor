@@ -4,7 +4,9 @@ import coreWebVitals from 'eslint-config-next/core-web-vitals';
 import typescript from 'eslint-config-next/typescript';
 
 const eslintConfig = [
-  { ignores: ['.next/**', 'node_modules/**', 'next-env.d.ts'] },
+  // server.js is a plain CommonJS Node bootstrap script (Next's custom-server
+  // recipe), not part of the TS/ESM app code the rest of this config targets.
+  { ignores: ['.next/**', 'node_modules/**', 'next-env.d.ts', 'server.js'] },
   ...coreWebVitals,
   ...typescript
 ];

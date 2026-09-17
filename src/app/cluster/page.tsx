@@ -18,7 +18,7 @@ import {
 import { TerminalTitleBar } from '@/components/common/TerminalWindow';
 import { Gauge, Sparkline } from '@/components/dashboard/primitives';
 import { useNow } from '@/hooks/useNow';
-import { useKioskRotate } from '@/hooks/useKioskRotate';
+import { useKioskRotate, useKioskRotateHome } from '@/hooks/useKioskRotate';
 import { cn } from '@/lib/utils';
 import { NetworkHistoryEntry, ServerData } from '@/types/system';
 import { formatClock, formatRate } from '@/utils/format';
@@ -62,7 +62,9 @@ export default function ClusterPage() {
     }
   });
   const now = useNow();
-  useKioskRotate('/');
+  // Normally rotates back to the dashboard, but follows `?home=` back to
+  // /monitor when that's where the cycle started (see src/app/monitor/page.tsx).
+  useKioskRotate(useKioskRotateHome('/'));
 
   // Keep the URL in sync so the open node is shareable/bookmarkable.
   const openNode = useCallback((name: string | null) => {

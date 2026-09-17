@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import {
   expectedSessionToken,
+  isTrustedLoopbackRequest,
   requireApiAuth,
   sessionCookieValue,
   sessionTokenFromPassword
@@ -25,10 +26,26 @@ function request(headers: Record<string, string> = {}, method = 'GET'): Request 
   return new Request('http://localhost/api/system', { method, headers });
 }
 
-beforeEach(() => setEnv({}));
+// Mirrors the marker server.js sets in-process (never from a client header or
+// .env file) — see isTrustedLoopbackRequest. Tests must opt in explicitly so
+// the default (unset, as in every other test) matches a bare `next dev`/
+// `next start` run.
+const ORIGINAL_MARKER = process.env.__SERVERMONITOR_CUSTOM_SERVER;
+
+function setCustomServerMarker(on: boolean) {
+  if (on) process.env.__SERVERMONITOR_CUSTOM_SERVER = '1';
+  else delete process.env.__SERVERMONITOR_CUSTOM_SERVER;
+}
+
+beforeEach(() => {
+  setEnv({});
+  setCustomServerMarker(false);
+});
 
 afterEach(() => {
   setEnv({ token: ORIGINAL.token, password: ORIGINAL.password });
+  if (ORIGINAL_MARKER === undefined) delete process.env.__SERVERMONITOR_CUSTOM_SERVER;
+  else process.env.__SERVERMONITOR_CUSTOM_SERVER = ORIGINAL_MARKER;
 });
 
 describe('sessionTokenFromPassword', () => {
@@ -130,5 +147,40 @@ describe('requireApiAuth', () => {
   it('lets a CORS preflight (OPTIONS) through even when gated', () => {
     setEnv({ password: 'pw' });
     expect(requireApiAuth(request({}, 'OPTIONS'))).toBeNull();
+  });
+
+  it('bypasses the gate when the trusted loopback header is present and the custom-server marker is set', () => {
+    setEnv({ password: 'pw' });
+    setCustomServerMarker(true);
+    expect(requireApiAuth(request({ 'x-internal-loopback': '1' }))).toBeNull();
+  });
+
+  it('still 401s when the header is absent (default-safe)', () => {
+    setEnv({ password: 'pw' });
+    expect(requireApiAuth(request())?.status).toBe(401);
+  });
+
+  it('ignores anything other than the exact expected header value', () => {
+    setEnv({ password: 'pw' });
+    setCustomServerMarker(true);
+    expect(requireApiAuth(request({ 'x-internal-loopback': 'true' }))?.status).toBe(401);
+  });
+
+  it('401s a spoofed header when the custom-server marker is unset — e.g. `next dev`/`next start` run directly', () => {
+    setEnv({ password: 'pw' });
+    expect(requireApiAuth(request({ 'x-internal-loopback': '1' }))?.status).toBe(401);
+  });
+});
+
+describe('isTrustedLoopbackRequest', () => {
+  it('is true only when the marker is set AND the header is exactly "1"', () => {
+    setCustomServerMarker(true);
+    expect(isTrustedLoopbackRequest(request({ 'x-internal-loopback': '1' }))).toBe(true);
+    expect(isTrustedLoopbackRequest(request())).toBe(false);
+    expect(isTrustedLoopbackRequest(request({ 'x-internal-loopback': 'yes' }))).toBe(false);
+  });
+
+  it('is false when the header is present but the marker is unset', () => {
+    expect(isTrustedLoopbackRequest(request({ 'x-internal-loopback': '1' }))).toBe(false);
   });
 });
