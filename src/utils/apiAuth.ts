@@ -82,15 +82,17 @@ function presentedToken(request: Request): string | null {
 // A no-op when the gate is off.
 const LOOPBACK_HEADER = 'x-internal-loopback';
 
-// The only place this header is ever set is server.js's 127.0.0.1-only
-// listener (the kiosk bypass port) — reaching that socket at all already
-// proves the connection originated on this host, since the OS refuses to
-// deliver traffic from anywhere else to it. `next dev`/`next start` never run
-// that listener, and server.js's network-facing listener strips any
-// client-supplied copy of this header before it reaches here, so this is
-// always false unless the request genuinely came in through the loopback
-// listener — fail-closed everywhere else.
+// Both conditions matter, not just the header. The header alone would be
+// forgeable by any client that reaches this app WITHOUT going through
+// server.js at all — e.g. `next dev` or a bare `next start` run directly,
+// which never strip or set this header, so a client sending
+// "X-Internal-Loopback: 1" would sail straight through unfiltered. The env
+// marker closes that gap: it's set in-process by server.js only (never read
+// from a client header, request body, or .env file), so it can only be true
+// when this exact custom server booted — meaning the header, in turn, can
+// only be true when it was set by that server's 127.0.0.1-only listener.
 export function isTrustedLoopbackRequest(request: Request): boolean {
+  if (process.env.__SERVERMONITOR_CUSTOM_SERVER !== '1') return false;
   return request.headers.get(LOOPBACK_HEADER) === '1';
 }
 

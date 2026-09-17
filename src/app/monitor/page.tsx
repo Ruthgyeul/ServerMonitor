@@ -9,6 +9,8 @@ import { useNow } from '@/hooks/useNow';
 import { useSystemData } from '@/hooks/useSystemData';
 import { useKioskRotate } from '@/hooks/useKioskRotate';
 
+const HOME_PATH = '/monitor';
+
 // Dedicated kiosk view for the 7" display wired directly to this machine.
 // Point the kiosk browser (scripts/run.sh's KIOSK_URL) at this route through
 // the loopback bypass port (KIOSK_BYPASS_ENABLED/KIOSK_BYPASS_PORT, see
@@ -22,7 +24,9 @@ import { useKioskRotate } from '@/hooks/useKioskRotate';
 export default function MonitorPage() {
   const { data, error, connected, lastUpdate, networkHistory, diskIoHistory, authRequired } = useSystemData();
   const now = useNow();
-  useKioskRotate('/cluster');
+  // Declares /monitor as the rotation's home so /cluster's own rotation sends
+  // the cycle back here instead of the ordinary dashboard (`/`).
+  useKioskRotate('/cluster', HOME_PATH);
 
   useEffect(() => {
     if (authRequired) {

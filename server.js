@@ -23,11 +23,35 @@
 // without host networking, do NOT publish the bypass port with a plain
 // `-p PORT:PORT` (that republishes it on the host's 0.0.0.0 and defeats the
 // whole point) — bind the host side explicitly, e.g. `-p 127.0.0.1:3001:3001`.
+
+// `next start` always serves the production build regardless of any prior
+// NODE_ENV; a custom server gets no such default, so replicate it here
+// before anything else reads process.env. There's no supported dev workflow
+// for this file (use `next dev` for that), so this is unconditional.
+process.env.NODE_ENV = 'production';
+
+// A custom server doesn't get Next's automatic .env/.env.production loading
+// the way `next dev`/`next start` do, so without this, KIOSK_BYPASS_ENABLED
+// and friends would read as unset for anyone following the documented
+// `npm run build && npm run start` bare-metal flow (Docker/systemd happen to
+// work anyway because they inject real process env vars). Must run before
+// any process.env read below.
+const { loadEnvConfig } = require('@next/env');
+loadEnvConfig(process.cwd(), false);
+
 const { createServer } = require('http');
 const next = require('next');
 
-const dev = process.env.NODE_ENV !== 'production';
-const app = next({ dev });
+// The only thing that makes requireApiAuth() trust x-internal-loopback
+// (src/utils/apiAuth.ts) is this exact marker being set — never a header
+// value alone. A header is something any client on the network-facing
+// listener could send verbatim; running `next dev`/`next start` directly
+// (skipping this file entirely) never sets this marker, so that path can
+// never honor the header no matter what a client sends it. Only this
+// process, only via this line, ever sets it.
+process.env.__SERVERMONITOR_CUSTOM_SERVER = '1';
+
+const app = next({ dev: false });
 const handle = app.getRequestHandler();
 
 const PORT = Number(process.env.PORT) || 3000;
