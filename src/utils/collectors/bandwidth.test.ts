@@ -69,18 +69,24 @@ describe('bandwidth daily totals', () => {
     expect(history[0].uploadMB).toBe(1);
   });
 
-  it('splits totals across day boundaries', async () => {
+  it('splits a delta proportionally by elapsed time when it spans a day boundary', async () => {
     const { recordBandwidthSample, getBandwidthHistory } = await freshBandwidth();
-    const day1 = Date.UTC(2026, 0, 2, 23, 0, 0);
-    const day2 = day1 + 2 * 60 * 60 * 1000; // 2 hours later, next UTC day
+    const midnight = Date.UTC(2026, 0, 3, 0, 0, 0);
+    const prevAt = midnight - 60 * 60 * 1000; // 23:00, day 1
+    const at = midnight + 60 * 60 * 1000; // 01:00, day 2
 
-    recordBandwidthSample(0, 0, day1);
-    recordBandwidthSample(4 * MB, 1 * MB, day1 + 1000); // still day 1
-    recordBandwidthSample(10 * MB, 3 * MB, day2); // crosses into day 2
+    recordBandwidthSample(0, 0, prevAt);
+    // 8MB/4MB transferred uniformly over this 2h interval, split exactly in
+    // half by the midnight boundary (1h before, 1h after) — assigning the
+    // whole delta to day 2 (the old behavior) would wrongly move traffic
+    // that was actually transferred on day 1.
+    recordBandwidthSample(8 * MB, 4 * MB, at);
 
-    const history = getBandwidthHistory(2, day2);
+    const history = getBandwidthHistory(2, at);
     expect(history[0].downloadMB).toBe(4); // day 1
-    expect(history[1].downloadMB).toBe(6); // day 2 (10 - 4)
+    expect(history[1].downloadMB).toBe(4); // day 2
+    expect(history[0].uploadMB).toBe(2); // day 1
+    expect(history[1].uploadMB).toBe(2); // day 2
   });
 
   it('zero-fills days with no recorded sample', async () => {
@@ -107,7 +113,7 @@ describe('bandwidth daily totals', () => {
     // waiting for the scheduled save (same technique as history.test.ts).
     process.emit('SIGTERM');
     const saved = JSON.parse(readFileSync(process.env.BANDWIDTH_FILE!, 'utf-8'));
-    expect(saved.prevCumulative).toEqual({ rx: 2 * MB, tx: 1 * MB });
+    expect(saved.prevCumulative).toEqual({ rx: 2 * MB, tx: 1 * MB, at: now + 1000 });
 
     // A new module instance pointing at the same file restores that counter,
     // so a sample right after "restart" still computes a correct delta

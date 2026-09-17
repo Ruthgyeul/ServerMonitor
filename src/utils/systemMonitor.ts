@@ -631,9 +631,15 @@ export async function getSystemInfo(): Promise<ServerData> {
   );
   recordDiskSample(disk.percentage, now);
   const diskHoursToFull = getHoursToFull(now);
-  recordMemSample(memory.percentage, now);
+  // A failed memory/network collector returns its zero-filled fallback (see
+  // the recordTrend skip above) — recording that would corrupt the running
+  // sample series (memory) or the cumulative-counter delta (bandwidth),
+  // producing a bogus trend/spike on the next successful tick.
+  if (!collectorFailed('memory')) recordMemSample(memory.percentage, now);
   const memHoursToFull = getMemHoursToFull(now);
-  recordBandwidthSample(network.totalRxBytes, network.totalTxBytes, now);
+  if (!collectorFailed('network')) {
+    recordBandwidthSample(network.totalRxBytes, network.totalTxBytes, now);
+  }
 
   // The window must include the sample we just added, so read it after recordSample.
   const rolling30m = getLoad30mAverage(now);
