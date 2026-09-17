@@ -21,7 +21,10 @@ export async function GET(request: Request) {
 
   const url = new URL(request.url);
   const raw = Number(url.searchParams.get('days'));
-  const days = Number.isFinite(raw) && raw > 0 ? Math.min(MAX_DAYS, Math.floor(raw)) : DEFAULT_DAYS;
+  // Math.floor(0.5) is 0, not "invalid" — clamp the floored value up to 1
+  // rather than letting a fractional query param silently return no days.
+  const days =
+    Number.isFinite(raw) && raw > 0 ? Math.min(MAX_DAYS, Math.max(1, Math.floor(raw))) : DEFAULT_DAYS;
 
   return NextResponse.json({ days: getBandwidthHistory(days) }, { headers: { 'Cache-Control': 'no-store' } });
 }

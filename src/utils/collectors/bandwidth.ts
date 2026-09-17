@@ -29,9 +29,10 @@ interface DayTotal {
 
 const days = new Map<number, DayTotal>(); // key: UTC day start, ms since epoch
 
-// The last cumulative counters seen, so a sample only ever records the delta
-// since the previous tick (never the running total itself).
-let prevCumulative: { rx: number; tx: number } | null = null;
+// The last cumulative counters seen (and when), so a sample only ever
+// records the delta since the previous tick (never the running total
+// itself), and so that delta can be split across a UTC day boundary.
+let prevCumulative: { rx: number; tx: number; at: number } | null = null;
 
 function dayKey(at: number): number {
   return Math.floor(at / DAY_MS) * DAY_MS;
@@ -43,13 +44,45 @@ function prune(oldestKey: number): void {
   }
 }
 
+function addToDay(key: number, rx: number, tx: number): void {
+  if (rx <= 0 && tx <= 0) return;
+  const bucket = days.get(key) ?? { rx: 0, tx: 0 };
+  bucket.rx += rx;
+  bucket.tx += tx;
+  days.set(key, bucket);
+}
+
+// Splits a delta across every UTC day the [prevAt, at] interval touches,
+// assuming a uniform transfer rate over that interval. Ticks are ~1s apart
+// in normal operation, so this only matters right at midnight or after a
+// long gap (restart). Without it, the whole tick's delta lands on
+// dayKey(at), silently moving traffic from the day it was actually
+// transferred on.
+function recordDelta(prevAt: number, at: number, deltaRx: number, deltaTx: number): void {
+  const prevKey = dayKey(prevAt);
+  const currentKey = dayKey(at);
+  const totalElapsed = at - prevAt;
+  if (prevKey === currentKey || totalElapsed <= 0) {
+    addToDay(currentKey, deltaRx, deltaTx);
+    return;
+  }
+
+  let cursor = prevAt;
+  for (let key = prevKey; key <= currentKey; key += DAY_MS) {
+    const segmentEnd = key === currentKey ? at : Math.min(at, key + DAY_MS);
+    const fraction = (segmentEnd - cursor) / totalElapsed;
+    if (fraction > 0) addToDay(key, deltaRx * fraction, deltaTx * fraction);
+    cursor = segmentEnd;
+  }
+}
+
 // --- Persistence -----------------------------------------------------------
 
 type SerializedDay = [key: number, rx: number, tx: number];
 interface StoreShape {
   v: number;
   days: SerializedDay[];
-  prevCumulative: { rx: number; tx: number } | null;
+  prevCumulative: { rx: number; tx: number; at: number } | null;
 }
 
 let loaded = false;
@@ -78,7 +111,12 @@ function ensureLoaded(): void {
         typeof parsed.prevCumulative.rx === 'number' &&
         typeof parsed.prevCumulative.tx === 'number'
       ) {
-        prevCumulative = parsed.prevCumulative;
+        // Older store files predate the `at` field. Falling back to "now"
+        // means the very first post-restart delta is attributed to today
+        // rather than split against an unknown past day — the same
+        // single-day behavior this store had before the fix.
+        const at = typeof parsed.prevCumulative.at === 'number' ? parsed.prevCumulative.at : Date.now();
+        prevCumulative = { rx: parsed.prevCumulative.rx, tx: parsed.prevCumulative.tx, at };
       }
     }
   } catch {
@@ -160,16 +198,12 @@ export function recordBandwidthSample(
     const deltaRx = Math.max(0, cumulativeRx - prevCumulative.rx);
     const deltaTx = Math.max(0, cumulativeTx - prevCumulative.tx);
     if (deltaRx > 0 || deltaTx > 0) {
-      const key = dayKey(at);
-      const bucket = days.get(key) ?? { rx: 0, tx: 0 };
-      bucket.rx += deltaRx;
-      bucket.tx += deltaTx;
-      days.set(key, bucket);
-      prune(key - (RETENTION_DAYS - 1) * DAY_MS);
+      recordDelta(prevCumulative.at, at, deltaRx, deltaTx);
+      prune(dayKey(at) - (RETENTION_DAYS - 1) * DAY_MS);
       scheduleSave();
     }
   }
-  prevCumulative = { rx: cumulativeRx, tx: cumulativeTx };
+  prevCumulative = { rx: cumulativeRx, tx: cumulativeTx, at };
 }
 
 export interface DailyBandwidth {

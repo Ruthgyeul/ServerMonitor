@@ -755,28 +755,26 @@ const CapacityCard: React.FC<{ data: DashboardData }> = ({ data }) => {
     { label: 'Disk', hours: data.disk.hoursToFull },
     { label: 'Memory', hours: data.memory.hoursToFull }
   ];
-  const anyForecast = rows.some(row => row.hours !== null);
+  const forecasting = rows.filter((row): row is { label: string; hours: number } => row.hours !== null);
 
   return (
     <Card icon={TrendingUp} color="#a78bfa" title="CAPACITY PLANNING">
-      {!anyForecast ? (
+      {forecasting.length === 0 ? (
         <Empty>no resource is trending toward full</Empty>
       ) : (
-        <ul className="dash-rows">
-          {rows.map(row => (
-            <li key={row.label} className="t-body flex items-center justify-between gap-2">
-              <span className="text-gray-400">{row.label}</span>
-              <span
-                className={cn(
-                  'font-mono',
-                  row.hours === null ? 'text-gray-500' : row.hours < 24 ? 'text-red-400' : 'text-amber-400'
-                )}
-              >
-                {row.hours === null ? 'stable' : `fills in ${formatForecast(row.hours)}`}
+        // A single wrapping line rather than a <ul> of per-item rows, so the
+        // common one-or-two-forecast case stays as compact as any other
+        // <Empty> card — the 7" kiosk layout has no headroom for a growing list.
+        <p className="t-body flex flex-wrap items-baseline gap-x-4 gap-y-1 font-mono">
+          {forecasting.map(row => (
+            <span key={row.label}>
+              <span className="text-gray-400">{row.label} </span>
+              <span className={row.hours < 24 ? 'text-red-400' : 'text-amber-400'}>
+                fills in {formatForecast(row.hours)}
               </span>
-            </li>
+            </span>
           ))}
-        </ul>
+        </p>
       )}
     </Card>
   );
