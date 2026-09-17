@@ -531,6 +531,21 @@ export function evaluateAlerts(input: AlertInput, at: number = Date.now()): Aler
   if (input.portScanSuspects) {
     const currentIps = new Set(input.portScanSuspects.map(suspect => suspect.ip));
     if (knownPortScanIps === null) {
+      // Unlike the SSH-session/interface-down precedent above (which stays
+      // silent about state already present at startup), log — but don't
+      // externally notify — any suspect already active on the first
+      // evaluation: a scan already underway when this process starts is
+      // security-relevant enough that it shouldn't be swallowed just
+      // because it isn't a fresh transition.
+      for (const suspect of input.portScanSuspects) {
+        push(
+          'warning',
+          `Possible port scan from ${suspect.ip} (${suspect.distinctPorts} ports)`,
+          at,
+          false,
+          'portscan'
+        );
+      }
       knownPortScanIps = currentIps;
     } else {
       for (const suspect of input.portScanSuspects) {

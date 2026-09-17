@@ -602,6 +602,12 @@ export async function getSystemInfo(): Promise<ServerData> {
       collect<number | null>('failedLogins', getFailedLoginCount, null, warnings)
     ]);
 
+  // A failed collector returns a zero-filled fallback; recording/evaluating
+  // that as a real reading would depress trend averages and could trip a
+  // false anomaly. Defined before the baseline/anomaly computation below so
+  // memAnomaly can be gated on it too.
+  const collectorFailed = (name: string) => warnings.some(warning => warning.startsWith(`${name}:`));
+
   // Baseline for anomaly detection must exclude the current reading, so read the
   // hourly history BEFORE recording this tick's sample (recordSample/recordTrend
   // would fold the current value into the bucket the baseline is drawn from).
@@ -613,13 +619,9 @@ export async function getSystemInfo(): Promise<ServerData> {
   const memBaseline = (baselineHistory.trends?.mem ?? [])
     .map(sample => sample.value)
     .filter((value): value is number => value !== null);
-  const memAnomaly = isAnomalous(memory.percentage, memBaseline);
+  const memAnomaly = !collectorFailed('memory') && isAnomalous(memory.percentage, memBaseline);
 
   recordSample(cpu.usage, loadBase.avg1, now);
-  // A failed collector returns a zero-filled fallback; recording that as a real
-  // hourly observation would depress the trend average. Skip (null) any metric
-  // whose collector reported a failure this tick.
-  const collectorFailed = (name: string) => warnings.some(warning => warning.startsWith(`${name}:`));
   recordTrend(
     {
       mem: collectorFailed('memory') ? null : memory.percentage,

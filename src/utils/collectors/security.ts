@@ -333,8 +333,11 @@ export function parsePortScanLines(output: string, threshold: number): PortScanS
 export const getPortScanSuspects = withTtl(60_000, async (): Promise<PortScanSuspect[]> => {
   let output: string;
   try {
+    // Same BLOCK/DROP filter as countBlockedAttempts above — without it this
+    // would match ANY kernel log line carrying SRC=/DPT= fields, including
+    // ACCEPTed traffic, and flag ordinary multi-port clients as scanners.
     output = await run(
-      `journalctl -k --since=${PORT_SCAN_WINDOW} --no-pager 2>/dev/null | grep -E 'SRC=.*DPT=' || true`,
+      `journalctl -k --since=${PORT_SCAN_WINDOW} --no-pager 2>/dev/null | grep -E 'UFW BLOCK|nft.*drop|DPT=.*DROP' | grep -E 'SRC=.*DPT=' || true`,
       10_000
     );
   } catch {

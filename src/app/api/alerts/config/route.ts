@@ -5,7 +5,8 @@ import {
   clearOverride,
   getAllOverrides,
   isConfigurableThreshold,
-  setOverride
+  setOverride,
+  wouldInvertHysteresis
 } from '@/utils/collectors/alertOverrides';
 import { requireApiAuth } from '@/utils/apiAuth';
 
@@ -53,6 +54,12 @@ export async function POST(request: NextRequest) {
   }
   if (typeof body.value !== 'number' || !Number.isFinite(body.value) || body.value < 0) {
     return NextResponse.json({ error: 'value must be a non-negative number' }, { status: 400 });
+  }
+  if (wouldInvertHysteresis(body.key, body.value)) {
+    return NextResponse.json(
+      { error: 'this value would invert the enter/clear hysteresis relationship' },
+      { status: 400 }
+    );
   }
 
   setOverride(body.key, body.value);

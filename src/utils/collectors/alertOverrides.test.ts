@@ -77,4 +77,63 @@ describe('alert threshold overrides', () => {
 
     expect(second.getOverride('ALERT_CPU_ENTER')).toBe(95);
   });
+
+  it('exposes the memory-pressure thresholds as configurable', async () => {
+    const { isConfigurableThreshold } = await freshOverrides();
+    expect(isConfigurableThreshold('ALERT_MEMPRESSURE_MEM')).toBe(true);
+    expect(isConfigurableThreshold('ALERT_MEMPRESSURE_SWAP')).toBe(true);
+  });
+});
+
+describe('wouldInvertHysteresis', () => {
+  beforeEach(() => {
+    delete process.env.DATA_DIR;
+    delete process.env.ALERT_OVERRIDES_FILE;
+    delete process.env.ALERT_CPU_CLEAR;
+    delete process.env.ALERT_BATTERY_CLEAR;
+  });
+
+  afterEach(() => {
+    delete process.env.DATA_DIR;
+    delete process.env.ALERT_OVERRIDES_FILE;
+    delete process.env.ALERT_CPU_CLEAR;
+    delete process.env.ALERT_BATTERY_CLEAR;
+  });
+
+  it('rejects an "above" enter at or below the paired clear default', async () => {
+    const { wouldInvertHysteresis } = await freshOverrides();
+    // ALERT_CPU_CLEAR defaults to 80 — an enter of 80 or 75 would invert it.
+    expect(wouldInvertHysteresis('ALERT_CPU_ENTER', 75)).toBe(true);
+    expect(wouldInvertHysteresis('ALERT_CPU_ENTER', 80)).toBe(true);
+    expect(wouldInvertHysteresis('ALERT_CPU_ENTER', 85)).toBe(false);
+  });
+
+  it('rejects an "above" clear at or above the paired enter, honoring a prior override', async () => {
+    const { setOverride, wouldInvertHysteresis } = await freshOverrides();
+    setOverride('ALERT_CPU_ENTER', 92);
+    expect(wouldInvertHysteresis('ALERT_CPU_CLEAR', 92)).toBe(true);
+    expect(wouldInvertHysteresis('ALERT_CPU_CLEAR', 95)).toBe(true);
+    expect(wouldInvertHysteresis('ALERT_CPU_CLEAR', 85)).toBe(false);
+  });
+
+  it('honors the env-var value of the paired key, not just its hardcoded default', async () => {
+    process.env.ALERT_CPU_CLEAR = '88';
+    const { wouldInvertHysteresis } = await freshOverrides();
+    // The default (80) would allow 85, but the env override (88) does not.
+    expect(wouldInvertHysteresis('ALERT_CPU_ENTER', 85)).toBe(true);
+    expect(wouldInvertHysteresis('ALERT_CPU_ENTER', 90)).toBe(false);
+  });
+
+  it('rejects a "below" pair (enter must stay under clear)', async () => {
+    const { wouldInvertHysteresis } = await freshOverrides();
+    // ALERT_BATTERY_CLEAR defaults to 25 — an enter of 25 or 30 would invert it.
+    expect(wouldInvertHysteresis('ALERT_BATTERY_ENTER', 30)).toBe(true);
+    expect(wouldInvertHysteresis('ALERT_BATTERY_ENTER', 10)).toBe(false);
+  });
+
+  it('never flags a threshold with no ENTER/CLEAR counterpart', async () => {
+    const { wouldInvertHysteresis } = await freshOverrides();
+    expect(wouldInvertHysteresis('ALERT_MEMPRESSURE_MEM', 0)).toBe(false);
+    expect(wouldInvertHysteresis('ALERT_MEMPRESSURE_SWAP', 1000)).toBe(false);
+  });
 });

@@ -64,8 +64,9 @@ export default function AlertSettingsPage() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ key, value })
         });
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
         const data = await response.json();
+        if (!response.ok)
+          throw new Error(typeof data.error === 'string' ? data.error : `HTTP ${response.status}`);
         const list = Array.isArray(data.thresholds) ? (data.thresholds as Threshold[]) : [];
         setThresholds(list);
       } catch (err) {
