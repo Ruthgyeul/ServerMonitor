@@ -80,10 +80,25 @@ function presentedToken(request: Request): string | null {
 
 // Returns a 401 Response when the request isn't authorized, or null to proceed.
 // A no-op when the gate is off.
+const LOOPBACK_HEADER = 'x-internal-loopback';
+
+// The only place this header is ever set is server.js's 127.0.0.1-only
+// listener (the kiosk bypass port) — reaching that socket at all already
+// proves the connection originated on this host, since the OS refuses to
+// deliver traffic from anywhere else to it. `next dev`/`next start` never run
+// that listener, and server.js's network-facing listener strips any
+// client-supplied copy of this header before it reaches here, so this is
+// always false unless the request genuinely came in through the loopback
+// listener — fail-closed everywhere else.
+export function isTrustedLoopbackRequest(request: Request): boolean {
+  return request.headers.get(LOOPBACK_HEADER) === '1';
+}
+
 export function requireApiAuth(request: Request): Response | null {
   const expected = expectedSessionToken();
   if (!expected) return null; // gate off
   if (request.method === 'OPTIONS') return null; // CORS preflight
+  if (isTrustedLoopbackRequest(request)) return null; // kiosk: genuine loopback connection
 
   const token = presentedToken(request);
   if (token !== null && timingSafeEqual(token, expected)) return null;

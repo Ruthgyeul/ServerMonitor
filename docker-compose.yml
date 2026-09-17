@@ -32,6 +32,9 @@ services:
       - /var/log:/var/log:ro
       - ./data:/app/data
     # network_mode: host means PORT from .env (default 3000) is the host port.
+    # It also means that if KIOSK_BYPASS_ENABLED=1, KIOSK_BYPASS_PORT (default
+    # 3001) is bound straight to the host's own 127.0.0.1 — no extra port
+    # mapping needed, and no way to accidentally expose it to the LAN.
     healthcheck:
       test: ['CMD', 'wget', '-qO-', 'http://127.0.0.1:3000/api/health']
       interval: 30s

@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import {
   expectedSessionToken,
+  isTrustedLoopbackRequest,
   requireApiAuth,
   sessionCookieValue,
   sessionTokenFromPassword
@@ -130,5 +131,28 @@ describe('requireApiAuth', () => {
   it('lets a CORS preflight (OPTIONS) through even when gated', () => {
     setEnv({ password: 'pw' });
     expect(requireApiAuth(request({}, 'OPTIONS'))).toBeNull();
+  });
+
+  it('bypasses the gate when the trusted loopback header is present', () => {
+    setEnv({ password: 'pw' });
+    expect(requireApiAuth(request({ 'x-internal-loopback': '1' }))).toBeNull();
+  });
+
+  it('still 401s when the header is absent (default-safe)', () => {
+    setEnv({ password: 'pw' });
+    expect(requireApiAuth(request())?.status).toBe(401);
+  });
+
+  it('ignores anything other than the exact expected header value', () => {
+    setEnv({ password: 'pw' });
+    expect(requireApiAuth(request({ 'x-internal-loopback': 'true' }))?.status).toBe(401);
+  });
+});
+
+describe('isTrustedLoopbackRequest', () => {
+  it('is true only when the internal loopback header is exactly "1"', () => {
+    expect(isTrustedLoopbackRequest(request({ 'x-internal-loopback': '1' }))).toBe(true);
+    expect(isTrustedLoopbackRequest(request())).toBe(false);
+    expect(isTrustedLoopbackRequest(request({ 'x-internal-loopback': 'yes' }))).toBe(false);
   });
 });

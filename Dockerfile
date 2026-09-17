@@ -1,9 +1,11 @@
 # syntax=docker/dockerfile:1
 
-# ServerMonitor multistage image. The runtime holds only the Next standalone
-# output to keep the image small. The sensors/ping/ps/df/last/who tools that
-# metric collection reads use the host's binaries and /proc, /sys, so they are
-# not baked into the image — see docker-compose.yml's mount/namespace settings.
+# ServerMonitor multistage image. The runtime runs a custom server (server.js)
+# with full production node_modules rather than Next's standalone output,
+# because the kiosk loopback-bypass listener needs the public next() API. The
+# sensors/ping/ps/df/last/who tools that metric collection reads use the
+# host's binaries and /proc, /sys, so they are not baked into the image — see
+# docker-compose.yml's mount/namespace settings.
 
 FROM node:20-alpine AS deps
 WORKDIR /app
@@ -34,11 +36,16 @@ ENV HOSTNAME=0.0.0.0
 # not included. Must be used with pid:host + the /proc, /sys mounts (docker-compose.yml) to read the host.
 RUN apk add --no-cache procps lm-sensors iputils
 
-# Don't run as root. Copy only the files needed to run the standalone server.
+# Don't run as root. The custom server.js (loopback-only kiosk bypass
+# listener, see src/utils/apiAuth.ts) calls Next's public next() API, which
+# standalone's pruned node_modules doesn't include — install production deps
+# in full instead of copying .next/standalone.
 RUN addgroup -g 1001 -S nodejs && adduser -u 1001 -S nextjs -G nodejs
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev
 COPY --from=builder /app/public ./public
-COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
-COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
+COPY --from=builder --chown=nextjs:nodejs /app/.next ./.next
+COPY --chown=nextjs:nodejs server.js ./server.js
 
 # The history/alert persistence location (gitignored data/). Mount as a volume to survive restarts.
 RUN mkdir -p /app/data && chown nextjs:nodejs /app/data
@@ -46,6 +53,10 @@ VOLUME /app/data
 
 USER nextjs
 EXPOSE 3000
+# Only bound when KIOSK_BYPASS_ENABLED=1 (see .env.example) — password-free,
+# loopback-only kiosk access. Never publish this on a container network that
+# isn't the host's (docker-compose.yml uses network_mode: host for this reason).
+EXPOSE 3001
 
 # Health-check via the lightweight /api/health rather than the heavy /api/system.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
