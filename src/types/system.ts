@@ -237,6 +237,8 @@ export interface ServerData {
     used: number;
     total: number;
     percentage: number;
+    // Estimated hours until 100% based on the recent trend. null when not filling.
+    hoursToFull?: number | null;
   };
   disk: {
     used: number;

@@ -23,6 +23,7 @@ import {
 import { NetworkAreaChart } from '@/components/charts/NetworkAreaChart';
 import { Bar, Gauge, Sparkline } from '@/components/dashboard/primitives';
 import { DiskIoPoint } from '@/hooks/useSystemData';
+import { useBandwidthHistory } from '@/hooks/useBandwidthHistory';
 import { cn } from '@/lib/utils';
 import { NetworkHistoryEntry } from '@/types/system';
 import { DashboardData } from '@/utils/dashboardData';
@@ -96,6 +97,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
         <CoresCard data={data} />
         <SwapCard data={data} />
         <DiskIoCard data={data} history={diskIoHistory} />
+        <CapacityCard data={data} />
         <div className="dash-subgrid">
           <FanCard data={data} />
           <TemperatureCard data={data} />
@@ -111,6 +113,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
           <BandwidthCard data={data} />
         </div>
         <NetworkStripCard data={data} />
+        <BandwidthHistoryCard />
       </div>
 
       <div className="dash-col">
@@ -740,6 +743,45 @@ const DiskIoCard: React.FC<{ data: DashboardData; history: DiskIoPoint[] }> = ({
   );
 };
 
+// Reuses the disk/memory fill-forecast (see diskTrend.ts/memTrend.ts): a
+// linear projection from the last 6h trend, null when a resource isn't
+// currently trending toward full.
+function formatForecast(hours: number): string {
+  return hours < 48 ? `~${hours.toFixed(1)}h` : `~${Math.round(hours / 24)}d`;
+}
+
+const CapacityCard: React.FC<{ data: DashboardData }> = ({ data }) => {
+  const rows: { label: string; hours: number | null }[] = [
+    { label: 'Disk', hours: data.disk.hoursToFull },
+    { label: 'Memory', hours: data.memory.hoursToFull }
+  ];
+  const anyForecast = rows.some(row => row.hours !== null);
+
+  return (
+    <Card icon={TrendingUp} color="#a78bfa" title="CAPACITY PLANNING">
+      {!anyForecast ? (
+        <Empty>no resource is trending toward full</Empty>
+      ) : (
+        <ul className="dash-rows">
+          {rows.map(row => (
+            <li key={row.label} className="t-body flex items-center justify-between gap-2">
+              <span className="text-gray-400">{row.label}</span>
+              <span
+                className={cn(
+                  'font-mono',
+                  row.hours === null ? 'text-gray-500' : row.hours < 24 ? 'text-red-400' : 'text-amber-400'
+                )}
+              >
+                {row.hours === null ? 'stable' : `fills in ${formatForecast(row.hours)}`}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </Card>
+  );
+};
+
 // --- Network ---------------------------------------------------------------
 
 const NetworkCard: React.FC<{ data: DashboardData; history: NetworkHistoryEntry[] }> = ({
@@ -856,6 +898,48 @@ const BandwidthCard: React.FC<{ data: DashboardData }> = ({ data }) => {
         <span className="font-mono text-gray-400">{formatRate(usage)}</span>
         <span>of {formatLinkSpeed(data.network.linkSpeedMbps)}</span>
       </div>
+    </Card>
+  );
+};
+
+// Self-fetching, unlike every other card here: monthly totals change far too
+// slowly to ride the 1s SSE stream the rest of the dashboard uses, so this
+// polls its own low-frequency endpoint (see /api/bandwidth and
+// useBandwidthHistory) instead of taking the value as a prop.
+const BandwidthHistoryCard: React.FC = () => {
+  const { days } = useBandwidthHistory();
+  const total = days?.reduce((acc, day) => ({ down: acc.down + day.downloadMB, up: acc.up + day.uploadMB }), {
+    down: 0,
+    up: 0
+  });
+
+  return (
+    <Card icon={TrendingUp} color="#a78bfa" title="MONTHLY BANDWIDTH">
+      {!days || days.length === 0 || !total ? (
+        <Empty>collecting daily totals…</Empty>
+      ) : (
+        <>
+          <div className="t-micro flex items-center justify-center gap-4 text-gray-400">
+            <span className="flex items-center gap-1">
+              <span className="h-[7px] w-[7px] rounded-full bg-sky-500" />↓{' '}
+              {formatBytes(total.down * 1024 * 1024)}
+            </span>
+            <span className="flex items-center gap-1">
+              <span className="h-[7px] w-[7px] rounded-full bg-emerald-500" />↑{' '}
+              {formatBytes(total.up * 1024 * 1024)}
+            </span>
+          </div>
+          <div className="dash-spark">
+            <Sparkline
+              series={[
+                { key: 'down', values: days.map(day => day.downloadMB), color: '#38bdf8' },
+                { key: 'up', values: days.map(day => day.uploadMB), color: '#34d399' }
+              ]}
+            />
+          </div>
+          <p className="t-micro mt-1 text-gray-500">last {days.length} days</p>
+        </>
+      )}
     </Card>
   );
 };

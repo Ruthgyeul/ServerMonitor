@@ -392,6 +392,37 @@ const ServerCard: React.FC<ServerCardProps> = ({ node, history, onSelect }) => {
         </div>
       </div>
 
+      {result.data.history?.trends?.temp && result.data.history.trends.temp.length > 0 && (
+        <div className="mt-2">
+          <div className="t-micro mb-0.5 flex items-center gap-1 text-gray-400">
+            <Thermometer className="dash-icon shrink-0" color="#fb923c" strokeWidth={2} />
+            24H TEMP
+          </div>
+          <div
+            className="flex gap-[1px]"
+            role="list"
+            aria-label="CPU temperature, one cell per hour over the last 24 hours"
+          >
+            {result.data.history.trends.temp.map(sample => {
+              const hour = `${new Date(sample.at).getHours()}:00`;
+              const label =
+                sample.value === null ? `${hour} — no data` : `${hour} — ${sample.value.toFixed(0)}°C`;
+              return (
+                <div
+                  key={sample.at}
+                  role="listitem"
+                  tabIndex={-1}
+                  className="dash-tip h-[6px] flex-1 rounded-[1px]"
+                  style={{ background: sample.value === null ? COLORS.empty : tempColor(sample.value) }}
+                  data-tip={label}
+                  aria-label={label}
+                />
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       <div className="t-micro mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-gray-700 pt-1.5">
         <InfoItem
           icon={Thermometer}

@@ -48,6 +48,16 @@ that aggregates several nodes on one screen.
   `127.0.0.1` — see [Securing the API](#securing-the-api).
 - **JSON API** (`/api/system`) — returns the current metrics for the host,
   with a configurable CORS allow-list for cross-node requests.
+- **Capacity planning** — a disk/memory fill-forecast card projects hours-to-full
+  from the recent trend (same approach for both), so a slow leak or a growing
+  log directory shows up before it becomes an outage.
+- **Monthly bandwidth** (`/api/bandwidth`) — daily download/upload totals
+  derived from the network interface's cumulative counters, kept for 90 days,
+  for tracking usage against an ISP data cap.
+- **Installable (PWA)** — a manifest + minimal service worker let the
+  dashboard be added to a phone/tablet home screen. The service worker does no
+  caching (this is a live-data app), so it only exists to satisfy browsers'
+  install criteria.
 - **Kiosk launch script** — boots the dashboard full-screen in Firefox for
   a dedicated status display.
 
@@ -59,8 +69,8 @@ reshuffles the cards:
 
 | Column | Cards, in order |
 | --- | --- |
-| Left | uptime · load average + 48h grid · CPU cores · swap · disk I/O · fan + CPU temp |
-| Centre | CPU/GPU/RAM/disk gauges · 24h CPU heatmap · network chart · interfaces + bandwidth · ping/err/conns/ports |
+| Left | uptime · load average + 48h grid · CPU cores · swap · disk I/O · capacity planning · fan + CPU temp |
+| Centre | CPU/GPU/RAM/disk gauges · 24h CPU heatmap · network chart · interfaces + bandwidth · ping/err/conns/ports · monthly bandwidth |
 | Right | alerts log · top processes · SSH sessions · top traffic IPs · firewall |
 
 Only how many columns stand side by side changes with the viewport:
