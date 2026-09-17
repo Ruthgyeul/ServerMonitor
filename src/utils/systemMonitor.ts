@@ -33,7 +33,7 @@ import {
   readInterfaceStat,
   SocketSummary
 } from '@/utils/collectors/netstat';
-import { getFirewallInfo, getSshSessions } from '@/utils/collectors/security';
+import { getFirewallInfo, getPortScanSuspects, getSshSessions } from '@/utils/collectors/security';
 import { getMemBreakdown } from '@/utils/collectors/memdetail';
 import { getReadOnlyMounts } from '@/utils/collectors/mounts';
 import { getServicesInfo } from '@/utils/collectors/services';
@@ -469,7 +469,7 @@ async function getUptime(): Promise<UptimeInfo> {
 // --- Security ----------------------------------------------------------
 
 async function getSecurityInfo(peers: Map<string, number>, warnings: string[]): Promise<SecurityInfo> {
-  const [firewall, sshSessions, topTraffic] = await Promise.all([
+  const [firewall, sshSessions, topTraffic, portScanSuspects] = await Promise.all([
     collect(
       'security.firewall',
       getFirewallInfo,
@@ -477,10 +477,11 @@ async function getSecurityInfo(peers: Map<string, number>, warnings: string[]): 
       warnings
     ),
     collect('security.sshSessions', getSshSessions, [], warnings),
-    collect('security.topTraffic', () => getTopTraffic(peers), [], warnings)
+    collect('security.topTraffic', () => getTopTraffic(peers), [], warnings),
+    collect('security.portScanSuspects', getPortScanSuspects, [], warnings)
   ]);
 
-  return { firewall, sshSessions, topTraffic };
+  return { firewall, sshSessions, topTraffic, portScanSuspects };
 }
 
 // --- Public API --------------------------------------------------------
@@ -602,12 +603,17 @@ export async function getSystemInfo(): Promise<ServerData> {
     ]);
 
   // Baseline for anomaly detection must exclude the current reading, so read the
-  // hourly history BEFORE recording this tick's sample (recordSample would fold
-  // the current value into the bucket the baseline is drawn from).
-  const cpuBaseline = getHistory(now)
-    .cpuHourly.map(sample => sample.usage)
+  // hourly history BEFORE recording this tick's sample (recordSample/recordTrend
+  // would fold the current value into the bucket the baseline is drawn from).
+  const baselineHistory = getHistory(now);
+  const cpuBaseline = baselineHistory.cpuHourly
+    .map(sample => sample.usage)
     .filter((usage): usage is number => usage !== null);
   const cpuAnomaly = isAnomalous(cpu.usage, cpuBaseline);
+  const memBaseline = (baselineHistory.trends?.mem ?? [])
+    .map(sample => sample.value)
+    .filter((value): value is number => value !== null);
+  const memAnomaly = isAnomalous(memory.percentage, memBaseline);
 
   recordSample(cpu.usage, loadBase.avg1, now);
   // A failed collector returns a zero-filled fallback; recording that as a real
@@ -653,7 +659,10 @@ export async function getSystemInfo(): Promise<ServerData> {
       gpuTemp: gpu.temperature,
       battery: battery?.percentage ?? null,
       diskHoursToFull,
-      cpuAnomaly
+      memHoursToFull,
+      cpuAnomaly,
+      memAnomaly,
+      portScanSuspects: security.portScanSuspects
     },
     now
   );

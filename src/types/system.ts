@@ -110,10 +110,21 @@ export interface FirewallInfo {
   blockedAttempts: number | null;
 }
 
+// A source IP that hit enough distinct destination ports in a short window to
+// look like reconnaissance rather than normal traffic. Requires firewall
+// logging to be enabled (same prerequisite as FirewallInfo.blockedAttempts).
+export interface PortScanSuspect {
+  ip: string;
+  distinctPorts: number;
+  hits: number;
+}
+
 export interface SecurityInfo {
   firewall: FirewallInfo;
   sshSessions: SshSession[];
   topTraffic: TrafficPeer[];
+  // Optional: old-node compatible.
+  portScanSuspects?: PortScanSuspect[];
 }
 
 // Usage of an individually mounted filesystem. Lets servers with a separate

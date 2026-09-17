@@ -78,9 +78,17 @@ export default function AlertsPage() {
       <TerminalHeaderBar
         title="Alert history"
         right={
-          <Link href="/" className="t-label text-gray-400 transition-colors hover:text-gray-200">
-            ← Dashboard
-          </Link>
+          <div className="flex items-center gap-3">
+            <Link
+              href="/alerts/settings"
+              className="t-label text-gray-400 transition-colors hover:text-gray-200"
+            >
+              Thresholds →
+            </Link>
+            <Link href="/" className="t-label text-gray-400 transition-colors hover:text-gray-200">
+              ← Dashboard
+            </Link>
+          </div>
         }
       />
 
