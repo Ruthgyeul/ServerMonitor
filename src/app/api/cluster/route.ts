@@ -2,6 +2,7 @@ import { ServerData } from '@/types/system';
 import { ClusterServer, getClusterHost, getClusterServers, getClusterUrl } from '@/config/clusterConfig';
 import { jsonResponse } from '@/utils/http';
 import { expectedSessionToken, requireApiAuth } from '@/utils/apiAuth';
+import { enforceRateLimit } from '@/utils/rateLimit';
 
 // Until now the cluster view polled each node's /api/system directly from the
 // browser. That meant (a) every node had to CORS-allow the dashboard origin,
@@ -66,6 +67,12 @@ async function fetchNode(server: ClusterServer): Promise<ClusterNode> {
 export async function GET(request: Request) {
   const unauthorized = requireApiAuth(request);
   if (unauthorized) return unauthorized;
+
+  // Unlike /api/system, an unlimited caller here doesn't just spin this
+  // process — it fans out a request to every cluster node per hit, so a busy
+  // loop is amplified across the whole fleet (including the Pis).
+  const limited = enforceRateLimit(request);
+  if (limited) return limited;
 
   const servers = getClusterServers();
   const nodes = await Promise.all(servers.map(fetchNode));
