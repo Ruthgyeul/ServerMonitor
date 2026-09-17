@@ -34,7 +34,7 @@ export interface DashboardData {
     steal: number;
     frequencyMhz: number | 'N/A';
   };
-  memory: { used: number; total: number; percentage: number };
+  memory: { used: number; total: number; percentage: number; hoursToFull: number | null };
   disk: { used: number; total: number; percentage: number; hoursToFull: number | null };
   disks: DiskMount[];
   swap: SwapInfo;
@@ -95,7 +95,7 @@ export function toDashboardData(raw: ServerData): DashboardData {
       steal: raw.cpu.steal ?? 0,
       frequencyMhz: raw.cpu.frequencyMhz ?? 'N/A'
     },
-    memory: raw.memory,
+    memory: { ...raw.memory, hoursToFull: raw.memory.hoursToFull ?? null },
     disk: { ...raw.disk, hoursToFull: raw.disk.hoursToFull ?? null },
     disks: raw.disks ?? [],
     swap: raw.swap ?? { used: 0, total: 0, percentage: 0 },

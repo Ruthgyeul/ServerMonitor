@@ -18,6 +18,8 @@ import { collect, readSys, round, run } from '@/utils/collectors/shell';
 import { parseDf } from '@/utils/collectors/df';
 import { getBatteryInfo } from '@/utils/collectors/battery';
 import { getHoursToFull, recordDiskSample } from '@/utils/collectors/diskTrend';
+import { getMemHoursToFull, recordMemSample } from '@/utils/collectors/memTrend';
+import { recordBandwidthSample } from '@/utils/collectors/bandwidth';
 import { getCpuUsage } from '@/utils/collectors/cpu';
 import { getHostInfo } from '@/utils/collectors/host';
 import { getLoadAverage, getSwapInfo } from '@/utils/collectors/load';
@@ -623,6 +625,15 @@ export async function getSystemInfo(): Promise<ServerData> {
   );
   recordDiskSample(disk.percentage, now);
   const diskHoursToFull = getHoursToFull(now);
+  // A failed memory/network collector returns its zero-filled fallback (see
+  // the recordTrend skip above) — recording that would corrupt the running
+  // sample series (memory) or the cumulative-counter delta (bandwidth),
+  // producing a bogus trend/spike on the next successful tick.
+  if (!collectorFailed('memory')) recordMemSample(memory.percentage, now);
+  const memHoursToFull = getMemHoursToFull(now);
+  if (!collectorFailed('network')) {
+    recordBandwidthSample(network.totalRxBytes, network.totalTxBytes, now);
+  }
 
   // The window must include the sample we just added, so read it after recordSample.
   const rolling30m = getLoad30mAverage(now);
@@ -655,7 +666,10 @@ export async function getSystemInfo(): Promise<ServerData> {
 
   const data: ServerData = {
     cpu,
-    memory,
+    memory: {
+      ...memory,
+      hoursToFull: memHoursToFull
+    },
     disk: {
       used: disk.used,
       total: disk.total,

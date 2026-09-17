@@ -6,6 +6,7 @@ import { Geist, Geist_Mono } from 'next/font/google';
 
 import Loading from '@/app/loading';
 import Error from '@/app/error';
+import { ServiceWorkerRegister } from '@/components/common/ServiceWorkerRegister';
 import { SITE_URL, SITE_NAME, SITE_SHORT_NAME, SITE_DESCRIPTION, AUTHOR_NAME } from '@/config/siteConfig';
 import '@/styles/globals.css';
 
@@ -113,6 +114,7 @@ export default function RootLayout({
         <ErrorBoundary FallbackComponent={Error}>
           <Suspense fallback={<Loading />}>{children}</Suspense>
         </ErrorBoundary>
+        <ServiceWorkerRegister />
       </body>
     </html>
   );
