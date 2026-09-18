@@ -16,13 +16,13 @@ import {
 } from 'lucide-react';
 
 import { TerminalTitleBar } from '@/components/common/TerminalWindow';
-import { Gauge, Sparkline } from '@/components/dashboard/primitives';
+import { Gauge, Sparkline } from '@/components/charts/primitives';
 import { useNow } from '@/hooks/useNow';
 import { useKioskRotate, useKioskRotateHome } from '@/hooks/useKioskRotate';
 import { cn } from '@/lib/utils';
 import { NetworkHistoryEntry, ServerData } from '@/types/system';
 import { formatClock, formatRate } from '@/utils/format';
-import { COLORS, statusColor, tempColor } from '@/utils/statusColors';
+import { COLORS, statusColor, tempColor } from '@/lib/statusColors';
 
 // This page uses the same terminal design as the main dashboard
 // (src/app/page.tsx) but lays out several cluster nodes side by side instead of
@@ -457,10 +457,11 @@ const ServerShell: React.FC<{
   <section
     className={cn(
       'dash-card flex flex-col rounded-lg border border-gray-700 bg-gray-800',
-      onSelect && 'cursor-pointer transition-colors hover:border-gray-500'
+      onSelect && 'dash-tip cursor-pointer transition-colors hover:border-gray-500'
     )}
     onClick={onSelect}
-    title={onSelect ? 'Open node detail' : undefined}
+    tabIndex={onSelect ? -1 : undefined}
+    data-tip={onSelect ? 'Open node detail' : undefined}
   >
     <div className="dash-card-head flex items-center justify-between gap-2">
       <div className="flex min-w-0 items-center gap-1.5">

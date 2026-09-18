@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { COLORS, heatColor, loadCellColor, loadColor, statusColor, tempColor } from '@/utils/statusColors';
+import { COLORS, heatColor, loadCellColor, loadColor, statusColor, tempColor } from '@/lib/statusColors';
 
 // rgb(r, g, b) to [r,g,b]. The point is checking the "green->red direction" rather than the exact color.
 function channels(color: string): [number, number, number] {

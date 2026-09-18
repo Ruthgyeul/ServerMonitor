@@ -4,6 +4,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 
 import { TerminalHeaderBar, TerminalTitleBar } from '@/components/common/TerminalWindow';
+import { ALERT_LEVEL_COLORS } from '@/lib/statusColors';
 import type { AlertEntry, AlertLevel } from '@/types/system';
 
 // Alert history view. The dashboard card shows only the most recent alerts and
@@ -11,13 +12,6 @@ import type { AlertEntry, AlertLevel } from '@/types/system';
 // level filter, a text search, and a 48h incident timeline strip (#60).
 
 const LEVELS: AlertLevel[] = ['critical', 'warning', 'info', 'ok'];
-
-const LEVEL_COLOR: Record<AlertLevel, string> = {
-  critical: '#ef4444',
-  warning: '#f59e0b',
-  info: '#60a5fa',
-  ok: '#34d399'
-};
 
 const WINDOW_MS = 48 * 60 * 60 * 1000;
 
@@ -109,7 +103,7 @@ export default function AlertsPage() {
               key={l}
               onClick={() => setLevel(l)}
               className={`t-label rounded px-2 py-1 font-mono uppercase tracking-[0.06em] ${level === l ? 'bg-gray-700' : 'bg-gray-800'}`}
-              style={{ color: LEVEL_COLOR[l] }}
+              style={{ color: ALERT_LEVEL_COLORS[l] }}
             >
               {l}
             </button>
@@ -118,7 +112,7 @@ export default function AlertsPage() {
             value={query}
             onChange={event => setQuery(event.target.value)}
             placeholder="Search messages…"
-            className="t-body ml-auto w-48 rounded border border-gray-700 bg-gray-900 px-2 py-1 font-mono outline-none transition-colors focus:border-[#38bdf8] focus:ring-1 focus:ring-[#38bdf8]/40"
+            className="t-body w-full rounded border border-gray-700 bg-gray-900 px-2 py-1 font-mono outline-none transition-colors focus:border-[#38bdf8] focus:ring-1 focus:ring-[#38bdf8]/40 sm:ml-auto sm:w-48"
           />
         </div>
 
@@ -132,7 +126,7 @@ export default function AlertsPage() {
               <li key={alert.id} className="flex items-center gap-3 p-3">
                 <span
                   className="h-2 w-2 shrink-0 rounded-full"
-                  style={{ backgroundColor: LEVEL_COLOR[alert.level] }}
+                  style={{ backgroundColor: ALERT_LEVEL_COLORS[alert.level] }}
                   aria-hidden
                 />
                 <span className="t-body flex-1">{alert.message}</span>
@@ -166,10 +160,18 @@ const Timeline: React.FC<{ alerts: AlertEntry[]; now: number }> = ({ alerts, now
           return (
             <span
               key={alert.id}
-              className="absolute top-1/2 h-3 w-1 -translate-y-1/2 rounded-sm"
-              style={{ left: `${left}%`, backgroundColor: LEVEL_COLOR[alert.level] }}
-              title={`${new Date(alert.at).toLocaleString()} — ${alert.message}`}
-            />
+              className="absolute top-1/2 h-3 w-1 -translate-y-1/2"
+              style={{ left: `${left}%` }}
+            >
+              {/* .dash-tip sets position:relative, which would fight the parent's
+                  absolute positioning if applied there directly — nest it instead. */}
+              <span
+                className="dash-tip block h-full w-full rounded-sm"
+                tabIndex={-1}
+                style={{ backgroundColor: ALERT_LEVEL_COLORS[alert.level] }}
+                data-tip={`${new Date(alert.at).toLocaleString()} — ${alert.message}`}
+              />
+            </span>
           );
         })}
         {marks.length === 0 && (

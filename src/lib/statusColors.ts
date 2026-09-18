@@ -1,9 +1,13 @@
-// Centralized so the whole dashboard picks colors by the same rules.
+// Centralized so the whole dashboard picks colors by the same rules. Color
+// values come from src/lib/theme.ts (the canonical palette) rather than being
+// hardcoded here a second time.
+
+import { TERM } from '@/lib/theme';
 
 export const COLORS = {
-  ok: '#10b981',
-  warn: '#f59e0b',
-  critical: '#ef4444',
+  ok: TERM.green,
+  warn: TERM.yellow,
+  critical: TERM.red,
   idle: '#374151',
   empty: '#111827',
   muted: '#6b7280'
@@ -17,10 +21,10 @@ export function statusColor(percentage: number): string {
 
 export function tempColor(temperature: number | 'N/A'): string {
   if (temperature === 'N/A') return '#9ca3af';
-  if (temperature <= 50) return '#4ade80';
-  if (temperature <= 65) return '#facc15';
+  if (temperature <= 50) return TERM.green;
+  if (temperature <= 65) return TERM.yellow;
   if (temperature <= 74) return '#fb923c';
-  return '#f87171';
+  return TERM.red;
 }
 
 // Load is only meaningful divided by the core count. 4.0 on 4 cores differs
@@ -71,8 +75,8 @@ export function loadCellColor(load: number | null, cores: number): string {
 }
 
 export const ALERT_LEVEL_COLORS: Record<string, string> = {
-  ok: '#4ade80',
+  ok: TERM.green,
   info: '#60a5fa',
-  warning: '#facc15',
-  critical: '#f87171'
+  warning: TERM.yellow,
+  critical: TERM.red
 };
