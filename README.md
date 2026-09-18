@@ -32,10 +32,11 @@ that aggregates several nodes on one screen.
   (`/api/cluster`); the server fans out to each node, so node IPs stay
   server-side and nodes no longer need to CORS-allow the dashboard origin.
 - **Public status page** (`/status`) — a sanitised, uptime-style summary safe to
-  share externally: a status word, rounded CPU/memory/disk, uptime, and an
-  active-alert count. It exposes **no** reconnaissance data (no IPs, process
-  names, ports, or alert messages) and stays reachable even when `/api/system`
-  is token-gated.
+  share externally: a status word, rounded CPU/memory/disk/GPU, outbound ping
+  latency, load average, uptime, and an active-alert count. It exposes **no**
+  reconnaissance data (no IPs, process names, ports, alert messages, GPU model
+  name, or core count) and stays reachable even when `/api/system` is
+  token-gated.
 - **Kiosk & wall-panel touches** — optional desktop notifications + a beep on a
   new critical alert (toggle in the corner), a one-click JSON snapshot export,
   gauge tiles that pulse when a metric is critical, `?rotate=<seconds>` to
