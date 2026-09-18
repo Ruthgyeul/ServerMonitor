@@ -82,13 +82,13 @@ Only how many columns stand side by side changes with the viewport:
 | ≥ 1024px | 3, at the design's own 238:472:282 proportions |
 | ≥ 960px **and** ≤ 700px tall | 3, at reduced density |
 
-That last row is the 7-inch kiosk panel (1024x600), where every card has to be
-on screen at once. The arrangement there is identical — same columns, same
-order — and only the sizes shrink: type scale, padding, gauge diameter, chart
-and sparkline heights. All of it is one media query in
-`src/styles/globals.css`, and the components carry semantic classes
-(`t-label`, `dash-card`, `dash-chart`) rather than hardcoded sizes, so
-retuning is a matter of editing that block.
+That last row is the 7-inch kiosk panel (1024x600) as seen on `/` (the
+authenticated dashboard), where every card has to be on screen at once. The
+arrangement there is identical — same columns, same order — and only the
+sizes shrink: type scale, padding, gauge diameter, chart and sparkline
+heights. All of it is one media query in `src/styles/globals.css`, and the
+components carry semantic classes (`t-label`, `dash-card`, `dash-chart`)
+rather than hardcoded sizes, so retuning is a matter of editing that block.
 
 Two things to know before changing it:
 
@@ -100,6 +100,26 @@ Two things to know before changing it:
   and friends) are what bound each card's height. The kiosk layout was checked
   against a 16-core host with six interfaces and every list full, and clears
   600px with roughly 28px to spare per column; raising a cap eats into that.
+
+### `/monitor`'s kiosk layout
+
+`/monitor` — the no-interaction kiosk route meant for the panel itself, as
+opposed to `/` viewed on a phone/laptop over LAN — renders a separate
+`KioskDashboard` component with its own trimmed, 2-column layout
+(`.kiosk-layout`/`.kiosk-col` in `globals.css`, untouched by anything above):
+
+| Column | Cards, in order |
+| --- | --- |
+| Left | uptime · load average + 48h grid · CPU cores · fan + CPU temp · ping/err/conns/ports |
+| Right | CPU/GPU/RAM/disk gauges · network chart · interfaces + bandwidth · monthly bandwidth |
+
+Alerts log, top processes, SSH sessions, top traffic IPs, and firewall are
+dropped entirely — they're either list-shaped (better suited to an
+authenticated, scrollable view) or interactive (`ProcessesCard`'s CPU/MEM
+sort toggle), neither of which fits a screen nobody can touch. The same
+960px-width-and-700px-height kiosk trigger and per-card row-cap discipline
+above apply here too; `KioskDashboard.tsx` is the source of truth for this
+layout, the same way `Dashboard.tsx` is for `/`.
 
 ## Tech stack
 

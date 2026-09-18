@@ -46,6 +46,16 @@
   }
 }
 
+/* .dash-tip::after's tooltip box (opacity:0 while hidden) still occupies
+   layout space. Near the viewport's right edge — e.g. the 48h Timeline strip
+   on /alerts — that inflates scrollWidth past innerWidth and shifts all
+   normal-flow content left, leaving a phantom gap on the right. .dash-tip is
+   used throughout the app, so this guard is global rather than page-specific. */
+html,
+body {
+  overflow-x: clip;
+}
+
 body {
   background: var(--background);
   color: var(--foreground);
@@ -241,6 +251,26 @@ body {
   }
 }
 
+/* /monitor's kiosk-only layout — a separate namespace from .dash-layout/
+   .dash-col above, which stay dedicated to the main dashboard's full 17-card,
+   3-column design. Only KioskDashboard.tsx uses these. This base rule is a
+   1-column fallback for whenever /monitor is opened outside the 7" panel;
+   the real 2-column density is set inside the 7-inch kiosk media query below. */
+.kiosk-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+  gap: 12px;
+  padding: 12px;
+}
+
+.kiosk-col {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
 .dash-card {
   padding: calc(12px * var(--dash-scale));
 }
@@ -424,6 +454,20 @@ body {
   .dash-subgrid {
     gap: 8px;
   }
+
+  /* /monitor's trimmed 11-card kiosk set — 2 columns at the same left:centre
+     ratio the main dashboard uses (238:472), since the right column's 5
+     interactive/list cards (alerts, processes, ssh, traffic, firewall) are
+     dropped entirely for this no-interaction view. */
+  .kiosk-layout {
+    grid-template-columns: minmax(0, 238fr) minmax(0, 472fr);
+    gap: 8px;
+    padding: 8px;
+  }
+  .kiosk-col {
+    gap: 8px;
+  }
+
   .dash-card {
     padding: 6px;
   }

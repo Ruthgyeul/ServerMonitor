@@ -129,7 +129,7 @@ type HeaderProps = Omit<DashboardProps, 'networkHistory' | 'diskIoHistory'>;
 // that component's single `right` slot without contorting its API for this
 // one caller. TerminalHeaderBar stays the simple title+right-slot version
 // used by the content pages (alerts/cluster/login/status).
-const Header: React.FC<HeaderProps> = ({ data, connected, lastUpdate, now }) => {
+export const Header: React.FC<HeaderProps> = ({ data, connected, lastUpdate, now }) => {
   const secondsAgo =
     now !== null && lastUpdate !== null ? Math.max(0, Math.round((now - lastUpdate) / 1000)) : 0;
   // The connection may be alive while the values are stuck (a stalled collection
@@ -196,7 +196,7 @@ const Header: React.FC<HeaderProps> = ({ data, connected, lastUpdate, now }) => 
   );
 };
 
-const AlertBar: React.FC<{ data: DashboardData }> = ({ data }) => {
+export const AlertBar: React.FC<{ data: DashboardData }> = ({ data }) => {
   const alerts = currentAlerts(data);
   const hasAlert = alerts.length > 0;
   const color = hasAlert ? '#f87171' : '#4ade80';
