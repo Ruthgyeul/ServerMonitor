@@ -7,6 +7,10 @@
    To recolor without touching the many gray-* utilities across the dashboard,
    Tailwind's gray-scale tokens are wholesale redefined to this palette. Card/
    border/text colors follow at once, so tile layout and information are untouched.
+
+   Mirrored in src/lib/theme.ts for inline style values (SVG strokes, icon
+   `color` props) that can't consume a CSS variable through a Tailwind class —
+   keep both files' hex values in sync when either changes.
 --------------------------------------------------------------------------- */
 @theme {
   --color-gray-50: #f4f6fb;
@@ -15,7 +19,7 @@
   --color-gray-300: #c3c8d4; /* dim body */
   --color-gray-400: #8b93a7; /* label */
   --color-gray-500: #5c6478; /* caption */
-  --color-gray-600: #454d5e;
+  --color-gray-600: #3a4152; /* fainter / dividers */
   --color-gray-700: rgba(255, 255, 255, 0.08); /* card border */
   --color-gray-800: #111621; /* card background */
   --color-gray-900: #0a0d13; /* page / inset */
