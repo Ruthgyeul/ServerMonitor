@@ -5,10 +5,14 @@ import { enforceRateLimit } from '@/utils/rateLimit';
 
 // A deliberately public, sanitised status endpoint for the /status page — an
 // uptime-style summary safe to share externally. It exposes only coarse health
-// (a status word, rounded CPU/memory/disk, uptime, an active-alert COUNT) and
-// never any reconnaissance data: no IPs, process names, ports, alert messages,
-// firewall or SSH detail. It stays outside the auth gate on purpose so a public
-// status page works even when /api/system is locked down.
+// (a status word, rounded CPU/memory/disk/GPU/load-avg, outbound ping
+// latency, uptime, an active-alert COUNT) and never any reconnaissance data:
+// no IPs, process names, ports, alert messages, firewall or SSH detail, GPU
+// model name, or core count. Every field is hand-picked from getSystemInfo()
+// — never spread a whole sub-object into this response, since that's exactly
+// how a field like gpu.name would leak in unnoticed. It stays outside the
+// auth gate on purpose so a public status page works even when /api/system
+// is locked down.
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -43,6 +47,8 @@ export async function GET(request: Request) {
   const cpuFailed = collectorFailed('cpu.usage') || collectorFailed('cpu');
   const memFailed = collectorFailed('memory');
   const diskFailed = collectorFailed('disk');
+  const gpuFailed = collectorFailed('gpu');
+  const pingFailed = collectorFailed('network.ping') || collectorFailed('network');
   const coreUnavailable = cpuFailed || memFailed || diskFailed;
 
   return NextResponse.json(
@@ -53,6 +59,16 @@ export async function GET(request: Request) {
       cpu: cpuFailed ? null : Math.round(data.cpu.usage),
       memory: memFailed ? null : Math.round(data.memory.percentage),
       disk: diskFailed ? null : Math.round(data.disk.percentage),
+      // 'N/A' (no GPU present) is a legitimate reading, distinct from a
+      // collector failure (null) — mirrors getGpuInfo()'s own convention.
+      // Only .usage is read, never the whole gpu object (gpu.name is a
+      // hardware fingerprint that must not leak on a public endpoint).
+      gpu: gpuFailed ? null : typeof data.gpu?.usage === 'number' ? Math.round(data.gpu.usage) : 'N/A',
+      // Outbound latency to PING_HOST only — reveals nothing about this
+      // server's own network topology (see getPing() in systemMonitor.ts).
+      ping: pingFailed ? null : Math.round(data.network.ping * 10) / 10,
+      // avg1 only; 5m/15m are omitted rather than adding tile clutter.
+      loadAvg: typeof data.load?.avg1 === 'number' ? Math.round(data.load.avg1 * 100) / 100 : null,
       timestamp: new Date().toISOString()
     },
     { headers: { 'Cache-Control': 'no-store' } }

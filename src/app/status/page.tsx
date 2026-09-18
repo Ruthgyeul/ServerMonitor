@@ -3,6 +3,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 
 import { BrandLine, TerminalScreen, TerminalWindow } from '@/components/common/TerminalWindow';
+import { statusColor } from '@/lib/statusColors';
 
 // Public status page (#64). Renders the sanitised /api/status summary — an
 // uptime-style page safe to share externally. No reconnaissance data ever
@@ -15,6 +16,9 @@ interface Status {
   cpu: number | null;
   memory: number | null;
   disk: number | null;
+  gpu: number | 'N/A' | null;
+  ping: number | null;
+  loadAvg: number | null;
   timestamp: string;
 }
 
@@ -75,6 +79,10 @@ export default function StatusPage() {
           : 'Degraded performance';
 
   const fmt = (value: number | null) => (value === null ? '—' : `${value}%`);
+  const fmtGpu = (value: number | 'N/A' | null) =>
+    value === null ? '—' : value === 'N/A' ? 'N/A' : `${value}%`;
+  const fmtPing = (value: number | null) => (value === null ? '—' : `${value.toFixed(1)}ms`);
+  const fmtLoad = (value: number | null) => (value === null ? '—' : value.toFixed(2));
 
   return (
     <TerminalScreen>
@@ -106,9 +114,28 @@ export default function StatusPage() {
 
           {status && phase === 'ok' && (
             <div className="grid grid-cols-3 gap-3">
-              <Metric label="CPU" value={fmt(status.cpu)} />
-              <Metric label="Memory" value={fmt(status.memory)} />
-              <Metric label="Disk" value={fmt(status.disk)} />
+              <Metric
+                label="CPU"
+                value={fmt(status.cpu)}
+                color={status.cpu === null ? undefined : statusColor(status.cpu)}
+              />
+              <Metric
+                label="Memory"
+                value={fmt(status.memory)}
+                color={status.memory === null ? undefined : statusColor(status.memory)}
+              />
+              <Metric
+                label="Disk"
+                value={fmt(status.disk)}
+                color={status.disk === null ? undefined : statusColor(status.disk)}
+              />
+              <Metric
+                label="GPU"
+                value={fmtGpu(status.gpu)}
+                color={typeof status.gpu === 'number' ? statusColor(status.gpu) : undefined}
+              />
+              <Metric label="Ping" value={fmtPing(status.ping)} />
+              <Metric label="Load avg" value={fmtLoad(status.loadAvg)} />
             </div>
           )}
         </div>
@@ -117,9 +144,11 @@ export default function StatusPage() {
   );
 }
 
-const Metric: React.FC<{ label: string; value: string }> = ({ label, value }) => (
+const Metric: React.FC<{ label: string; value: string; color?: string }> = ({ label, value, color }) => (
   <div className="rounded-md border border-gray-700 bg-gray-900 p-3 text-center">
-    <div className="font-mono text-base font-bold text-gray-100">{value}</div>
+    <div className="font-mono text-base font-bold text-gray-100" style={color ? { color } : undefined}>
+      {value}
+    </div>
     <div className="mt-0.5 text-xs text-gray-500">{label}</div>
   </div>
 );
