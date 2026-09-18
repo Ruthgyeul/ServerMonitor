@@ -3,7 +3,7 @@
 import { useEffect } from 'react';
 
 import { TerminalScreen } from '@/components/common/TerminalWindow';
-import { Dashboard } from '@/components/dashboard/Dashboard';
+import { KioskDashboard } from '@/components/dashboard/KioskDashboard';
 import { StartupState } from '@/components/dashboard/StartupState';
 import { useNow } from '@/hooks/useNow';
 import { useSystemData } from '@/hooks/useSystemData';
@@ -16,13 +16,16 @@ const HOME_PATH = '/monitor';
 // the loopback bypass port (KIOSK_BYPASS_ENABLED/KIOSK_BYPASS_PORT, see
 // server.js + src/utils/apiAuth.ts) so it shows live data with no login.
 //
-// No DashboardControls (notification toggle/export) or tab title/favicon
-// alert effects here — there's no visible tab and no one to click a toggle on
-// an unattended kiosk screen. authRequired still redirects to /login as a
-// fallback for when the bypass isn't configured or this page is reached
-// through the network-facing port instead.
+// Renders KioskDashboard, a trimmed 11-card set (uptime/load/cores/fan/temp/
+// gauges/network/interfaces/bandwidth/ping strip/monthly bandwidth) in its
+// own 2-column layout — not the full 17-card Dashboard the authenticated `/`
+// page uses. No DashboardControls (notification toggle/export) or tab
+// title/favicon alert effects here — there's no visible tab and no one to
+// click a toggle on an unattended kiosk screen. authRequired still redirects
+// to /login as a fallback for when the bypass isn't configured or this page
+// is reached through the network-facing port instead.
 export default function MonitorPage() {
-  const { data, error, connected, lastUpdate, networkHistory, diskIoHistory, authRequired } = useSystemData();
+  const { data, error, connected, lastUpdate, networkHistory, authRequired } = useSystemData();
   const now = useNow();
   // Declares /monitor as the rotation's home so /cluster's own rotation sends
   // the cycle back here instead of the ordinary dashboard (`/`).
@@ -57,13 +60,12 @@ export default function MonitorPage() {
   }
 
   return (
-    <Dashboard
+    <KioskDashboard
       data={data}
       connected={connected}
       lastUpdate={lastUpdate}
       now={now}
       networkHistory={networkHistory}
-      diskIoHistory={diskIoHistory}
     />
   );
 }
