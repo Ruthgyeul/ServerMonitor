@@ -194,6 +194,16 @@ async function getPing(): Promise<number> {
   return match ? parseFloat(match[1]) : 0;
 }
 
+// A manual link-capacity override in Mbit/s, used when the kernel's negotiated
+// port speed doesn't match the provisioned bandwidth. Returns null when unset
+// or invalid (zero/negative/non-numeric) so the kernel value is used instead.
+function getLinkSpeedOverrideMbps(): number | null {
+  const raw = process.env.LINK_SPEED_MBPS;
+  if (!raw) return null;
+  const value = Number(raw);
+  return Number.isFinite(value) && value > 0 ? value : null;
+}
+
 async function getNetworkInfo(warnings: string[], sockets: SocketSummary): Promise<NetworkInfo> {
   const interfaceName = await getDefaultInterface();
 
@@ -232,7 +242,11 @@ async function getNetworkInfo(warnings: string[], sockets: SocketSummary): Promi
     collect('network.interfaces', () => getInterfaces(interfaceName), [], warnings)
   ]);
 
-  const linkSpeedMbps = interfaces.find(entry => entry.isDefault)?.speedMbps ?? null;
+  // The kernel reports the NIC's negotiated port speed (e.g. 100 for a 100BASE-T
+  // port), which is not always the provisioned link — a host on a 10 Mbps ISP
+  // plan still negotiates its LAN port at 100. LINK_SPEED_MBPS lets an operator
+  // pin the real capacity; fractional values are allowed (0.5 = a 500 kbps link).
+  const linkSpeedMbps = getLinkSpeedOverrideMbps() ?? interfaces.find(entry => entry.isDefault)?.speedMbps ?? null;
   // Convert the link speed (Mbps) to KB/s to compare against current throughput in the same unit.
   const linkCapacityKbps = linkSpeedMbps === null ? null : (linkSpeedMbps * 1000) / 8;
 

@@ -8,7 +8,7 @@ import { cn } from '@/lib/utils';
 import { COLORS, heatColor, statusColor } from '@/lib/statusColors';
 import { NetworkHistoryEntry } from '@/types/system';
 import { DashboardData } from '@/utils/dashboardData';
-import { formatBytes, formatLinkSpeed, formatRate } from '@/utils/format';
+import { formatBytes, formatLinkSpeed, formatNetSpeed, formatRate } from '@/utils/format';
 
 import { Card, Empty } from './shared';
 
@@ -260,9 +260,7 @@ export const InterfacesCard: React.FC<{ data: DashboardData }> = ({ data }) => {
                 ? entry.state
                 : entry.speedMbps === null
                   ? 'up'
-                  : entry.speedMbps >= 1000
-                    ? `${entry.speedMbps / 1000}Gbps`
-                    : `${entry.speedMbps}Mbps`}
+                  : formatNetSpeed(entry.speedMbps)}
             </span>
           </li>
         ))}
