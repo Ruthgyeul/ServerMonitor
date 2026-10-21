@@ -95,7 +95,14 @@ describe('buildContainers', () => {
   it('clamps a negative delta (container restart) to zero', () => {
     const prev = new Map([['aaaaaaaaaaaa', { rx: 1_000_000, tx: 1_000_000, at: 0 }]]);
     const statsRows = [
-      { ID: 'aaaaaaaaaaaa', CPUPerc: '0%', MemUsage: '1MiB / 1GiB', MemPerc: '0%', NetIO: '0B / 0B', BlockIO: '0B / 0B' }
+      {
+        ID: 'aaaaaaaaaaaa',
+        CPUPerc: '0%',
+        MemUsage: '1MiB / 1GiB',
+        MemPerc: '0%',
+        NetIO: '0B / 0B',
+        BlockIO: '0B / 0B'
+      }
     ];
 
     const result = buildContainers(psRows, statsRows, prev, 1000);
@@ -106,7 +113,14 @@ describe('buildContainers', () => {
 
   it('leaves the rate null on the first sample', () => {
     const statsRows = [
-      { ID: 'aaaaaaaaaaaa', CPUPerc: '0%', MemUsage: '1MiB / 1GiB', MemPerc: '0%', NetIO: '5kB / 5kB', BlockIO: '0B / 0B' }
+      {
+        ID: 'aaaaaaaaaaaa',
+        CPUPerc: '0%',
+        MemUsage: '1MiB / 1GiB',
+        MemPerc: '0%',
+        NetIO: '5kB / 5kB',
+        BlockIO: '0B / 0B'
+      }
     ];
     const result = buildContainers(psRows, statsRows, new Map(), 1000);
     const web = result.containers.find(c => c.id === 'aaaaaaaaaaaa')!;

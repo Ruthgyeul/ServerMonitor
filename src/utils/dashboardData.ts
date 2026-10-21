@@ -141,7 +141,14 @@ export function toDashboardData(raw: ServerData): DashboardData {
     readOnlyMounts: raw.readOnlyMounts ?? [],
     kernelErrors: raw.kernelErrors ?? null,
     failedLogins: raw.failedLogins ?? null,
-    docker: raw.docker ?? { available: false, running: 0, total: 0, netRxRate: 0, netTxRate: 0, containers: [] },
+    docker: raw.docker ?? {
+      available: false,
+      running: 0,
+      total: 0,
+      netRxRate: 0,
+      netTxRate: 0,
+      containers: []
+    },
     history: raw.history ?? EMPTY_HISTORY,
     alerts: raw.alerts ?? [],
     timestamp: raw.timestamp ?? new Date().toISOString(),

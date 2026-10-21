@@ -221,7 +221,10 @@ const collectDocker = withTtl(4000, async (): Promise<DockerInfo> => {
 
   let statsRows: StatsRow[] = [];
   try {
-    const statsOut = await run('docker stats --no-stream --format "{{json .}}" 2>/dev/null', STATS_TIMEOUT_MS);
+    const statsOut = await run(
+      'docker stats --no-stream --format "{{json .}}" 2>/dev/null',
+      STATS_TIMEOUT_MS
+    );
     statsRows = parseJsonLines<StatsRow>(statsOut);
   } catch {
     // stats can time out on a busy host; still show the roster from `docker ps`.
