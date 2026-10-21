@@ -76,7 +76,21 @@ export function shortKernel(release: string): string {
   return release.split('-')[0];
 }
 
+// Formats a network link/port speed given in Mbit/s, auto-scaling across the
+// full range a link can negotiate: a sub-1 Mbps WAN/ISP link shows as bps or
+// kbps, a typical NIC as Mbps, and a multi-gigabit one as Gbps. The input may
+// be fractional — a 500 kbps link is 0.5 Mbps, a 10 bps link is 0.00001 Mbps.
+export function formatNetSpeed(mbps: number): string {
+  if (!Number.isFinite(mbps) || mbps <= 0) return '0bps';
+  // Trim trailing zeros so 10 shows as "10", not "10.00", while 2.5 is kept.
+  const trim = (value: number) => Number(value.toFixed(2)).toString();
+  if (mbps >= 1000) return `${trim(mbps / 1000)}Gbps`;
+  if (mbps >= 1) return `${trim(mbps)}Mbps`;
+  if (mbps >= 0.001) return `${trim(mbps * 1000)}kbps`;
+  return `${trim(mbps * 1_000_000)}bps`;
+}
+
 export function formatLinkSpeed(mbps: number | null): string {
   if (mbps === null) return 'unknown link speed';
-  return mbps >= 1000 ? `${mbps / 1000}Gbps link` : `${mbps}Mbps link`;
+  return `${formatNetSpeed(mbps)} link`;
 }
