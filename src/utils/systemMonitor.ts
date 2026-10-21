@@ -248,8 +248,10 @@ async function getNetworkInfo(warnings: string[], sockets: SocketSummary): Promi
   // pin the real capacity; fractional values are allowed (0.5 = a 500 kbps link).
   const linkSpeedMbps =
     getLinkSpeedOverrideMbps() ?? interfaces.find(entry => entry.isDefault)?.speedMbps ?? null;
-  // Convert the link speed (Mbps) to KB/s to compare against current throughput in the same unit.
-  const linkCapacityKbps = linkSpeedMbps === null ? null : (linkSpeedMbps * 1000) / 8;
+  // Convert the link speed to the SAME unit download/upload use: KiB/s (bytes
+  // ÷ 1024). Mbit/s is decimal (1 Mbit/s = 1e6/8 bytes/s), so dividing by 1024
+  // — not 1000 — keeps the two comparable and lets a saturated link read 100%.
+  const linkCapacityKbps = linkSpeedMbps === null ? null : (linkSpeedMbps * 1_000_000) / 8 / 1024;
 
   return {
     download: round(download),
