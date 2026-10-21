@@ -246,7 +246,8 @@ async function getNetworkInfo(warnings: string[], sockets: SocketSummary): Promi
   // port), which is not always the provisioned link — a host on a 10 Mbps ISP
   // plan still negotiates its LAN port at 100. LINK_SPEED_MBPS lets an operator
   // pin the real capacity; fractional values are allowed (0.5 = a 500 kbps link).
-  const linkSpeedMbps = getLinkSpeedOverrideMbps() ?? interfaces.find(entry => entry.isDefault)?.speedMbps ?? null;
+  const linkSpeedMbps =
+    getLinkSpeedOverrideMbps() ?? interfaces.find(entry => entry.isDefault)?.speedMbps ?? null;
   // Convert the link speed (Mbps) to KB/s to compare against current throughput in the same unit.
   const linkCapacityKbps = linkSpeedMbps === null ? null : (linkSpeedMbps * 1000) / 8;
 
