@@ -189,6 +189,46 @@ export interface ReadOnlyMount {
   fstype: string;
 }
 
+// A single Docker container's state and live resource usage. Resource fields
+// are null when `docker stats` didn't report the container (e.g. it is stopped,
+// or stats timed out on a busy host) — the roster still comes from `docker ps`.
+export interface DockerContainer {
+  id: string; // 12-char short id
+  name: string;
+  image: string;
+  // Lower-cased lifecycle state: running / exited / paused / restarting / created / dead.
+  state: string;
+  status: string; // human-readable, e.g. "Up 3 hours (healthy)"
+  cpuPercent: number | null;
+  memUsedMb: number | null;
+  memLimitMb: number | null;
+  memPercent: number | null;
+  // Cumulative network bytes since the container started.
+  netRxBytes: number | null;
+  netTxBytes: number | null;
+  // Instantaneous per-container throughput (KB/s), derived from sampled deltas.
+  // null until a second sample exists.
+  netRxRate: number | null;
+  netTxRate: number | null;
+  // Cumulative block I/O bytes since the container started.
+  blockReadBytes: number | null;
+  blockWriteBytes: number | null;
+}
+
+// Docker container summary. `available` is false (and the rest empty) when the
+// docker CLI/daemon isn't reachable — the common case on a non-container host,
+// which is why the dashboard hides the card entirely rather than showing zeros.
+export interface DockerInfo {
+  available: boolean;
+  running: number;
+  total: number;
+  // Aggregate container network throughput (KB/s) across all containers. Lets
+  // the dashboard show Docker's share of bandwidth apart from the host total.
+  netRxRate: number;
+  netTxRate: number;
+  containers: DockerContainer[];
+}
+
 export type AlertLevel = 'ok' | 'info' | 'warning' | 'critical';
 
 export interface AlertEntry {
@@ -311,6 +351,8 @@ export interface ServerData {
   readOnlyMounts?: ReadOnlyMount[];
   kernelErrors?: number | null;
   failedLogins?: number | null;
+  // Docker container monitoring (optional: old-node compatible).
+  docker?: DockerInfo;
   timestamp?: string;
   // When only some collectors fail, tells you which metric is empty and why.
   // Lets you diagnose a headless server with just `curl localhost:3000/api/system`.

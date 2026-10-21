@@ -34,7 +34,12 @@ ENV HOSTNAME=0.0.0.0
 # sensors/ping. journalctl/systemctl/who/last (systemd/utmp) are hard to get in
 # a container, but the collectors already degrade gracefully to N/A, so they're
 # not included. Must be used with pid:host + the /proc, /sys mounts (docker-compose.yml) to read the host.
-RUN apk add --no-cache procps lm-sensors iputils
+#
+# docker-cli lets the Docker collector (src/utils/collectors/docker.ts) talk to
+# the host daemon — only useful when the daemon socket is mounted in
+# (docker-compose.yml), and harmless otherwise: the collector just reports
+# "unavailable" and the dashboard hides the card.
+RUN apk add --no-cache procps lm-sensors iputils docker-cli
 
 # Don't run as root. The custom server.js (loopback-only kiosk bypass
 # listener, see src/utils/apiAuth.ts) calls Next's public next() API, which

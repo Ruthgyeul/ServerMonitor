@@ -25,6 +25,7 @@ import { getHostInfo } from '@/utils/collectors/host';
 import { getLoadAverage, getSwapInfo } from '@/utils/collectors/load';
 import { getDiskIo } from '@/utils/collectors/diskio';
 import { getGpuInfo } from '@/utils/collectors/gpu';
+import { getDockerInfo } from '@/utils/collectors/docker';
 import {
   getDefaultInterface,
   getInterfaces,
@@ -586,7 +587,7 @@ export async function getSystemInfo(): Promise<ServerData> {
 
   // New collectors (2.3). Each wrapped so a failure just yields its fallback and
   // records a warning, never dropping the rest of the response.
-  const [memoryDetail, services, packages, smart, readOnlyMounts, kernelErrors, failedLogins] =
+  const [memoryDetail, services, packages, smart, readOnlyMounts, kernelErrors, failedLogins, docker] =
     await Promise.all([
       collect(
         'memoryDetail',
@@ -599,7 +600,15 @@ export async function getSystemInfo(): Promise<ServerData> {
       collect('smart', getSmartInfo, [], warnings),
       collect('readOnlyMounts', getReadOnlyMounts, [], warnings),
       collect<number | null>('kernelErrors', getKernelErrorCount, null, warnings),
-      collect<number | null>('failedLogins', getFailedLoginCount, null, warnings)
+      collect<number | null>('failedLogins', getFailedLoginCount, null, warnings),
+      // getDockerInfo never throws (it returns available:false when docker isn't
+      // reachable), so this fallback is only a defensive backstop.
+      collect(
+        'docker',
+        getDockerInfo,
+        { available: false, running: 0, total: 0, netRxRate: 0, netTxRate: 0, containers: [] },
+        warnings
+      )
     ]);
 
   // A failed collector returns a zero-filled fallback; recording/evaluating
@@ -709,6 +718,7 @@ export async function getSystemInfo(): Promise<ServerData> {
     readOnlyMounts,
     kernelErrors,
     failedLogins,
+    docker,
     history,
     alerts,
     timestamp: new Date(now).toISOString(),
