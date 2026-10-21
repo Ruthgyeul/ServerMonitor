@@ -17,6 +17,7 @@ import {
   CoresCard,
   CpuDayCard,
   DiskIoCard,
+  DockerCard,
   FanCard,
   FirewallCard,
   GaugeRow,
@@ -91,6 +92,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
       <div className="dash-col">
         <AlertsCard data={data} now={now} />
         <ProcessesCard data={data} />
+        <DockerCard data={data} />
         <SshCard data={data} now={now} />
         <TrafficCard data={data} />
         <FirewallCard data={data} />

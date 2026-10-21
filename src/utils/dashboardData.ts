@@ -19,7 +19,8 @@ import {
   ServicesInfo,
   PackagesInfo,
   SmartDevice,
-  ReadOnlyMount
+  ReadOnlyMount,
+  DockerInfo
 } from '@/types/system';
 
 // The API's new fields are all optional (old-node compatible). Rather than
@@ -70,6 +71,7 @@ export interface DashboardData {
   readOnlyMounts: ReadOnlyMount[];
   kernelErrors: number | null;
   failedLogins: number | null;
+  docker: DockerInfo;
   history: HistoryInfo;
   alerts: AlertEntry[];
   timestamp: string;
@@ -139,6 +141,14 @@ export function toDashboardData(raw: ServerData): DashboardData {
     readOnlyMounts: raw.readOnlyMounts ?? [],
     kernelErrors: raw.kernelErrors ?? null,
     failedLogins: raw.failedLogins ?? null,
+    docker: raw.docker ?? {
+      available: false,
+      running: 0,
+      total: 0,
+      netRxRate: 0,
+      netTxRate: 0,
+      containers: []
+    },
     history: raw.history ?? EMPTY_HISTORY,
     alerts: raw.alerts ?? [],
     timestamp: raw.timestamp ?? new Date().toISOString(),
