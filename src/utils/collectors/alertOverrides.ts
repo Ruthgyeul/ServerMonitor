@@ -22,6 +22,8 @@ interface ThresholdDef {
   // means enter < clear ("low is bad"). Unused for thresholds with no
   // ENTER/CLEAR counterpart (see pairKeyFor below).
   direction: 'above' | 'below';
+  // Upper bound accepted from the UI, when the setting has one.
+  max?: number;
 }
 
 // Every threshold the web UI can edit. Kept in one place so the API route and
@@ -60,8 +62,23 @@ export const CONFIGURABLE_THRESHOLDS: ThresholdDef[] = [
     label: 'Memory pressure — swap threshold (%)',
     default: 80,
     direction: 'above'
+  },
+  // Alert timing (alerts.ts): how long a breach must hold before it fires and
+  // how long recovery must hold before it clears. 0 = immediately.
+  { key: 'ALERT_FIRE_DELAY_SECONDS', label: 'Fire delay (s)', default: 0, direction: 'above', max: 3600 },
+  {
+    key: 'ALERT_RESOLVE_DELAY_SECONDS',
+    label: 'Resolve delay (s)',
+    default: 0,
+    direction: 'above',
+    max: 3600
   }
 ];
+
+// Pure: the largest value the UI may set for a key, if bounded.
+export function maxFor(key: string): number | undefined {
+  return CONFIGURABLE_THRESHOLDS.find(threshold => threshold.key === key)?.max;
+}
 
 const CONFIGURABLE_KEYS = new Set(CONFIGURABLE_THRESHOLDS.map(t => t.key));
 export function isConfigurableThreshold(key: string): boolean {

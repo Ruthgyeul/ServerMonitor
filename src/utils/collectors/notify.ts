@@ -1,6 +1,7 @@
 import { AlertEntry, AlertLevel } from '@/types/system';
 import { logger } from '@/utils/logger';
 import { isMuted } from '@/utils/collectors/alertMute';
+import { notificationSettings } from '@/utils/collectors/notificationSettings';
 
 // Alerts only showed on the dashboard's alert card until now. Unless someone
 // watches a wall panel 24/7, a threshold breach goes unnoticed. Here we push
@@ -139,6 +140,8 @@ async function flushQueue(): Promise<void> {
  */
 export async function dispatchAlert(entry: AlertEntry): Promise<void> {
   if (channelsFor(entry.level).length === 0) return;
+  // The Notifications page can switch the webhook off or drop some levels.
+  if (!notificationSettings().webhookAllows(entry.level)) return;
 
   if (BATCH_MS > 0) {
     queue.push(entry);
@@ -146,4 +149,28 @@ export async function dispatchAlert(entry: AlertEntry): Promise<void> {
     return;
   }
   await sendNow(entry);
+}
+
+// Whether an alert of this level would reach any webhook right now (channel
+// configured, switched on, level allowed). Used for the incident timeline.
+export function webhookWouldSend(level: AlertLevel): boolean {
+  return channelsFor(level).length > 0 && notificationSettings().webhookAllows(level);
+}
+
+// "Send test" from the Notifications page: one info message to every distinct
+// configured webhook, ignoring the level filter and mute (it's a deliberate
+// check). Resolves to the number of targets.
+export async function sendTestNotification(at: number = Date.now()): Promise<number> {
+  const levels: AlertLevel[] = ['critical', 'warning', 'info', 'ok'];
+  const urls = [...new Set(levels.flatMap(level => channelsFor(level)))];
+  const body = formatPayload([
+    {
+      id: `${at}-test`,
+      level: 'info',
+      message: 'Test notification from the Notifications page',
+      at: new Date(at).toISOString()
+    }
+  ]);
+  await Promise.all(urls.map(url => postTo(url, body)));
+  return urls.length;
 }

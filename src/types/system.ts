@@ -238,6 +238,26 @@ export interface ActiveAlert {
   level: AlertLevel;
   message: string;
   since: string; // ISO 8601, when the rule entered
+  // What raised it: the threshold's env key, "uptime check", "systemctl --failed", …
+  rule?: string;
+}
+
+// A threshold breach waiting out the fire delay, or an active alert waiting
+// out the resolve delay (see alerts.ts).
+export interface PendingAlert {
+  key: string;
+  level: AlertLevel;
+  message: string;
+  state: 'pending' | 'recovering';
+  since: string; // ISO 8601, when the wait started
+  dueAt: string; // ISO 8601, when it fires / resolves if the condition holds
+}
+
+export interface AlertTiming {
+  fireDelaySec: number;
+  resolveDelaySec: number;
+  // Breaches that ended before the fire delay, in the last 24 hours.
+  suppressedSpikes: number;
 }
 
 // Notification mute state as of this sample (see alertMute.ts).
@@ -361,6 +381,8 @@ export interface ServerData {
   alerts?: AlertEntry[];
   // Added in 3.0 for the console shell (optional: old-node compatible).
   activeAlerts?: ActiveAlert[];
+  pendingAlerts?: PendingAlert[];
+  alertTiming?: AlertTiming;
   mute?: MuteState;
   // Whether DASHBOARD_PASSWORD login is on, so the sidebar knows to offer Sign out.
   loginEnabled?: boolean;

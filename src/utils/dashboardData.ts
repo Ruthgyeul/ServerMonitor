@@ -1,5 +1,6 @@
 import {
   ActiveAlert,
+  AlertTiming,
   AlertEntry,
   HistoryInfo,
   HostInfo,
@@ -22,7 +23,8 @@ import {
   SmartDevice,
   ReadOnlyMount,
   DockerInfo,
-  MuteState
+  MuteState,
+  PendingAlert
 } from '@/types/system';
 
 // The API's new fields are all optional (old-node compatible). Rather than
@@ -77,6 +79,8 @@ export interface DashboardData {
   history: HistoryInfo;
   alerts: AlertEntry[];
   activeAlerts: ActiveAlert[];
+  pendingAlerts: PendingAlert[];
+  alertTiming: AlertTiming;
   mute: MuteState;
   loginEnabled: boolean;
   thresholds: Record<string, number>;
@@ -158,6 +162,8 @@ export function toDashboardData(raw: ServerData): DashboardData {
     history: raw.history ?? EMPTY_HISTORY,
     alerts: raw.alerts ?? [],
     activeAlerts: raw.activeAlerts ?? [],
+    pendingAlerts: raw.pendingAlerts ?? [],
+    alertTiming: raw.alertTiming ?? { fireDelaySec: 0, resolveDelaySec: 0, suppressedSpikes: 0 },
     mute: raw.mute ?? { globalMutedUntil: null, quietHours: null, quietNow: false },
     loginEnabled: raw.loginEnabled ?? false,
     thresholds: raw.thresholds ?? {},

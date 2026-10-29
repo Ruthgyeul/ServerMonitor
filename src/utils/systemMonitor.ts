@@ -44,7 +44,14 @@ import { getSmartInfo } from '@/utils/collectors/smart';
 import { getHistory, getLoad30mAverage, recordSample, recordTrend } from '@/utils/collectors/history';
 import { recordMinuteSample } from '@/utils/collectors/metricSeries';
 import { recordHostState } from '@/utils/collectors/events';
-import { evaluateAlerts, getActiveAlerts } from '@/utils/collectors/alerts';
+import {
+  evaluateAlerts,
+  evaluateExternal,
+  getActiveAlerts,
+  getAlertTiming,
+  getPendingAlerts
+} from '@/utils/collectors/alerts';
+import { collectExternalConditions } from '@/utils/collectors/externalConditions';
 import { muteStatus } from '@/utils/collectors/alertMute';
 import { getEffectiveThresholds } from '@/utils/collectors/alertOverrides';
 import { isAnomalous } from '@/utils/collectors/anomaly';
@@ -720,6 +727,8 @@ export async function getSystemInfo(): Promise<ServerData> {
     now
   );
 
+  evaluateExternal(collectExternalConditions(services.failedUnits), now);
+
   const { globalMutedUntil, quietHours, quietNow } = muteStatus(now);
 
   const data: ServerData = {
@@ -760,6 +769,8 @@ export async function getSystemInfo(): Promise<ServerData> {
     history,
     alerts,
     activeAlerts: getActiveAlerts(),
+    pendingAlerts: getPendingAlerts(now),
+    alertTiming: getAlertTiming(now),
     mute: { globalMutedUntil, quietHours, quietNow },
     loginEnabled: Boolean(process.env.DASHBOARD_PASSWORD),
     thresholds: getEffectiveThresholds(),

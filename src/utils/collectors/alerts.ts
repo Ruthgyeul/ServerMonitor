@@ -5,13 +5,16 @@ import {
   ActiveAlert,
   AlertEntry,
   AlertLevel,
+  AlertTiming,
   FirewallInfo,
+  PendingAlert,
   SshSession,
   TemperatureValue
 } from '@/types/system';
-import { dispatchAlert } from '@/utils/collectors/notify';
+import { dispatchAlert, webhookWouldSend } from '@/utils/collectors/notify';
 import { isMuted } from '@/utils/collectors/alertMute';
 import { getOverride } from '@/utils/collectors/alertOverrides';
+import { incidents } from '@/utils/collectors/incidents';
 
 // The recent view streamed with every /api/system response (kept small so the
 // SSE payload stays light). The dashboard alert card reads this.
@@ -43,6 +46,8 @@ type Values = Record<string, number | null>;
 
 interface Rule {
   key: string;
+  // Shown next to the alert: the setting that governs it.
+  source: string;
   label: string;
   level: AlertLevel;
   direction: 'above' | 'below';
@@ -73,6 +78,7 @@ function recovered(direction: Rule['direction'], value: number, clear: number): 
 const RULES: Rule[] = [
   {
     key: 'cpu',
+    source: 'ALERT_CPU_ENTER',
     label: 'CPU',
     level: 'warning',
     direction: 'above',
@@ -83,6 +89,7 @@ const RULES: Rule[] = [
   },
   {
     key: 'memory',
+    source: 'ALERT_MEM_ENTER',
     label: 'Memory',
     level: 'warning',
     direction: 'above',
@@ -93,6 +100,7 @@ const RULES: Rule[] = [
   },
   {
     key: 'disk',
+    source: 'ALERT_DISK_ENTER',
     label: 'Disk',
     level: 'warning',
     direction: 'above',
@@ -103,6 +111,7 @@ const RULES: Rule[] = [
   },
   {
     key: 'temperature',
+    source: 'ALERT_TEMP_ENTER',
     label: 'CPU temp',
     level: 'critical',
     direction: 'above',
@@ -113,6 +122,7 @@ const RULES: Rule[] = [
   },
   {
     key: 'swap',
+    source: 'ALERT_SWAP_ENTER',
     label: 'Swap',
     level: 'warning',
     direction: 'above',
@@ -124,6 +134,7 @@ const RULES: Rule[] = [
   // Load relative to core count — a portable "is the box overloaded" signal.
   {
     key: 'loadPerCore',
+    source: 'ALERT_LOAD_ENTER',
     label: 'Load',
     level: 'warning',
     direction: 'above',
@@ -135,6 +146,7 @@ const RULES: Rule[] = [
   },
   {
     key: 'gpuTemp',
+    source: 'ALERT_GPU_TEMP_ENTER',
     label: 'GPU temp',
     level: 'critical',
     direction: 'above',
@@ -147,6 +159,7 @@ const RULES: Rule[] = [
   // "low is bad": battery charge dropping.
   {
     key: 'battery',
+    source: 'ALERT_BATTERY_ENTER',
     label: 'Battery',
     level: 'warning',
     direction: 'below',
@@ -159,6 +172,7 @@ const RULES: Rule[] = [
   // "low is bad": estimated hours until the disk fills.
   {
     key: 'diskFill',
+    source: 'ALERT_DISKFILL_ENTER_HOURS',
     label: 'Disk fill',
     level: 'warning',
     direction: 'below',
@@ -173,6 +187,7 @@ const RULES: Rule[] = [
   // "low is bad": estimated hours until memory fills, mirroring diskFill.
   {
     key: 'memFill',
+    source: 'ALERT_MEMFILL_ENTER_HOURS',
     label: 'Memory fill',
     level: 'warning',
     direction: 'below',
@@ -188,6 +203,7 @@ const RULES: Rule[] = [
   // recent baseline even if under the absolute threshold. Passed in as a boolean.
   {
     key: 'cpuAnomaly',
+    source: 'ALERT_ANOMALY_ENABLE',
     label: 'CPU anomaly',
     level: 'warning',
     direction: 'above',
@@ -201,6 +217,7 @@ const RULES: Rule[] = [
   // Same idea, mirrored for memory (same opt-in flag).
   {
     key: 'memAnomaly',
+    source: 'ALERT_ANOMALY_ENABLE',
     label: 'Memory anomaly',
     level: 'warning',
     direction: 'above',
@@ -216,6 +233,7 @@ const RULES: Rule[] = [
   // enter/clear machinery.
   {
     key: 'memPressure',
+    source: 'ALERT_MEMPRESSURE_MEM',
     label: 'Memory pressure',
     level: 'critical',
     direction: 'above',
@@ -267,6 +285,26 @@ const lastNotifiedAt = new Map<string, number>();
 // Per-rule recent transition timestamps and current flapping state.
 const transitions = new Map<string, number[]>();
 const flapping = new Set<string>();
+
+// Alert timing (0 = off, the default). A threshold breach must hold for the
+// fire delay before it alerts; shorter breaches are logged as suppressed
+// spikes. An active alert must stay recovered for the resolve delay before it
+// clears. Read fresh each tick so the rules page applies without a restart.
+const MAX_DELAY_SECONDS = 3600;
+const SUPPRESSED_WINDOW_MS = 24 * 60 * 60 * 1000;
+function delayMs(key: string): number {
+  return Math.min(Math.max(0, num(key, 0)), MAX_DELAY_SECONDS) * 1000;
+}
+// Rules breached but still inside the fire delay: key → when the breach began.
+const pending = new Map<string, { since: number; level: AlertLevel; message: string }>();
+// Active rules recovered but still inside the resolve delay: key → when recovery began.
+const recovering = new Map<string, number>();
+const suppressedAt: number[] = [];
+
+// External conditions (HTTP checks, jobs, failed units) fed in each tick by
+// evaluateExternal(); their recovery message is kept from when they fired.
+const externalRecovery = new Map<string, string>();
+let externalPrimed = false;
 
 // Record an enter/clear transition and report whether the rule is now flapping.
 function recordTransition(key: string, at: number): boolean {
@@ -456,57 +494,80 @@ export function evaluateAlerts(input: AlertInput, at: number = Date.now()): Aler
     if (times.length < FLAP_THRESHOLD) flapping.delete(key);
   }
 
+  const fireDelay = delayMs('ALERT_FIRE_DELAY_SECONDS');
+  const resolveDelay = delayMs('ALERT_RESOLVE_DELAY_SECONDS');
+
   for (const rule of RULES) {
     if (rule.when && !rule.when(values)) continue;
-    const value = rule.compute ? rule.compute(values) : values[rule.key];
-    if (value === null || value === undefined || Number.isNaN(value)) {
-      // Normally a null value means the source is temporarily unavailable, so we
-      // hold the current state. For rules where null means "no longer breached"
-      // (e.g. disk-fill forecast disappears when the disk stops filling), clear
-      // an active alert so it isn't stuck and can re-fire later.
-      if (rule.nullMeans === 'recovered' && active.has(rule.key)) {
-        active.delete(rule.key);
-        lastNotifiedAt.delete(rule.key);
-        const flap = recordTransition(rule.key, at);
-        push('ok', rule.onClear(rule.clear()), at, !firstEvaluation && !flap, rule.key);
-        announceFlap(rule, flap, at, firstEvaluation);
-      }
-      continue;
-    }
+    const raw = rule.compute ? rule.compute(values) : values[rule.key];
+    const value = raw === null || raw === undefined || Number.isNaN(raw) ? null : raw;
+    // Normally a null value means the source is temporarily unavailable, so we
+    // hold the current state. For rules where null means "no longer breached"
+    // (e.g. disk-fill forecast disappears when the disk stops filling), treat
+    // it as recovered so an active alert isn't stuck and can re-fire later.
+    if (value === null && rule.nullMeans !== 'recovered') continue;
 
-    if (!active.has(rule.key) && breached(rule.direction, value, rule.enter())) {
-      active.set(rule.key, {
-        key: rule.key,
-        level: rule.level,
-        message: rule.onEnter(value),
-        since: new Date(at).toISOString()
-      });
-      lastNotifiedAt.set(rule.key, at);
-      const flap = recordTransition(rule.key, at);
-      push(rule.level, rule.onEnter(value), at, !firstEvaluation && !flap, rule.key);
-      announceFlap(rule, flap, at, firstEvaluation);
-    } else if (active.has(rule.key) && recovered(rule.direction, value, rule.clear())) {
-      active.delete(rule.key);
-      lastNotifiedAt.delete(rule.key);
-      const flap = recordTransition(rule.key, at);
-      push('ok', rule.onClear(value), at, !firstEvaluation && !flap, rule.key);
-      announceFlap(rule, flap, at, firstEvaluation);
-    } else if (active.has(rule.key) && RENOTIFY_MS > 0 && !flapping.has(rule.key)) {
-      // While the breach persists, re-notify (external webhook only, doesn't flood the on-screen log).
-      const last = lastNotifiedAt.get(rule.key) ?? 0;
-      if (at - last >= RENOTIFY_MS && !isMuted(rule.key, at)) {
-        lastNotifiedAt.set(rule.key, at);
-        void dispatchAlert({
-          id: `${at}-renotify-${rule.key}`,
-          level: rule.level,
-          message: `${rule.onEnter(value)} (still)`,
-          at: new Date(at).toISOString()
-        });
+    if (!active.has(rule.key)) {
+      const wait = pending.get(rule.key);
+      if (value !== null && breached(rule.direction, value, rule.enter())) {
+        const since = wait?.since ?? at;
+        if (firstEvaluation || at - since >= fireDelay) {
+          pending.delete(rule.key);
+          const flap = recordTransition(rule.key, at);
+          fireAlert(
+            rule.key,
+            rule.level,
+            rule.onEnter(value),
+            rule.source,
+            at,
+            !firstEvaluation && !flap,
+            flap
+          );
+          announceFlap(rule, flap, at, firstEvaluation);
+        } else {
+          pending.set(rule.key, { since, level: rule.level, message: rule.onEnter(value) });
+        }
+      } else if (wait) {
+        // The breach ended inside the fire delay: a short spike, not an alert.
+        pending.delete(rule.key);
+        suppressedAt.push(at);
+        const seconds = Math.max(1, Math.round((at - wait.since) / 1000));
+        push(
+          'info',
+          `Suppressed short spike: ${wait.message} for ${seconds}s (under ${fireDelay / 1000}s)`,
+          at,
+          false,
+          rule.key
+        );
+      }
+    } else if (value === null || recovered(rule.direction, value, rule.clear())) {
+      const since = recovering.get(rule.key) ?? at;
+      if (at - since >= resolveDelay) {
+        const flap = recordTransition(rule.key, at);
+        resolveAlert(rule.key, rule.onClear(value ?? rule.clear()), at, !firstEvaluation && !flap);
+        announceFlap(rule, flap, at, firstEvaluation);
+      } else {
+        recovering.set(rule.key, since);
+      }
+    } else {
+      recovering.delete(rule.key);
+      if (RENOTIFY_MS > 0 && !flapping.has(rule.key) && value !== null) {
+        // While the breach persists, re-notify (external webhook only, doesn't flood the on-screen log).
+        const last = lastNotifiedAt.get(rule.key) ?? 0;
+        if (at - last >= RENOTIFY_MS && !isMuted(rule.key, at)) {
+          lastNotifiedAt.set(rule.key, at);
+          void dispatchAlert({
+            id: `${at}-renotify-${rule.key}`,
+            level: rule.level,
+            message: `${rule.onEnter(value)} (still)`,
+            at: new Date(at).toISOString()
+          });
+        }
       }
     }
 
     const current = active.get(rule.key);
-    if (current) current.message = rule.onEnter(value);
+    if (current && value !== null) current.message = rule.onEnter(value);
   }
 
   // Record only newly appeared SSH sessions. On the first evaluation, quietly
@@ -594,6 +655,20 @@ export function evaluateAlerts(input: AlertInput, at: number = Date.now()): Aler
         true,
         'firewall'
       );
+      if (input.firewall === 'inactive') {
+        incidents().open(
+          {
+            key: 'firewall',
+            level: 'critical',
+            title: 'Firewall inactive',
+            rule: 'firewall status',
+            notifyText: notifyText('critical', 'firewall', at, true, false)
+          },
+          at
+        );
+      } else {
+        incidents().autoResolve('firewall', at);
+      }
     }
     knownFirewall = input.firewall;
     firewallSince = at;
@@ -614,7 +689,8 @@ export function getActiveAlerts(): ActiveAlert[] {
       key: 'firewall',
       level: 'critical',
       message: 'Firewall inactive',
-      since: new Date(firewallSince).toISOString()
+      since: new Date(firewallSince).toISOString(),
+      rule: 'firewall status'
     });
   }
   const rank: Record<AlertLevel, number> = { critical: 0, warning: 1, info: 2, ok: 3 };
@@ -629,4 +705,113 @@ function announceFlap(rule: Rule, flap: boolean, at: number, firstEvaluation: bo
   } else if (!flap && flapping.has(rule.key)) {
     flapping.delete(rule.key);
   }
+}
+
+// What the incident timeline says about the notification for a firing.
+function notifyText(level: AlertLevel, key: string, at: number, notify: boolean, flap: boolean): string {
+  if (flap) return 'Not notified: the rule is flapping';
+  if (!notify) return 'Not notified: already breached when monitoring started';
+  if (isMuted(key, at)) return 'Notification suppressed (muted)';
+  return webhookWouldSend(level) ? 'Notified webhook' : 'No notification channels enabled';
+}
+
+function fireAlert(
+  key: string,
+  level: AlertLevel,
+  message: string,
+  rule: string,
+  at: number,
+  notify: boolean,
+  flap = false
+): void {
+  active.set(key, { key, level, message, since: new Date(at).toISOString(), rule });
+  lastNotifiedAt.set(key, at);
+  push(level, message, at, notify, key);
+  incidents().open(
+    { key, level, title: message, rule, notifyText: notifyText(level, key, at, notify, flap) },
+    at
+  );
+}
+
+function resolveAlert(key: string, message: string, at: number, notify: boolean): void {
+  active.delete(key);
+  lastNotifiedAt.delete(key);
+  recovering.delete(key);
+  push('ok', message, at, notify, key);
+  incidents().autoResolve(key, at);
+}
+
+// A condition from outside the metric rules: an HTTP check, a scheduled job or
+// a systemd unit that is failing right now.
+export interface ExternalCondition {
+  key: string; // namespaced: http:<id>, job:<timer>, svc:<unit>
+  level: AlertLevel;
+  message: string;
+  recoveredMessage: string;
+  rule: string;
+}
+
+const EXTERNAL_PREFIXES = ['http:', 'job:', 'svc:'];
+const isExternalKey = (key: string) => EXTERNAL_PREFIXES.some(prefix => key.startsWith(prefix));
+
+// Called once per tick with every external condition failing now. These fire
+// and resolve right away (no fire/resolve delay — each source already debounces
+// by its own interval). Conditions already failing at the first call after
+// start are recorded without paging, like the metric rules.
+export function evaluateExternal(failing: ExternalCondition[], at: number = Date.now()): void {
+  ensureLoaded();
+  const notify = externalPrimed;
+  externalPrimed = true;
+  const current = new Set(failing.map(condition => condition.key));
+
+  for (const condition of failing) {
+    const existing = active.get(condition.key);
+    if (existing) {
+      existing.message = condition.message;
+      continue;
+    }
+    externalRecovery.set(condition.key, condition.recoveredMessage);
+    fireAlert(condition.key, condition.level, condition.message, condition.rule, at, notify);
+  }
+  for (const key of [...active.keys()]) {
+    if (!isExternalKey(key) || current.has(key)) continue;
+    resolveAlert(key, externalRecovery.get(key) ?? `${key} recovered`, at, notify);
+    externalRecovery.delete(key);
+  }
+}
+
+// Breaches waiting out the fire delay and alerts waiting out the resolve delay.
+export function getPendingAlerts(at: number = Date.now()): PendingAlert[] {
+  const fireDelay = delayMs('ALERT_FIRE_DELAY_SECONDS');
+  const resolveDelay = delayMs('ALERT_RESOLVE_DELAY_SECONDS');
+  const waiting: PendingAlert[] = [...pending.entries()].map(([key, wait]) => ({
+    key,
+    level: wait.level,
+    message: wait.message,
+    state: 'pending',
+    since: new Date(wait.since).toISOString(),
+    dueAt: new Date(wait.since + fireDelay).toISOString()
+  }));
+  for (const [key, since] of recovering) {
+    const alert = active.get(key);
+    if (!alert) continue;
+    waiting.push({
+      key,
+      level: alert.level,
+      message: alert.message,
+      state: 'recovering',
+      since: new Date(since).toISOString(),
+      dueAt: new Date(Math.max(since + resolveDelay, at)).toISOString()
+    });
+  }
+  return waiting;
+}
+
+export function getAlertTiming(at: number = Date.now()): AlertTiming {
+  while (suppressedAt.length > 0 && at - suppressedAt[0] > SUPPRESSED_WINDOW_MS) suppressedAt.shift();
+  return {
+    fireDelaySec: delayMs('ALERT_FIRE_DELAY_SECONDS') / 1000,
+    resolveDelaySec: delayMs('ALERT_RESOLVE_DELAY_SECONDS') / 1000,
+    suppressedSpikes: suppressedAt.length
+  };
 }
