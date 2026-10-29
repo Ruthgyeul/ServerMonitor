@@ -7,6 +7,7 @@ export const PANELS = [
   { id: 'alertlog', label: 'Alert log', description: 'Latest alerts and system events' },
   { id: 'docker', label: 'Docker containers', description: 'Container status and usage' },
   { id: 'services', label: 'Services', description: 'systemd units and failures' },
+  { id: 'jobs', label: 'Backups & jobs', description: 'Scheduled jobs and last results' },
   { id: 'cpu', label: 'CPU & load', description: 'Per-core usage and heatmaps' },
   { id: 'procs', label: 'Top processes', description: 'Busiest processes by CPU or memory' },
   { id: 'bandwidth', label: 'Bandwidth by day', description: 'Daily download and upload totals' },
@@ -21,7 +22,7 @@ export type PanelPrefs = Record<PanelId, boolean>;
 
 export const PRESETS = {
   all: { label: 'All', panels: null },
-  essentials: { label: 'Essentials', panels: ['kpis', 'network', 'alertlog', 'docker', 'services'] },
+  essentials: { label: 'Essentials', panels: ['kpis', 'network', 'alertlog', 'docker', 'services', 'jobs'] },
   minimal: { label: 'Minimal', panels: ['kpis', 'alertlog'] }
 } as const satisfies Record<string, { label: string; panels: readonly PanelId[] | null }>;
 

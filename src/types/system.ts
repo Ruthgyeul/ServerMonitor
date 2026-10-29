@@ -520,3 +520,34 @@ export interface UptimeCheck {
   paused: boolean;
   history: UptimeSample[]; // oldest first, at most 60
 }
+
+// --- Scheduled jobs (/api/jobs) -------------------------------------------
+
+export type JobKind = 'backup' | 'maintenance';
+
+export interface JobRun {
+  at: string; // ISO 8601, when the run finished
+  ok: boolean;
+}
+
+export interface ScheduledJob {
+  id: string; // the timer unit, e.g. restic-backup.timer
+  name: string;
+  kind: JobKind;
+  service: string; // the unit the timer activates
+  schedule: string; // raw OnCalendar / monotonic spec
+  human: string; // "Daily at 03:30"
+  command: string | null;
+  enabled: boolean; // timer active (waiting)
+  running: boolean;
+  lastRunAt: string | null;
+  lastDurationSec: number | null;
+  lastResult: 'success' | 'failed' | null;
+  nextRunAt: string | null;
+  history: JobRun[]; // oldest first, at most 14
+}
+
+export interface JobList {
+  available: boolean;
+  jobs: ScheduledJob[];
+}

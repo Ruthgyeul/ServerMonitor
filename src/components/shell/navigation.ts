@@ -1,5 +1,6 @@
 import {
   Activity,
+  Archive,
   Boxes,
   Container,
   GitCompare,
@@ -14,7 +15,7 @@ import {
 // Console routes: sidebar entries plus the header breadcrumb/title for each page.
 // Pages land here as their phase ships; the order follows the design.
 
-export type NavBadgeKey = 'alerts' | 'cluster' | 'docker' | 'services' | 'uptime';
+export type NavBadgeKey = 'alerts' | 'cluster' | 'docker' | 'services' | 'jobs' | 'uptime';
 
 export interface NavItem {
   href: string;
@@ -38,6 +39,7 @@ export const NAV_GROUPS: NavGroup[] = [
       { href: '/cluster', label: 'Cluster', icon: ServerCog, badge: 'cluster' },
       { href: '/docker', label: 'Docker', icon: Container, badge: 'docker' },
       { href: '/services', label: 'Services', icon: Boxes, badge: 'services' },
+      { href: '/jobs', label: 'Jobs', icon: Archive, badge: 'jobs' },
       { href: '/uptime', label: 'Uptime', icon: Activity, badge: 'uptime' },
       { href: '/alerts', label: 'Alerts', icon: TriangleAlert, badge: 'alerts' },
       { href: '/status-preview', label: 'Status page', icon: Globe }
@@ -69,6 +71,8 @@ export function pageMeta(pathname: string, host: string): PageMeta {
       return { section: host, item: 'Docker', title: 'Docker' };
     case '/services':
       return { section: host, item: 'Services', title: 'systemd services' };
+    case '/jobs':
+      return { section: host, item: 'Jobs', title: 'Backups & scheduled jobs' };
     case '/uptime':
       return { section: 'Monitor', item: 'Uptime', title: 'HTTP uptime checks' };
     case '/status-preview':
