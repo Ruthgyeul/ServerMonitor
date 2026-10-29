@@ -9,16 +9,17 @@ import { round } from '@/utils/collectors/shell';
 // store file lives in the gitignored data directory, so pull/build don't touch
 // it.
 //
-// Retention and display are separated. Buckets keep 7 days at 1-hour
-// granularity (168 cells) — the window for pruning/disk recovery — but the
+// Retention and display are separated. Buckets keep 62 days at 1-hour
+// granularity (1488 cells) — the window for pruning/disk recovery — but the
 // graphs still draw only 48h of load and 24h of CPU as before. getHistory slices
 // to just the display window, so the screen doesn't change even as 7 days of
 // data accumulate.
 const LOAD_BUCKET_MS = 60 * 60 * 1000;
 const HOUR_BUCKET_MS = 60 * 60 * 1000;
 
-// The retention (prune / disk recovery) window — both buckets keep 7 days.
-const RETENTION_HOURS = 7 * 24;
+// The retention (prune / disk recovery) window. 62 days so the Compare page
+// can put this month next to last month; display windows stay short.
+const RETENTION_HOURS = 62 * 24;
 const LOAD_RETENTION = RETENTION_HOURS;
 const CPU_RETENTION = RETENTION_HOURS;
 
@@ -322,7 +323,13 @@ export function getHistory(now: number = Date.now()): HistoryInfo {
   return { load, cpuHourly, trends };
 }
 
-export type HourlyMetric = 'cpu' | TrendKey;
+export type HourlyMetric = 'cpu' | 'load' | TrendKey;
+
+function bucketsOf(metric: HourlyMetric): Map<number, Bucket> {
+  if (metric === 'cpu') return cpuBuckets;
+  if (metric === 'load') return loadBuckets;
+  return trendBuckets[metric];
+}
 
 // The last `hours` hourly averages of one metric, oldest first, for charts that
 // span more than the in-memory minute series covers (24h / 7d). Capped at the
@@ -333,6 +340,18 @@ export function getHourlySeries(
   now: number = Date.now()
 ): TrendSample[] {
   ensureLoaded();
-  const buckets = metric === 'cpu' ? cpuBuckets : trendBuckets[metric];
-  return series(buckets, HOUR_BUCKET_MS, Math.min(hours, RETENTION_HOURS), now, 2);
+  return series(bucketsOf(metric), HOUR_BUCKET_MS, Math.min(hours, RETENTION_HOURS), now, 2);
+}
+
+// Hourly averages for [from, to) (from is floored to the hour), oldest first —
+// for comparing two calendar periods. Spans are capped at the retention window.
+export function getHourlyRange(metric: HourlyMetric, from: number, to: number): (number | null)[] {
+  ensureLoaded();
+  const buckets = bucketsOf(metric);
+  const start = Math.floor(from / HOUR_BUCKET_MS) * HOUR_BUCKET_MS;
+  const count = Math.min(RETENTION_HOURS, Math.max(0, Math.ceil((to - start) / HOUR_BUCKET_MS)));
+  return Array.from({ length: count }, (_, index) => {
+    const bucket = buckets.get(start + index * HOUR_BUCKET_MS);
+    return bucket ? round(bucket.sum / bucket.count, 2) : null;
+  });
 }

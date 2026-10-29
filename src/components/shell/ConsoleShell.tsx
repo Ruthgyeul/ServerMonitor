@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation';
 
 import { useSystem } from '@/components/providers/SystemDataProvider';
 import { useToast } from '@/components/providers/ToastProvider';
+import { LogDrawer, type LogSource } from '@/components/logs/LogDrawer';
 import { CustomizeModal } from '@/components/overview/CustomizeModal';
 import { ConnectError } from '@/components/shell/ConnectError';
 import { Header, type LinkState } from '@/components/shell/Header';
@@ -32,7 +33,14 @@ export function ConsoleShell({ children }: { children: React.ReactNode }) {
   const [navOpen, setNavOpen] = useState(false);
   const [bellOpen, setBellOpen] = useState(false);
   const [customizeOpen, setCustomizeOpen] = useState(false);
-  const actions = useMemo(() => ({ openCustomize: () => setCustomizeOpen(true) }), []);
+  const [logSource, setLogSource] = useState<LogSource | null>(null);
+  const actions = useMemo(
+    () => ({
+      openCustomize: () => setCustomizeOpen(true),
+      openLogs: (source: LogSource) => setLogSource(source)
+    }),
+    []
+  );
   const notify = useAlertNotifications(data?.alerts ?? []);
 
   useAlertTabIndicator((data?.activeAlerts.length ?? 0) > 0);
@@ -108,6 +116,13 @@ export function ConsoleShell({ children }: { children: React.ReactNode }) {
         <ShellActionsContext.Provider value={actions}>{content}</ShellActionsContext.Provider>
       </main>
       {customizeOpen && onOverview && <CustomizeModal onClose={() => setCustomizeOpen(false)} />}
+      {logSource && (
+        <LogDrawer
+          key={`${logSource.kind}:${logSource.name}`}
+          source={logSource}
+          onClose={() => setLogSource(null)}
+        />
+      )}
     </div>
   );
 }

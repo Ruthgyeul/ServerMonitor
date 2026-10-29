@@ -1,6 +1,10 @@
+'use client';
+
 import React from 'react';
+import Link from 'next/link';
 import { Boxes } from 'lucide-react';
 
+import { useShellActions } from '@/components/shell/ShellActions';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { Panel } from '@/components/ui/Panel';
 import { Tag } from '@/components/ui/Tag';
@@ -8,6 +12,7 @@ import type { ServicesInfo } from '@/types/system';
 
 // systemd health: failed units first and prominent.
 export function ServicesPanel({ services }: { services: ServicesInfo }) {
+  const { openLogs } = useShellActions();
   const failed = services.failed;
   return (
     <Panel
@@ -15,11 +20,16 @@ export function ServicesPanel({ services }: { services: ServicesInfo }) {
       title="Services"
       headerClassName="gap-x-2.5"
       actions={
-        failed === null ? (
-          <Tag tone="neutral">unknown</Tag>
-        ) : (
-          <Tag tone={failed > 0 ? 'crit' : 'ok'}>{failed} failed</Tag>
-        )
+        <>
+          {failed === null ? (
+            <Tag tone="neutral">unknown</Tag>
+          ) : (
+            <Tag tone={failed > 0 ? 'crit' : 'ok'}>{failed} failed</Tag>
+          )}
+          <Link href="/services" className="text-xs">
+            All units
+          </Link>
+        </>
       }
     >
       {failed === null ? (
@@ -43,6 +53,12 @@ export function ServicesPanel({ services }: { services: ServicesInfo }) {
             >
               <span className="h-[7px] w-[7px] shrink-0 rounded-full bg-crit" />
               <span className="flex-1 truncate font-mono text-xs text-crit-fg">{unit}</span>
+              <button
+                onClick={() => openLogs({ kind: 'unit', name: unit, title: `journalctl -u ${unit}` })}
+                className="text-xs text-fg-3 hover:text-fg"
+              >
+                Logs
+              </button>
             </div>
           ))}
           {failed > services.failedUnits.length && (

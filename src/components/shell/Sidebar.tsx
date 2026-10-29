@@ -37,6 +37,14 @@ function badgeFor(key: NavBadgeKey | undefined, { data, cluster }: BadgeSources)
       const online = cluster.filter(node => node.result.ok).length;
       return { text: `${online}/${cluster.length}`, alarm: online < cluster.length };
     }
+    case 'docker':
+      return data?.docker.available
+        ? { text: `${data.docker.running}/${data.docker.total}`, alarm: false }
+        : null;
+    case 'services': {
+      const failed = data?.services.failed ?? 0;
+      return failed > 0 ? { text: String(failed), alarm: true } : null;
+    }
     default:
       return null;
   }

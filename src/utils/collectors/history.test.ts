@@ -83,17 +83,17 @@ describe('load history buckets', () => {
     expect(first.getHistory(now).load).toHaveLength(48);
   });
 
-  it('drops buckets older than 7 days', async () => {
+  it('drops buckets older than 62 days', async () => {
     const first = await freshHistory();
     const now = Math.floor(Date.now() / HOUR) * HOUR;
 
-    first.recordSample(0, 9, now - 200 * HOUR); // outside 7 days (168h)
+    first.recordSample(0, 9, now - 1500 * HOUR); // outside 62 days (1488h)
     first.recordSample(0, 1, now);
 
     process.emit('SIGTERM');
     const saved = JSON.parse(readFileSync(first.file, 'utf-8'));
     const keys = saved.loadBuckets.map((row: [number, number, number]) => row[0]);
-    expect(keys).not.toContain(now - 200 * HOUR);
+    expect(keys).not.toContain(now - 1500 * HOUR);
   });
 
   it('recovers from disk across a restart', async () => {
@@ -237,5 +237,32 @@ describe('getLoad30mAverage', () => {
     }
 
     expect(getLoad30mAverage(now).windowSeconds).toBe(30 * 60);
+  });
+});
+
+describe('getHourlyRange', () => {
+  beforeEach(() => {
+    delete process.env.DATA_DIR;
+    delete process.env.HISTORY_FILE;
+  });
+
+  it('returns hourly averages for an arbitrary window, including load', async () => {
+    const { recordSample, recordTrend, getHourlyRange } = await freshHistory();
+    const day = Date.UTC(2026, 0, 2, 0, 0, 0);
+    recordSample(10, 0.5, day + 30 * 60_000);
+    recordSample(30, 1.5, day + 40 * 60_000);
+    recordTrend({ mem: 50 }, day + 2 * HOUR + 1000);
+
+    expect(getHourlyRange('cpu', day, day + 3 * HOUR)).toEqual([20, null, null]);
+    expect(getHourlyRange('load', day, day + HOUR)).toEqual([1]);
+    expect(getHourlyRange('mem', day, day + 3 * HOUR)).toEqual([null, null, 50]);
+  });
+
+  it('keeps history for 62 days', async () => {
+    const { recordSample, getHourlyRange } = await freshHistory();
+    const old = Date.UTC(2026, 0, 1, 0, 0, 0);
+    recordSample(42, 1, old);
+    recordSample(1, 1, old + 61 * 24 * HOUR);
+    expect(getHourlyRange('cpu', old, old + HOUR)).toEqual([42]);
   });
 });

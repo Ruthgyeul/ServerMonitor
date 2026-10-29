@@ -418,3 +418,87 @@ export interface HostEvent {
   label: string;
   at: string; // ISO 8601
 }
+
+// --- Services page (/api/services) ----------------------------------------
+
+export interface ServiceUnit {
+  name: string; // e.g. "nginx.service"
+  description: string;
+  load: string; // loaded / masked / error
+  active: string; // active / inactive / failed / activating / deactivating
+  sub: string; // running / exited / dead / failed / start …
+  since: string | null; // ISO 8601, when it last became active
+}
+
+export interface ServiceUnitList {
+  available: boolean; // false when systemctl can't be run (no systemd / container)
+  units: ServiceUnit[];
+}
+
+// --- Log drawer (/api/logs) -----------------------------------------------
+
+export type LogLevel = 'error' | 'warn' | 'info';
+export type LogSourceKind = 'unit' | 'container';
+
+export interface LogLine {
+  at: string; // ISO 8601
+  level: LogLevel;
+  message: string;
+}
+
+// --- Docker page (/api/docker) --------------------------------------------
+
+export interface DockerContainerDetail {
+  id: string; // 12-char short id
+  name: string;
+  image: string;
+  imageId: string | null; // 12-char short image id
+  state: string;
+  status: string;
+  ports: string[]; // "0.0.0.0:80→80/tcp"
+  networks: string[];
+  mounts: string[]; // "postgres_data → /var/lib/postgresql/data (ro)"
+  restartPolicy: string | null;
+  health: string | null; // healthy / unhealthy / starting, null = no healthcheck
+  command: string | null;
+  createdAt: string | null; // ISO 8601
+  memLimitMb: number | null; // null = unlimited
+}
+
+export interface DockerImage {
+  id: string; // 12-char short id
+  repository: string;
+  tag: string;
+  sizeBytes: number | null;
+  createdAt: string | null; // ISO 8601
+  usedBy: string[]; // container names
+}
+
+export interface DockerVolume {
+  name: string;
+  driver: string;
+  sizeBytes: number | null; // from `docker system df -v`, null when unknown
+  usedBy: string[];
+}
+
+export interface DockerNetwork {
+  name: string;
+  driver: string;
+  subnet: string | null;
+  containers: string[];
+}
+
+export interface DockerDiskUsage {
+  type: 'images' | 'containers' | 'volumes' | 'buildCache';
+  sizeBytes: number;
+  reclaimableBytes: number;
+}
+
+export interface DockerDetails {
+  available: boolean;
+  containers: DockerContainerDetail[];
+  images: DockerImage[];
+  volumes: DockerVolume[];
+  networks: DockerNetwork[];
+  disk: DockerDiskUsage[];
+}
