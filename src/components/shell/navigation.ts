@@ -1,4 +1,7 @@
 import {
+  Activity,
+  Archive,
+  BellRing,
   Boxes,
   Container,
   GitCompare,
@@ -13,7 +16,7 @@ import {
 // Console routes: sidebar entries plus the header breadcrumb/title for each page.
 // Pages land here as their phase ships; the order follows the design.
 
-export type NavBadgeKey = 'alerts' | 'cluster' | 'docker' | 'services';
+export type NavBadgeKey = 'alerts' | 'cluster' | 'docker' | 'services' | 'jobs' | 'uptime';
 
 export interface NavItem {
   href: string;
@@ -37,13 +40,18 @@ export const NAV_GROUPS: NavGroup[] = [
       { href: '/cluster', label: 'Cluster', icon: ServerCog, badge: 'cluster' },
       { href: '/docker', label: 'Docker', icon: Container, badge: 'docker' },
       { href: '/services', label: 'Services', icon: Boxes, badge: 'services' },
+      { href: '/jobs', label: 'Jobs', icon: Archive, badge: 'jobs' },
+      { href: '/uptime', label: 'Uptime', icon: Activity, badge: 'uptime' },
       { href: '/alerts', label: 'Alerts', icon: TriangleAlert, badge: 'alerts' },
       { href: '/status-preview', label: 'Status page', icon: Globe }
     ]
   },
   {
     title: 'Configure',
-    items: [{ href: '/settings/rules', label: 'Alert rules', icon: SlidersHorizontal }]
+    items: [
+      { href: '/settings/rules', label: 'Alert rules', icon: SlidersHorizontal },
+      { href: '/settings/notifications', label: 'Notifications', icon: BellRing }
+    ]
   }
 ];
 
@@ -56,6 +64,9 @@ export interface PageMeta {
 
 // `host` fills the overview crumb ("Hosts / <hostname>").
 export function pageMeta(pathname: string, host: string): PageMeta {
+  if (pathname.startsWith('/alerts/incidents/')) {
+    return { section: 'Alerts', item: 'Incident', title: 'Incident' };
+  }
   switch (pathname) {
     case '/cluster':
       return { section: 'Monitor', item: 'Cluster', title: 'Cluster' };
@@ -67,10 +78,16 @@ export function pageMeta(pathname: string, host: string): PageMeta {
       return { section: host, item: 'Docker', title: 'Docker' };
     case '/services':
       return { section: host, item: 'Services', title: 'systemd services' };
+    case '/jobs':
+      return { section: host, item: 'Jobs', title: 'Backups & scheduled jobs' };
+    case '/uptime':
+      return { section: 'Monitor', item: 'Uptime', title: 'HTTP uptime checks' };
     case '/status-preview':
       return { section: 'Monitor', item: 'Status page', title: 'Public status' };
     case '/settings/rules':
       return { section: 'Configure', item: 'Alert rules', title: 'Alert rules' };
+    case '/settings/notifications':
+      return { section: 'Configure', item: 'Notifications', title: 'Notifications' };
     default:
       return { section: 'Hosts', item: host, title: 'Overview' };
   }

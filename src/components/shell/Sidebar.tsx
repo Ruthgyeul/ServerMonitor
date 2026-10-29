@@ -6,12 +6,16 @@ import { usePathname } from 'next/navigation';
 import { LogOut, Server } from 'lucide-react';
 
 import type { ClusterNode } from '@/components/cluster/clusterTypes';
+import { jobState } from '@/components/jobs/jobsView';
 import { useSystem } from '@/components/providers/SystemDataProvider';
 import { InstallPwa } from '@/components/shell/InstallPwa';
 import { NAV_GROUPS, isActive, type NavBadgeKey, type NavItem } from '@/components/shell/navigation';
+import { UPTIME_BADGE_URL, type UptimeList } from '@/components/uptime/uptimeApi';
+import { summarize } from '@/components/uptime/uptimeView';
 import { SITE_NAME } from '@/config/siteConfig';
 import { usePolled } from '@/hooks/usePolled';
 import { cn } from '@/lib/utils';
+import type { JobList, ScheduledJob, UptimeCheck } from '@/types/system';
 import type { DashboardData } from '@/utils/dashboardData';
 import { shortKernel } from '@/utils/format';
 
@@ -24,9 +28,11 @@ interface Badge {
 interface BadgeSources {
   data: DashboardData | null;
   cluster: ClusterNode[] | null;
+  uptime: UptimeCheck[] | null;
+  jobs: ScheduledJob[] | null;
 }
 
-function badgeFor(key: NavBadgeKey | undefined, { data, cluster }: BadgeSources): Badge | null {
+function badgeFor(key: NavBadgeKey | undefined, { data, cluster, uptime, jobs }: BadgeSources): Badge | null {
   switch (key) {
     case 'alerts': {
       const count = data?.activeAlerts.length ?? 0;
@@ -45,6 +51,18 @@ function badgeFor(key: NavBadgeKey | undefined, { data, cluster }: BadgeSources)
       const failed = data?.services.failed ?? 0;
       return failed > 0 ? { text: String(failed), alarm: true } : null;
     }
+    case 'jobs': {
+      if (!jobs || jobs.length === 0) return null;
+      const failing = jobs.filter(job => jobState(job) === 'failed').length;
+      return failing > 0
+        ? { text: String(failing), alarm: true }
+        : { text: String(jobs.length), alarm: false };
+    }
+    case 'uptime': {
+      if (!uptime || uptime.length === 0) return null;
+      const { up, live } = summarize(uptime);
+      return { text: `${up}/${uptime.length}`, alarm: up < live };
+    }
     default:
       return null;
   }
@@ -52,6 +70,9 @@ function badgeFor(key: NavBadgeKey | undefined, { data, cluster }: BadgeSources)
 
 // The cluster badge only needs a coarse refresh; the Cluster page polls fast.
 const CLUSTER_BADGE_POLL_MS = 30_000;
+const UPTIME_BADGE_POLL_MS = 15_000;
+const JOBS_BADGE_URL = '/api/jobs?for=badge';
+const JOBS_BADGE_POLL_MS = 60_000;
 
 const NavLink: React.FC<{ item: NavItem; active: boolean; badge: Badge | null; onNavigate: () => void }> = ({
   item,
@@ -101,6 +122,8 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
   const { data, connected } = useSystem();
   const cluster =
     usePolled<{ nodes: ClusterNode[] }>('/api/cluster', CLUSTER_BADGE_POLL_MS, false)?.nodes ?? null;
+  const uptime = usePolled<UptimeList>(UPTIME_BADGE_URL, UPTIME_BADGE_POLL_MS)?.checks ?? null;
+  const jobs = usePolled<JobList>(JOBS_BADGE_URL, JOBS_BADGE_POLL_MS)?.jobs ?? null;
 
   const defaultIp = data?.network.interfaces.find(iface => iface.isDefault)?.ip ?? null;
   const healthy = data !== null && connected && data.activeAlerts.length === 0;
@@ -145,7 +168,7 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
                   key={item.href}
                   item={item}
                   active={isActive(pathname, item.href)}
-                  badge={badgeFor(item.badge, { data, cluster })}
+                  badge={badgeFor(item.badge, { data, cluster, uptime, jobs })}
                   onNavigate={onClose}
                 />
               ))}

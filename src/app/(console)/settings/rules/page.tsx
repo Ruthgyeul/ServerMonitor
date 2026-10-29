@@ -20,12 +20,28 @@ import {
   type Threshold
 } from '@/components/rules/thresholdApi';
 import { PageBody } from '@/components/ui/PageBody';
+import { Segmented } from '@/components/ui/Segmented';
 import { cn } from '@/lib/utils';
 
-// Alert rules: edit each rule's enter/clear thresholds at runtime (applied on
-// the next collection tick) or reset them to the environment default.
+// Alert rules: alert timing (fire/resolve delays), then each rule's
+// enter/clear thresholds, edited at runtime (applied on the next collection
+// tick) or reset to the environment default.
 
 type Draft = { enter: string; clear: string };
+
+const FIRE_KEY = 'ALERT_FIRE_DELAY_SECONDS';
+const RESOLVE_KEY = 'ALERT_RESOLVE_DELAY_SECONDS';
+const FIRE_OPTIONS = [0, 15, 30, 60];
+const RESOLVE_OPTIONS = [0, 30, 60, 120];
+
+// Segmented options for a delay, keeping a configured value outside the presets selectable.
+function delayOptions(presets: number[], current: number | undefined) {
+  const values =
+    current === undefined || presets.includes(current)
+      ? presets
+      : [...presets, current].sort((a, b) => a - b);
+  return values.map(value => ({ value, label: value === 0 ? 'Off' : `${value}s` }));
+}
 
 const input =
   'w-[76px] rounded-md border border-white/10 bg-sidebar px-2 py-1.5 font-mono text-[12.5px] outline-none focus:border-accent';
@@ -88,6 +104,19 @@ export default function AlertRulesPage() {
     }
   };
 
+  const setDelay = async (threshold: Threshold | undefined, value: number, done: string) => {
+    if (!threshold) return;
+    setBusy(threshold.key);
+    const result = await writeThreshold(threshold, value);
+    setBusy(null);
+    if (result.ok) {
+      apply(result.thresholds, []);
+      flash(done);
+    } else {
+      flash(result.error);
+    }
+  };
+
   const reset = async (rule: RuleDef) => {
     setBusy(rule.id);
     await clearThreshold(rule.enterKey);
@@ -110,6 +139,56 @@ export default function AlertRulesPage() {
         below <span className="text-fg">Clear</span> (reversed for low-is-bad rules).
       </p>
       {errors.page && <p className="text-xs text-crit-fg">Could not load thresholds: {errors.page}</p>}
+
+      {thresholds && (
+        <section id="timing" className="scroll-mt-20 rounded-[10px] border border-line bg-card">
+          <div className="flex flex-wrap items-center gap-x-5 gap-y-2.5 border-b border-white/5 px-[18px] py-3.5">
+            <h2 className="flex-1 text-[13.5px] font-medium">Alert timing</h2>
+            <span className="text-xs text-dim">
+              {data && data.alertTiming.suppressedSpikes > 0
+                ? `${data.alertTiming.suppressedSpikes} short spike${data.alertTiming.suppressedSpikes === 1 ? '' : 's'} suppressed (24h)`
+                : 'No spikes suppressed yet'}
+            </span>
+          </div>
+          <div className="flex flex-wrap gap-x-12 gap-y-[18px] px-[18px] py-4">
+            {[
+              {
+                key: FIRE_KEY,
+                title: 'Fire after the condition holds for',
+                hint: "Shorter spikes are logged as suppressed and don't send a notification.",
+                presets: FIRE_OPTIONS,
+                done: (value: number) => `Alerts fire after ${value ? `${value}s` : 'no delay'}`
+              },
+              {
+                key: RESOLVE_KEY,
+                title: 'Resolve after the value recovers for',
+                hint: 'Stops an alert from flapping open and closed around the threshold.',
+                presets: RESOLVE_OPTIONS,
+                done: (value: number) =>
+                  `Alerts resolve after ${value ? `${value}s` : 'no delay'} of recovery`
+              }
+            ].map(setting => {
+              const threshold = thresholds[setting.key];
+              return (
+                <div key={setting.key} className="flex flex-[1_1_260px] flex-col gap-2">
+                  <span className="text-[13px]">{setting.title}</span>
+                  <div className="self-start">
+                    <Segmented
+                      options={delayOptions(setting.presets, threshold?.value)}
+                      value={threshold?.value ?? 0}
+                      onChange={value => void setDelay(threshold, value, setting.done(value))}
+                      label={setting.title}
+                    />
+                  </div>
+                  <span className="text-xs leading-normal text-pretty text-subtle">
+                    {setting.hint} <span className="font-mono text-faint">{setting.key}</span>
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      )}
 
       <section className="overflow-hidden rounded-[10px] border border-line bg-card">
         {thresholds === null

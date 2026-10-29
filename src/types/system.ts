@@ -238,6 +238,26 @@ export interface ActiveAlert {
   level: AlertLevel;
   message: string;
   since: string; // ISO 8601, when the rule entered
+  // What raised it: the threshold's env key, "uptime check", "systemctl --failed", …
+  rule?: string;
+}
+
+// A threshold breach waiting out the fire delay, or an active alert waiting
+// out the resolve delay (see alerts.ts).
+export interface PendingAlert {
+  key: string;
+  level: AlertLevel;
+  message: string;
+  state: 'pending' | 'recovering';
+  since: string; // ISO 8601, when the wait started
+  dueAt: string; // ISO 8601, when it fires / resolves if the condition holds
+}
+
+export interface AlertTiming {
+  fireDelaySec: number;
+  resolveDelaySec: number;
+  // Breaches that ended before the fire delay, in the last 24 hours.
+  suppressedSpikes: number;
 }
 
 // Notification mute state as of this sample (see alertMute.ts).
@@ -361,6 +381,8 @@ export interface ServerData {
   alerts?: AlertEntry[];
   // Added in 3.0 for the console shell (optional: old-node compatible).
   activeAlerts?: ActiveAlert[];
+  pendingAlerts?: PendingAlert[];
+  alertTiming?: AlertTiming;
   mute?: MuteState;
   // Whether DASHBOARD_PASSWORD login is on, so the sidebar knows to offer Sign out.
   loginEnabled?: boolean;
@@ -501,4 +523,55 @@ export interface DockerDetails {
   volumes: DockerVolume[];
   networks: DockerNetwork[];
   disk: DockerDiskUsage[];
+}
+
+// --- Uptime checks (/api/uptime) ------------------------------------------
+
+export interface UptimeSample {
+  at: string; // ISO 8601
+  ok: boolean;
+  ms: number | null; // null on timeout / network error
+  code: number | null; // HTTP status, null when no response
+  // Why there was no response: no answer within the timeout, or the connection failed.
+  error?: 'timeout' | 'unreachable';
+}
+
+export interface UptimeCheck {
+  id: string;
+  name: string;
+  url: string;
+  intervalSec: number;
+  paused: boolean;
+  history: UptimeSample[]; // oldest first, at most 60
+}
+
+// --- Scheduled jobs (/api/jobs) -------------------------------------------
+
+export type JobKind = 'backup' | 'maintenance';
+
+export interface JobRun {
+  at: string; // ISO 8601, when the run finished
+  ok: boolean;
+}
+
+export interface ScheduledJob {
+  id: string; // the timer unit, e.g. restic-backup.timer
+  name: string;
+  kind: JobKind;
+  service: string; // the unit the timer activates
+  schedule: string; // raw OnCalendar / monotonic spec
+  human: string; // "Daily at 03:30"
+  command: string | null;
+  enabled: boolean; // timer active (waiting)
+  running: boolean;
+  lastRunAt: string | null;
+  lastDurationSec: number | null;
+  lastResult: 'success' | 'failed' | null;
+  nextRunAt: string | null;
+  history: JobRun[]; // oldest first, at most 14
+}
+
+export interface JobList {
+  available: boolean;
+  jobs: ScheduledJob[];
 }

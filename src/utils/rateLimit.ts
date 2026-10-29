@@ -102,6 +102,11 @@ const loginLimiter = createRateLimiter(10, 5);
 // with a valid cookie is never affected.
 const authFailureLimiter = createRateLimiter(10, 5);
 
+// A strict budget for actions with side effects outside the app (a test
+// webhook, and the opt-in control actions): ~10 per minute, bursts of 3.
+// Separate from the login budget so using them never locks anyone out.
+const actionLimiter = createRateLimiter(10, 3);
+
 function limitedResponse(retryAfterSeconds: number, extraHeaders?: Record<string, string>): Response {
   return new Response(JSON.stringify({ error: 'Too Many Requests' }), {
     status: 429,
@@ -134,5 +139,11 @@ export function enforceLoginRateLimit(request: Request): Response | null {
 // else null (let the caller return its 401).
 export function enforceAuthFailureLimit(request: Request): Response | null {
   const { allowed, retryAfterSeconds } = authFailureLimiter.take(clientIp(request));
+  return allowed ? null : limitedResponse(retryAfterSeconds);
+}
+
+// Returns a 429 Response when side-effecting actions from this caller are too frequent.
+export function enforceActionRateLimit(request: Request): Response | null {
+  const { allowed, retryAfterSeconds } = actionLimiter.take(clientIp(request));
   return allowed ? null : limitedResponse(retryAfterSeconds);
 }

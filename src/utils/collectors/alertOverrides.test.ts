@@ -4,6 +4,8 @@ import { join } from 'path';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { resetProcessSingletons } from '@/utils/processSingleton';
+
 // alertOverrides.ts holds its overrides in module scope, so it must be
 // reimported per test, each with its own temp store file.
 async function freshOverrides() {
@@ -71,6 +73,7 @@ describe('alert threshold overrides', () => {
     const dataDir = process.env.DATA_DIR!;
     const file = process.env.ALERT_OVERRIDES_FILE!;
     vi.resetModules();
+    resetProcessSingletons(); // a restart: nothing survives but the file
     process.env.DATA_DIR = dataDir;
     process.env.ALERT_OVERRIDES_FILE = file;
     const second = await import('@/utils/collectors/alertOverrides');

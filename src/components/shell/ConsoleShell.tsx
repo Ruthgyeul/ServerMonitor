@@ -6,6 +6,7 @@ import { usePathname } from 'next/navigation';
 import { useSystem } from '@/components/providers/SystemDataProvider';
 import { useToast } from '@/components/providers/ToastProvider';
 import { LogDrawer, type LogSource } from '@/components/logs/LogDrawer';
+import { NOTIFY_URL, type NotificationsInfo } from '@/components/notifications/notificationsApi';
 import { CustomizeModal } from '@/components/overview/CustomizeModal';
 import { ConnectError } from '@/components/shell/ConnectError';
 import { Header, type LinkState } from '@/components/shell/Header';
@@ -18,12 +19,15 @@ import { downloadSnapshot } from '@/components/shell/snapshot';
 import { useAlertNotifications } from '@/hooks/useAlertNotifications';
 import { useAlertTabIndicator } from '@/hooks/useAlertTabIndicator';
 import { useNow } from '@/hooks/useNow';
+import { usePolled } from '@/hooks/usePolled';
 
 // The console frame around every authenticated page: sidebar, sticky header,
 // offline banner, and the loading / unreachable states before the first sample.
 
 // The stream ticks every second while a viewer is connected.
 const STALE_AFTER_SECONDS = 10;
+// Notification levels change rarely (only from the Notifications page, which refreshes them).
+const NOTIFY_POLL_MS = 5 * 60_000;
 
 export function ConsoleShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -34,14 +38,16 @@ export function ConsoleShell({ children }: { children: React.ReactNode }) {
   const [bellOpen, setBellOpen] = useState(false);
   const [customizeOpen, setCustomizeOpen] = useState(false);
   const [logSource, setLogSource] = useState<LogSource | null>(null);
+  const notifySettings = usePolled<NotificationsInfo>(NOTIFY_URL, NOTIFY_POLL_MS)?.settings ?? null;
+  const notify = useAlertNotifications(data?.alerts ?? [], notifySettings?.levels);
   const actions = useMemo(
     () => ({
       openCustomize: () => setCustomizeOpen(true),
-      openLogs: (source: LogSource) => setLogSource(source)
+      openLogs: (source: LogSource) => setLogSource(source),
+      browserNotify: notify
     }),
-    []
+    [notify]
   );
-  const notify = useAlertNotifications(data?.alerts ?? []);
 
   useAlertTabIndicator((data?.activeAlerts.length ?? 0) > 0);
 

@@ -9,6 +9,7 @@ import { CapacityPanel } from '@/components/overview/CapacityPanel';
 import { CpuLoadPanel } from '@/components/overview/CpuLoadPanel';
 import { DockerPanel } from '@/components/overview/DockerPanel';
 import { HardwarePanel, InterfacesPanel, SecurityPanel } from '@/components/overview/HardwarePanels';
+import { JobsPanel } from '@/components/overview/JobsPanel';
 import { KpiCards } from '@/components/overview/KpiCards';
 import { NetworkPanel } from '@/components/overview/NetworkPanel';
 import { ProcessesPanel } from '@/components/overview/ProcessesPanel';
@@ -66,6 +67,8 @@ export default function OverviewPage() {
           {prefs.services && <ServicesPanel services={data.services} />}
         </PanelRow>
       )}
+
+      {prefs.jobs && <JobsPanel now={now} />}
 
       {(prefs.cpu || prefs.procs) && (
         <PanelRow>

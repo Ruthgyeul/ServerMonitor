@@ -1,6 +1,8 @@
 import fs from 'fs';
 import path from 'path';
 
+import { processSingleton } from '@/utils/processSingleton';
+
 // Lets an operator tune alert thresholds from the web UI (POST /api/alerts/config)
 // without editing .env and restarting the process. An override here takes
 // priority over the environment variable, which remains the effective default
@@ -22,6 +24,8 @@ interface ThresholdDef {
   // means enter < clear ("low is bad"). Unused for thresholds with no
   // ENTER/CLEAR counterpart (see pairKeyFor below).
   direction: 'above' | 'below';
+  // Upper bound accepted from the UI, when the setting has one.
+  max?: number;
 }
 
 // Every threshold the web UI can edit. Kept in one place so the API route and
@@ -60,8 +64,23 @@ export const CONFIGURABLE_THRESHOLDS: ThresholdDef[] = [
     label: 'Memory pressure — swap threshold (%)',
     default: 80,
     direction: 'above'
+  },
+  // Alert timing (alerts.ts): how long a breach must hold before it fires and
+  // how long recovery must hold before it clears. 0 = immediately.
+  { key: 'ALERT_FIRE_DELAY_SECONDS', label: 'Fire delay (s)', default: 0, direction: 'above', max: 3600 },
+  {
+    key: 'ALERT_RESOLVE_DELAY_SECONDS',
+    label: 'Resolve delay (s)',
+    default: 0,
+    direction: 'above',
+    max: 3600
   }
 ];
+
+// Pure: the largest value the UI may set for a key, if bounded.
+export function maxFor(key: string): number | undefined {
+  return CONFIGURABLE_THRESHOLDS.find(threshold => threshold.key === key)?.max;
+}
 
 const CONFIGURABLE_KEYS = new Set(CONFIGURABLE_THRESHOLDS.map(t => t.key));
 export function isConfigurableThreshold(key: string): boolean {
@@ -78,12 +97,17 @@ function pairKeyFor(key: string): string | null {
   return null;
 }
 
-const overrides = new Map<string, number>();
+// Shared by every bundle in the process, so an override saved from the UI
+// applies to the background collection loop too.
+const state = processSingleton('alertOverrides', () => ({
+  overrides: new Map<string, number>(),
+  loaded: false
+}));
+const { overrides } = state;
 
-let loaded = false;
 function ensureLoaded(): void {
-  if (loaded) return;
-  loaded = true;
+  if (state.loaded) return;
+  state.loaded = true;
   try {
     const raw = fs.readFileSync(/*turbopackIgnore: true*/ STORE_FILE, 'utf-8');
     const parsed = JSON.parse(raw) as { v: number; overrides: Record<string, number> };

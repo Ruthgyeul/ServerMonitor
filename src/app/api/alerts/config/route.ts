@@ -4,6 +4,7 @@ import {
   clearOverride,
   getThresholdValues,
   isConfigurableThreshold,
+  maxFor,
   setOverride,
   wouldInvertHysteresis
 } from '@/utils/collectors/alertOverrides';
@@ -37,6 +38,10 @@ export async function POST(request: NextRequest) {
   }
   if (typeof body.value !== 'number' || !Number.isFinite(body.value) || body.value < 0) {
     return NextResponse.json({ error: 'value must be a non-negative number' }, { status: 400 });
+  }
+  const max = maxFor(body.key);
+  if (max !== undefined && body.value > max) {
+    return NextResponse.json({ error: `value must be at most ${max}` }, { status: 400 });
   }
   if (wouldInvertHysteresis(body.key, body.value)) {
     return NextResponse.json(

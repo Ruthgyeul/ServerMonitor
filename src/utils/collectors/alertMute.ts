@@ -1,3 +1,5 @@
+import { processSingleton } from '@/utils/processSingleton';
+
 // Alert muting: a manual "snooze" plus scheduled quiet hours. When muted, the
 // external webhook notification is suppressed — the on-screen alert log still
 // records every event, so nothing is lost, it just doesn't page anyone.
@@ -6,14 +8,19 @@
 // via /api/alerts/mute. Quiet hours come from ALERT_QUIET_HOURS in the server's
 // local timezone.
 
-let globalMuteUntil = 0; // epoch ms; 0 = not muted
-const keyMuteUntil = new Map<string, number>();
+// Shared by every bundle in the process, so a mute set from the UI also holds
+// for the background collection loop.
+const state = processSingleton('alertMute', () => ({
+  globalMuteUntil: 0, // epoch ms; 0 = not muted
+  keyMuteUntil: new Map<string, number>()
+}));
+const { keyMuteUntil } = state;
 
 const QUIET_HOURS = process.env.ALERT_QUIET_HOURS || null;
 
 export function muteAll(minutes: number, at: number = Date.now()): number {
-  globalMuteUntil = at + Math.max(0, minutes) * 60_000;
-  return globalMuteUntil;
+  state.globalMuteUntil = at + Math.max(0, minutes) * 60_000;
+  return state.globalMuteUntil;
 }
 
 export function muteKey(key: string, minutes: number, at: number = Date.now()): number {
@@ -23,7 +30,7 @@ export function muteKey(key: string, minutes: number, at: number = Date.now()): 
 }
 
 export function clearMute(): void {
-  globalMuteUntil = 0;
+  state.globalMuteUntil = 0;
   keyMuteUntil.clear();
 }
 
@@ -44,7 +51,7 @@ export function inQuietHours(date: Date = new Date(), spec: string | null = QUIE
 
 // Whether a notification for `key` (null = a keyless event) should be muted now.
 export function isMuted(key: string | null = null, at: number = Date.now()): boolean {
-  if (globalMuteUntil > at) return true;
+  if (state.globalMuteUntil > at) return true;
   if (inQuietHours(new Date(at))) return true;
   if (key) {
     const until = keyMuteUntil.get(key);
@@ -55,7 +62,7 @@ export function isMuted(key: string | null = null, at: number = Date.now()): boo
 
 export function muteStatus(at: number = Date.now()) {
   return {
-    globalMutedUntil: globalMuteUntil > at ? new Date(globalMuteUntil).toISOString() : null,
+    globalMutedUntil: state.globalMuteUntil > at ? new Date(state.globalMuteUntil).toISOString() : null,
     mutedKeys: [...keyMuteUntil.entries()]
       .filter(([, until]) => until > at)
       .map(([key, until]) => ({ key, until: new Date(until).toISOString() })),
