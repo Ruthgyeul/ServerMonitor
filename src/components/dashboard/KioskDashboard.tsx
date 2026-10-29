@@ -4,7 +4,7 @@ import { TerminalTitleBar } from '@/components/common/TerminalWindow';
 import { NetworkHistoryEntry } from '@/types/system';
 import { DashboardData } from '@/utils/dashboardData';
 
-import { AlertBar, Header } from './Dashboard';
+import { AlertBar, Header } from './KioskHeader';
 import {
   BandwidthCard,
   BandwidthHistoryCard,

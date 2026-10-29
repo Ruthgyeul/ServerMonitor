@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 
-import { CpuHourSample, HistoryInfo, LoadSample } from '@/types/system';
+import { CpuHourSample, HistoryInfo, LoadSample, TrendSample } from '@/types/system';
 import { round } from '@/utils/collectors/shell';
 
 // History buckets live in process memory but are also persisted to disk, so a
@@ -48,16 +48,19 @@ interface Bucket {
 const loadBuckets = new Map<number, Bucket>();
 const cpuBuckets = new Map<number, Bucket>();
 
-// Per-metric trend buckets (memory %, disk %, temperature °C, network KB/s).
-// Same hourly granularity/retention as CPU; drawn as 24h sparklines per card.
-// Kept in one record so the persistence/serialisation loops stay generic.
-const TREND_KEYS = ['mem', 'disk', 'temp', 'net'] as const;
+// Per-metric trend buckets (memory %, disk %, temperature °C, network KB/s
+// combined and split into download/upload). Same hourly granularity/retention
+// as CPU; drawn as 24h sparklines and as the overview's 24h/7d charts. Kept in
+// one record so the persistence/serialisation loops stay generic.
+const TREND_KEYS = ['mem', 'disk', 'temp', 'net', 'down', 'up'] as const;
 type TrendKey = (typeof TREND_KEYS)[number];
 const trendBuckets: Record<TrendKey, Map<number, Bucket>> = {
   mem: new Map(),
   disk: new Map(),
   temp: new Map(),
-  net: new Map()
+  net: new Map(),
+  down: new Map(),
+  up: new Map()
 };
 
 // --- 30-minute moving average --------------------------------------------
@@ -130,6 +133,9 @@ interface StoreShape {
   diskBuckets?: SerializedBucket[];
   tempBuckets?: SerializedBucket[];
   netBuckets?: SerializedBucket[];
+  // Added later within v2 (optional: older v2 files simply lack them).
+  downBuckets?: SerializedBucket[];
+  upBuckets?: SerializedBucket[];
 }
 
 function serialize(buckets: Map<number, Bucket>): SerializedBucket[] {
@@ -167,6 +173,8 @@ function ensureLoaded(): void {
       hydrate(trendBuckets.disk, parsed.diskBuckets, HOUR_BUCKET_MS, CPU_RETENTION);
       hydrate(trendBuckets.temp, parsed.tempBuckets, HOUR_BUCKET_MS, CPU_RETENTION);
       hydrate(trendBuckets.net, parsed.netBuckets, HOUR_BUCKET_MS, CPU_RETENTION);
+      hydrate(trendBuckets.down, parsed.downBuckets, HOUR_BUCKET_MS, CPU_RETENTION);
+      hydrate(trendBuckets.up, parsed.upBuckets, HOUR_BUCKET_MS, CPU_RETENTION);
     }
   } catch {
     // If the file is missing (first run) or unreadable, start empty.
@@ -185,7 +193,9 @@ function buildPayload(): StoreShape {
     memBuckets: serialize(trendBuckets.mem),
     diskBuckets: serialize(trendBuckets.disk),
     tempBuckets: serialize(trendBuckets.temp),
-    netBuckets: serialize(trendBuckets.net)
+    netBuckets: serialize(trendBuckets.net),
+    downBuckets: serialize(trendBuckets.down),
+    upBuckets: serialize(trendBuckets.up)
   };
 }
 
@@ -265,7 +275,7 @@ export function recordSample(cpuUsage: number, load1: number, at: number = Date.
 // Record the per-metric trend samples for this tick. Nulls (unavailable/N/A
 // sources) are skipped so a bucket only ever averages real readings.
 export function recordTrend(
-  samples: { mem?: number | null; disk?: number | null; temp?: number | null; net?: number | null },
+  samples: Partial<Record<TrendKey, number | null>>,
   at: number = Date.now()
 ): void {
   ensureLoaded();
@@ -310,4 +320,19 @@ export function getHistory(now: number = Date.now()): HistoryInfo {
     net: series(trendBuckets.net, HOUR_BUCKET_MS, CPU_DISPLAY, now, 1)
   };
   return { load, cpuHourly, trends };
+}
+
+export type HourlyMetric = 'cpu' | TrendKey;
+
+// The last `hours` hourly averages of one metric, oldest first, for charts that
+// span more than the in-memory minute series covers (24h / 7d). Capped at the
+// retention window.
+export function getHourlySeries(
+  metric: HourlyMetric,
+  hours: number,
+  now: number = Date.now()
+): TrendSample[] {
+  ensureLoaded();
+  const buckets = metric === 'cpu' ? cpuBuckets : trendBuckets[metric];
+  return series(buckets, HOUR_BUCKET_MS, Math.min(hours, RETENTION_HOURS), now, 2);
 }

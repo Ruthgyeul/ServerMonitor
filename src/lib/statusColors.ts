@@ -109,3 +109,29 @@ export function usageColor(percentage: number, calm: string = PALETTE.accent): s
   if (percentage >= USAGE_WARN) return PALETTE.warn;
   return calm;
 }
+
+// Container lifecycle → status dot.
+export function containerDot(state: string): string {
+  switch (state) {
+    case 'running':
+      return PALETTE.ok;
+    case 'paused':
+    case 'restarting':
+      return PALETTE.warn;
+    case 'dead':
+      return PALETTE.crit;
+    default: // exited / created / unknown
+      return PALETTE.faint;
+  }
+}
+
+// Heatmap cell color for a 0–1 utilization (null = no data): dark green at
+// idle, brightening through yellow to red at saturation.
+export function rampColor(t: number | null): string {
+  if (t === null || !Number.isFinite(t)) return PALETTE.inset;
+  const v = Math.min(1, Math.max(0, t));
+  const lightness = (0.32 + 0.42 * v).toFixed(3);
+  const chroma = (0.04 + 0.1 * v).toFixed(3);
+  const hue = (160 - 135 * Math.max(0, v - 0.5) * 2).toFixed(0);
+  return `oklch(${lightness} ${chroma} ${hue})`;
+}

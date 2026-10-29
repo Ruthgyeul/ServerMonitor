@@ -8,7 +8,9 @@ import {
   loadColor,
   statusColor,
   tempColor,
-  usageColor
+  usageColor,
+  containerDot,
+  rampColor
 } from '@/lib/statusColors';
 import { PALETTE } from '@/lib/theme';
 
@@ -137,5 +139,23 @@ describe('LEVEL_STYLES', () => {
       info: 'INFO',
       ok: 'OK'
     });
+  });
+});
+
+describe('containerDot', () => {
+  it('colors running green, transitional amber, dead red and the rest faint', () => {
+    expect(containerDot('running')).toBe(PALETTE.ok);
+    expect(containerDot('restarting')).toBe(PALETTE.warn);
+    expect(containerDot('dead')).toBe(PALETTE.crit);
+    expect(containerDot('exited')).toBe(PALETTE.faint);
+  });
+});
+
+describe('rampColor', () => {
+  it('renders missing data as the inset surface and clamps the ramp', () => {
+    expect(rampColor(null)).toBe(PALETTE.inset);
+    expect(rampColor(0)).toBe('oklch(0.320 0.040 160)');
+    expect(rampColor(1)).toBe('oklch(0.740 0.140 25)');
+    expect(rampColor(5)).toBe(rampColor(1));
   });
 });

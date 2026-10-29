@@ -18,6 +18,11 @@ export function formatHourMinute(at: number): string {
   return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
 }
 
+// "10-29 14:03" in the viewer's local time.
+export function formatShortStamp(at: number): string {
+  return formatTimestamp(at).slice(5, 16);
+}
+
 // Compact age for lists: "now" under 45s, then "5m", "3h", "2d".
 export function formatAge(ms: number): string {
   const seconds = Math.floor(Math.max(0, ms) / 1000);

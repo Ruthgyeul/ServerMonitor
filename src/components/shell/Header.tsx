@@ -2,7 +2,7 @@
 
 import React from 'react';
 import Link from 'next/link';
-import { Bell, BellOff, Download, Menu, Tv } from 'lucide-react';
+import { Bell, BellOff, Download, LayoutGrid, Menu, Tv } from 'lucide-react';
 
 import { BellMenu } from '@/components/shell/BellMenu';
 import type { PageMeta } from '@/components/shell/navigation';
@@ -35,8 +35,9 @@ interface HeaderProps {
   soundEnabled: boolean;
   onToggleSound: () => void;
   onOpenNav: () => void;
-  // Overview-only: download a JSON snapshot. Hidden when absent.
+  // Overview-only actions; each button is hidden when its handler is absent.
   onExport?: () => void;
+  onCustomize?: () => void;
 }
 
 function muteLabel(mute: MuteState | null): string | null {
@@ -108,6 +109,16 @@ export function Header(props: HeaderProps) {
             </span>
           )}
         </button>
+        {props.onCustomize && (
+          <button
+            onClick={props.onCustomize}
+            title="Choose which panels the overview shows"
+            className={cn(iconButton, 'px-3')}
+          >
+            <LayoutGrid size={14} className="shrink-0" />
+            <span className="hidden desk:inline">Customize</span>
+          </button>
+        )}
         {props.onExport && (
           <button
             onClick={props.onExport}

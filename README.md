@@ -86,45 +86,28 @@ mirrored as `PALETTE` in `src/lib/theme.ts`. The public `/status`, `/login`
 and the wall display `/monitor` sit outside the shell — point a 7-inch panel at
 `/monitor`, which keeps the full width.
 
-### Overview cards
+### Overview
 
-The three columns and the card order inside each one come from the design and
-are fixed in `Dashboard.tsx` — nothing is auto-placed, so no viewport ever
-reshuffles the cards:
+`/` opens with a status banner (active alerts with *Mute 1h*, a muted state,
+or *All systems normal* with failed units, uptime and last reboot), then these
+panels in order:
 
-| Column | Cards, in order |
+| Row | Panels |
 | --- | --- |
-| Left | uptime · load average + 48h grid · CPU cores · swap · disk I/O · capacity planning · fan + CPU temp |
-| Centre | CPU/GPU/RAM/disk gauges · 24h CPU heatmap · network chart · interfaces + bandwidth · ping/err/conns/ports · monthly bandwidth |
-| Right | alerts log · top processes · SSH sessions · top traffic IPs · firewall |
+| 1 | Key metrics — CPU, memory, disk, network cards with a per-card 1h/6h/24h/7d sparkline and the alert threshold marked on the bar |
+| 2 | Network throughput (range picker, reboot/deploy/restart markers) · Alert log |
+| 3 | Docker containers · Services (failed units) |
+| 4 | CPU & load (per-core bars, 24h CPU and 48h load heatmaps) · Top processes |
+| 5 | Bandwidth by day (30/90 days) · Capacity forecast |
+| 6 | Hardware · Interfaces · Security |
 
-Only how many columns stand side by side changes with the viewport:
+*Customize* (header, or the link under the panels) hides panels per browser,
+with *All / Essentials / Minimal* presets. Rows wrap as the window narrows.
 
-| Viewport | Columns |
-| --- | --- |
-| < 640px | 1 — the three columns stack in order |
-| 640–1023px | 2 — the right column drops below the left |
-| ≥ 1024px | 3, at the design's own 238:472:282 proportions |
-| ≥ 960px **and** ≤ 700px tall | 3, at reduced density |
-
-That last row is the 7-inch kiosk panel (1024x600) as seen on `/` (the
-authenticated dashboard), where every card has to be on screen at once. The
-arrangement there is identical — same columns, same order — and only the
-sizes shrink: type scale, padding, gauge diameter, chart and sparkline
-heights. All of it is one media query in `src/styles/globals.css`, and the
-components carry semantic classes (`t-label`, `dash-card`, `dash-chart`)
-rather than hardcoded sizes, so retuning is a matter of editing that block.
-
-Two things to know before changing it:
-
-- The width trigger is 960px rather than 1024px on purpose. If the cards ever
-  overflow on a 1024px-wide panel a scrollbar appears, dropping the viewport
-  below 1024 — with the trigger at 1024 that would switch the type back up and
-  overflow further, a loop. 960 leaves room for the scrollbar.
-- The per-panel row caps in `Dashboard.tsx` (`MAX_PROCESSES`, `MAX_INTERFACES`
-  and friends) are what bound each card's height. The kiosk layout was checked
-  against a 16-core host with six interfaces and every list full, and clears
-  600px with roughly 28px to spare per column; raising a cap eats into that.
+The sparklines and charts read `/api/history?range=1h|6h|24h|7d` — one-minute
+buckets kept in memory for the short ranges, the persisted hourly buckets for
+24h/7d — and the markers read `/api/events` (reboots, container deploys and
+restarts, kept 30 days in `data/events.json`).
 
 ### `/monitor`'s kiosk layout
 
@@ -141,10 +124,12 @@ opposed to `/` viewed on a phone/laptop over LAN — renders a separate
 Alerts log, top processes, SSH sessions, top traffic IPs, and firewall are
 dropped entirely — they're either list-shaped (better suited to an
 authenticated, scrollable view) or interactive (`ProcessesCard`'s CPU/MEM
-sort toggle), neither of which fits a screen nobody can touch. The same
-960px-width-and-700px-height kiosk trigger and per-card row-cap discipline
-above apply here too; `KioskDashboard.tsx` is the source of truth for this
-layout, the same way `Dashboard.tsx` is for `/`.
+sort toggle), neither of which fits a screen nobody can touch. A media query
+at ≥ 960px wide **and** ≤ 700px tall (the 1024x600 panel) shrinks type,
+padding and chart heights so every card stays on screen; the per-card row caps
+(`MAX_PROCESSES`, `MAX_INTERFACES` and friends in `src/components/dashboard/cards/`)
+bound each card's height. `KioskDashboard.tsx` is the source of truth for this
+layout.
 
 ## Tech stack
 
