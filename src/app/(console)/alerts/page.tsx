@@ -1,165 +1,162 @@
 'use client';
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useMemo, useState } from 'react';
+import Link from 'next/link';
 
-import { ALERT_LEVEL_COLORS } from '@/lib/statusColors';
+import { AlertTimeline } from '@/components/alerts/AlertTimeline';
+import { setMute } from '@/components/alerts/muteApi';
+import { useSystem } from '@/components/providers/SystemDataProvider';
+import { useToast } from '@/components/providers/ToastProvider';
+import { LevelTag } from '@/components/ui/LevelTag';
+import { PageBody } from '@/components/ui/PageBody';
+import { useNow } from '@/hooks/useNow';
+import { usePolled } from '@/hooks/usePolled';
+import { LEVEL_STYLES } from '@/lib/statusColors';
+import { cn } from '@/lib/utils';
 import type { AlertEntry, AlertLevel } from '@/types/system';
+import { formatTimestamp } from '@/utils/timeFormat';
 
-// Alert history view. The dashboard card shows only the most recent alerts and
-// scrolls them away; this reads the full persisted log (/api/alerts) with a
-// level filter, a text search, and a 48h incident timeline strip (#60).
+// Alert history: what is firing now, a 48h timeline, and the full persisted
+// log (/api/alerts) with a level filter and text search.
 
-const LEVELS: AlertLevel[] = ['critical', 'warning', 'info', 'ok'];
+const LOG_URL = '/api/alerts';
+const LOG_POLL_MS = 10_000;
 
-const WINDOW_MS = 48 * 60 * 60 * 1000;
+type Filter = 'all' | AlertLevel;
+
+const CHIPS: { value: Filter; label: string; dot: string }[] = [
+  { value: 'all', label: 'All', dot: 'var(--color-dim)' },
+  { value: 'critical', label: 'Critical', dot: LEVEL_STYLES.critical.dot },
+  { value: 'warning', label: 'Warning', dot: LEVEL_STYLES.warning.dot },
+  { value: 'info', label: 'Info', dot: LEVEL_STYLES.info.dot },
+  { value: 'ok', label: 'Resolved', dot: LEVEL_STYLES.ok.dot }
+];
 
 export default function AlertsPage() {
-  const [alerts, setAlerts] = useState<AlertEntry[]>([]);
-  const [error, setError] = useState<string | null>(null);
-  const [level, setLevel] = useState<AlertLevel | 'all'>('all');
+  const { data } = useSystem();
+  const now = useNow();
+  const flash = useToast();
+  const log = usePolled<{ alerts: AlertEntry[] }>(LOG_URL, LOG_POLL_MS, false)?.alerts ?? null;
+  const [filter, setFilter] = useState<Filter>('all');
   const [query, setQuery] = useState('');
-  // Set on each load (never during render) so the timeline's "now" edge advances
-  // without an impure Date.now() in the render body.
-  const [now, setNow] = useState(() => Date.now());
 
-  useEffect(() => {
-    let cancelled = false;
-    const load = () =>
-      fetch('/api/alerts')
-        .then(response => {
-          if (response.status === 401) {
-            // Full navigation on purpose: leave the gated page so login can set
-            // the auth cookie.
-            // eslint-disable-next-line @next/next/no-location-assign-relative-destination
-            window.location.href = '/login?next=/alerts';
-            return null;
-          }
-          if (!response.ok) throw new Error(`HTTP ${response.status}`);
-          return response.json();
-        })
-        .then(data => {
-          if (!cancelled && data) {
-            setAlerts(Array.isArray(data.alerts) ? data.alerts : []);
-            setNow(Date.now());
-          }
-        })
-        .catch(err => {
-          if (!cancelled) setError(err instanceof Error ? err.message : 'Failed to load');
-        });
-
-    load();
-    const timer = setInterval(load, 10_000);
-    return () => {
-      cancelled = true;
-      clearInterval(timer);
-    };
-  }, []);
-
+  const entries = useMemo(() => log ?? data?.alerts ?? [], [log, data?.alerts]);
+  const counts = useMemo(() => {
+    const result: Record<Filter, number> = { all: entries.length, critical: 0, warning: 0, info: 0, ok: 0 };
+    for (const entry of entries) result[entry.level] += 1;
+    return result;
+  }, [entries]);
   const filtered = useMemo(() => {
     const needle = query.trim().toLowerCase();
-    return alerts.filter(
-      alert =>
-        (level === 'all' || alert.level === level) &&
-        (needle === '' || alert.message.toLowerCase().includes(needle))
+    return entries.filter(
+      entry =>
+        (filter === 'all' || entry.level === filter) &&
+        (!needle || entry.message.toLowerCase().includes(needle))
     );
-  }, [alerts, level, query]);
+  }, [entries, filter, query]);
+
+  if (!data || now === null) return null;
+  const active = data.activeAlerts;
+  const muted = data.mute.globalMutedUntil !== null;
+
+  const mute = async (minutes: number | null) => {
+    const ok = await setMute(minutes);
+    flash(
+      ok
+        ? minutes === null
+          ? 'Notifications unmuted'
+          : 'Notifications muted for 1h'
+        : 'Could not change mute'
+    );
+  };
 
   return (
-    <div className="text-gray-100">
-      <div className="mx-auto max-w-3xl p-4 sm:p-6">
-        {/* 48h incident timeline */}
-        <Timeline alerts={alerts} now={now} />
-
-        {/* Filters */}
-        <div className="mb-4 mt-4 flex flex-wrap items-center gap-2">
-          <button
-            onClick={() => setLevel('all')}
-            className={`t-label rounded px-2 py-1 font-mono uppercase tracking-[0.06em] ${level === 'all' ? 'bg-gray-700 text-gray-100' : 'bg-gray-800 text-gray-400'}`}
-          >
-            all
-          </button>
-          {LEVELS.map(l => (
-            <button
-              key={l}
-              onClick={() => setLevel(l)}
-              className={`t-label rounded px-2 py-1 font-mono uppercase tracking-[0.06em] ${level === l ? 'bg-gray-700' : 'bg-gray-800'}`}
-              style={{ color: ALERT_LEVEL_COLORS[l] }}
-            >
-              {l}
+    <PageBody className="max-w-[1100px]">
+      <section
+        className={cn('rounded-[10px] border bg-card', active.length > 0 ? 'border-crit/30' : 'border-line')}
+      >
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2.5 border-b border-white/5 px-[18px] py-3.5">
+          <h2 className="flex-1 text-[13.5px] font-medium">Active alerts</h2>
+          <Link href="/settings/rules" className="text-xs">
+            Edit thresholds
+          </Link>
+          {muted ? (
+            <button onClick={() => void mute(null)} className="text-xs text-link">
+              Unmute
             </button>
-          ))}
-          <input
-            value={query}
-            onChange={event => setQuery(event.target.value)}
-            placeholder="Search messages…"
-            className="t-body w-full rounded border border-gray-700 bg-gray-900 px-2 py-1 font-mono outline-none transition-colors focus:border-[#38bdf8] focus:ring-1 focus:ring-[#38bdf8]/40 sm:ml-auto sm:w-48"
-          />
-        </div>
-
-        {error && <div className="t-label mb-3 text-red-400">Could not load alerts: {error}</div>}
-
-        <ul className="divide-y divide-gray-700 rounded-lg border border-gray-700 bg-gray-800">
-          {filtered.length === 0 ? (
-            <li className="t-body p-4 text-center text-gray-500">No alerts match.</li>
           ) : (
-            filtered.map(alert => (
-              <li key={alert.id} className="flex items-center gap-3 p-3">
-                <span
-                  className="h-2 w-2 shrink-0 rounded-full"
-                  style={{ backgroundColor: ALERT_LEVEL_COLORS[alert.level] }}
-                  aria-hidden
-                />
-                <span className="t-body flex-1">{alert.message}</span>
-                <time className="t-label shrink-0 font-mono text-gray-500" dateTime={alert.at}>
-                  {new Date(alert.at).toLocaleString()}
-                </time>
-              </li>
-            ))
+            <button onClick={() => void mute(60)} className="text-xs text-fg-3 hover:text-fg">
+              Mute 1h
+            </button>
           )}
-        </ul>
+        </div>
+        {active.length === 0 ? (
+          <p className="px-[18px] py-4 text-[12.5px] text-dim">
+            No rules are firing. All metrics are within their thresholds.
+          </p>
+        ) : (
+          active.map(alert => (
+            <div
+              key={alert.key}
+              className="grid grid-cols-[auto_1fr_auto] items-center gap-3 border-t border-line-soft px-[18px] py-[11px] first:border-t-0"
+            >
+              <LevelTag level={alert.level} />
+              <span className="text-[13px] text-fg">{alert.message}</span>
+              <span className="font-mono text-[11px] text-subtle">
+                {alert.key} · since {formatTimestamp(new Date(alert.since).getTime()).slice(5, 16)}
+              </span>
+            </div>
+          ))
+        )}
+      </section>
+
+      <AlertTimeline alerts={entries} now={now} />
+
+      <div className="flex flex-wrap items-center gap-2">
+        {CHIPS.map(chip => (
+          <button
+            key={chip.value}
+            onClick={() => setFilter(chip.value)}
+            aria-pressed={filter === chip.value}
+            className={cn(
+              'flex items-center gap-[7px] rounded-md border px-[11px] py-[5px] text-xs text-fg-2',
+              filter === chip.value ? 'border-white/20 bg-track' : 'border-line'
+            )}
+          >
+            <span className="h-1.5 w-1.5 rounded-full" style={{ background: chip.dot }} />
+            {chip.label}
+            <span className="font-mono text-[11px] text-subtle">{counts[chip.value]}</span>
+          </button>
+        ))}
+        <input
+          value={query}
+          onChange={event => setQuery(event.target.value)}
+          placeholder="Search messages…"
+          aria-label="Search alert messages"
+          className="ml-auto w-60 max-w-full rounded-[7px] border border-line-strong bg-sidebar px-2.5 py-[7px] text-[12.5px] outline-none focus:border-accent"
+        />
       </div>
-    </div>
+
+      <section className="overflow-hidden rounded-[10px] border border-line bg-card">
+        {filtered.length === 0 ? (
+          <p className="px-[18px] py-5 text-center text-[12.5px] text-subtle">No alerts match.</p>
+        ) : (
+          filtered.map(entry => (
+            <div
+              key={entry.id}
+              className="grid grid-cols-[auto_1fr_auto] items-center gap-3 border-b border-line-soft px-[18px] py-[11px]"
+            >
+              <span className="min-w-[34px] text-center">
+                <LevelTag level={entry.level} />
+              </span>
+              <span className="text-[12.5px] text-fg-2">{entry.message}</span>
+              <span className="font-mono text-[11.5px] whitespace-nowrap text-subtle">
+                {formatTimestamp(new Date(entry.at).getTime())}
+              </span>
+            </div>
+          ))
+        )}
+      </section>
+    </PageBody>
   );
 }
-
-const Timeline: React.FC<{ alerts: AlertEntry[]; now: number }> = ({ alerts, now }) => {
-  const start = now - WINDOW_MS;
-  const marks = alerts
-    .map(alert => ({ alert, t: new Date(alert.at).getTime() }))
-    .filter(({ t }) => t >= start && t <= now);
-
-  return (
-    <div className="rounded-lg border border-gray-700 bg-gray-800 p-3">
-      <div className="t-micro mb-1 flex justify-between font-mono text-gray-500">
-        <span>48h ago</span>
-        <span>now</span>
-      </div>
-      <div className="relative h-6 w-full rounded bg-gray-900">
-        {marks.map(({ alert, t }) => {
-          const left = ((t - start) / WINDOW_MS) * 100;
-          return (
-            <span
-              key={alert.id}
-              className="absolute top-1/2 h-3 w-1 -translate-y-1/2"
-              style={{ left: `${left}%` }}
-            >
-              {/* .dash-tip sets position:relative, which would fight the parent's
-                  absolute positioning if applied there directly — nest it instead. */}
-              <span
-                className="dash-tip block h-full w-full rounded-sm"
-                tabIndex={-1}
-                style={{ backgroundColor: ALERT_LEVEL_COLORS[alert.level] }}
-                data-tip={`${new Date(alert.at).toLocaleString()} — ${alert.message}`}
-              />
-            </span>
-          );
-        })}
-        {marks.length === 0 && (
-          <span className="t-micro absolute inset-0 flex items-center justify-center text-gray-600">
-            no incidents in the last 48h
-          </span>
-        )}
-      </div>
-    </div>
-  );
-};

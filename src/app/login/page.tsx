@@ -3,7 +3,7 @@
 import React, { Suspense, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 
-import { BrandLine, TerminalScreen, TerminalWindow } from '@/components/common/TerminalWindow';
+import { Server } from 'lucide-react';
 
 // Minimal login for deployments that gate the API (DASHBOARD_PASSWORD, or
 // API_AUTH_TOKEN). Posts the password to /api/auth/login, which sets the HttpOnly
@@ -46,31 +46,36 @@ function LoginForm() {
   }
 
   return (
-    <form onSubmit={onSubmit} className="flex flex-col gap-4">
-      <BrandLine subtitle="Enter the dashboard password to continue." />
+    <form
+      onSubmit={onSubmit}
+      className="box-border flex w-full max-w-[380px] flex-col gap-[18px] rounded-xl border border-line-strong bg-card px-7 py-[30px]"
+    >
+      <div className="flex items-center gap-2.5">
+        <div className="flex h-[30px] w-[30px] items-center justify-center rounded-lg border border-accent/35 bg-brand-tile">
+          <Server size={16} className="text-accent" />
+        </div>
+        <span className="text-[15px] font-semibold">ServerMonitor</span>
+      </div>
+      <div className="flex flex-col gap-1.5">
+        <h1 className="text-xl font-semibold tracking-[-0.015em]">Sign in</h1>
+        <p className="text-[13px] text-muted">Enter the dashboard password to continue.</p>
+      </div>
       <input
         type="password"
-        autoFocus
         value={password}
         onChange={event => setPassword(event.target.value)}
         placeholder="Password"
         aria-label="Dashboard password"
-        className="w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-2 font-mono text-sm text-gray-100 outline-none transition-colors focus:border-[#38bdf8] focus:ring-1 focus:ring-[#38bdf8]/40"
+        autoFocus
+        autoComplete="current-password"
+        className="rounded-lg border border-white/10 bg-sidebar px-3 py-2.5 font-mono text-[13px] outline-none focus:border-accent"
       />
-      {error && (
-        <div className="flex items-center gap-1.5 text-xs text-red-400">
-          <span aria-hidden>▸</span>
-          {error}
-        </div>
-      )}
+      {error && <span className="text-[12.5px] text-crit-fg">{error}</span>}
       <button
         type="submit"
-        disabled={submitting || password.length === 0}
-        className="flex items-center justify-center gap-2 rounded-md bg-[#38bdf8] px-3 py-2 text-sm font-medium text-gray-900 transition-colors hover:bg-[#7dd3fc] disabled:opacity-50 disabled:hover:bg-[#38bdf8]"
+        disabled={submitting || password === ''}
+        className="rounded-lg bg-accent px-3 py-2.5 text-[13px] font-medium text-canvas disabled:opacity-60"
       >
-        {submitting && (
-          <span className="h-1.5 w-1.5 animate-[pulseDot_1s_ease-in-out_infinite] rounded-full bg-gray-900" />
-        )}
         {submitting ? 'Signing in…' : 'Sign in'}
       </button>
     </form>
@@ -79,12 +84,10 @@ function LoginForm() {
 
 export default function LoginPage() {
   return (
-    <TerminalScreen>
-      <TerminalWindow>
-        <Suspense fallback={null}>
-          <LoginForm />
-        </Suspense>
-      </TerminalWindow>
-    </TerminalScreen>
+    <main className="flex min-h-screen items-center justify-center bg-canvas p-6">
+      <Suspense fallback={null}>
+        <LoginForm />
+      </Suspense>
+    </main>
   );
 }

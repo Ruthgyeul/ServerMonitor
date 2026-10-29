@@ -37,13 +37,14 @@ that aggregates several nodes on one screen.
   reconnaissance data (no IPs, process names, ports, alert messages, GPU model
   name, or core count) and stays reachable even when `/api/system` is
   token-gated.
-- **Kiosk & wall-panel touches** — optional desktop notifications + a beep on a
-  new critical alert (toggle in the corner), a one-click JSON snapshot export,
-  gauge tiles that pulse when a metric is critical, `?rotate=<seconds>` to
-  auto-cycle between the dashboard and cluster views, and a click-through /
-  deep-linkable (`/cluster?node=<name>`) node detail modal on the cluster view.
-- **Kiosk view** (`/monitor`) — the same live dashboard with no controls or tab
-  effects, meant for a screen physically attached to this host. With
+- **Wall-panel touches** — optional desktop notifications + a beep on a new
+  critical alert (switch in the bell menu), a one-click JSON snapshot export,
+  and a click-through / deep-linkable (`/cluster?node=<name>`) node detail
+  dialog on the cluster view.
+- **Kiosk view** (`/monitor`, or the header's *Kiosk* button) — a 1280×720
+  stage scaled to the screen, alternating between this host and the cluster
+  (`?rotate=<seconds>`, default 30, `0` = off), meant for a screen physically
+  attached to this host. With
   `KIOSK_BYPASS_ENABLED` set, it (and every other route) skips
   `DASHBOARD_PASSWORD`/`API_AUTH_TOKEN` for requests that genuinely arrive over
   `127.0.0.1` — see [Securing the API](#securing-the-api).
@@ -55,10 +56,11 @@ that aggregates several nodes on one screen.
 - **Monthly bandwidth** (`/api/bandwidth`) — daily download/upload totals
   derived from the network interface's cumulative counters, kept for 90 days,
   for tracking usage against an ISP data cap.
-- **Installable (PWA)** — a manifest + minimal service worker let the
-  dashboard be added to a phone/tablet home screen. The service worker does no
-  caching (this is a live-data app), so it only exists to satisfy browsers'
-  install criteria.
+- **Installable (PWA)** — *Install as an app* in the sidebar (or the
+  browser's own install entry) adds the console to a phone/desktop. The
+  service worker caches only the page shell (network-first); live data never
+  comes from a cache. The last sample is kept in the browser, so the app opened
+  offline shows it under the offline banner and reconnects on its own.
 - **Kiosk launch script** — boots the dashboard full-screen in Firefox for
   a dedicated status display.
 
@@ -66,7 +68,8 @@ that aggregates several nodes on one screen.
 
 ### Console shell
 
-Every authenticated page (`/`, `/cluster`, `/alerts`, `/alerts/settings`)
+Every authenticated page (`/`, `/cluster`, `/alerts`, `/settings/rules`,
+`/status-preview`)
 renders inside one console frame (`src/app/(console)/layout.tsx`):
 
 - **Sidebar** — Monitor / Configure navigation with live badges (active alert
@@ -109,27 +112,20 @@ buckets kept in memory for the short ranges, the persisted hourly buckets for
 24h/7d — and the markers read `/api/events` (reboots, container deploys and
 restarts, kept 30 days in `data/events.json`).
 
-### `/monitor`'s kiosk layout
+### `/monitor` kiosk
 
-`/monitor` — the no-interaction kiosk route meant for the panel itself, as
-opposed to `/` viewed on a phone/laptop over LAN — renders a separate
-`KioskDashboard` component with its own trimmed, 2-column layout
-(`.kiosk-layout`/`.kiosk-col` in `globals.css`, untouched by anything above):
+`/monitor` draws a fixed 1280×720 stage scaled to fit the window (a 1024×600
+panel shows it at 0.8×), with no hover-only interactions:
 
-| Column | Cards, in order |
-| --- | --- |
-| Left | uptime · load average + 48h grid · CPU cores · fan + CPU temp · ping/err/conns/ports |
-| Right | CPU/GPU/RAM/disk gauges · network chart · interfaces + bandwidth · monthly bandwidth |
+- **Host view** — CPU, memory, disk and CPU-temperature tiles, a 60-second
+  network chart, and a strip with uptime, load, ping, containers, failed units
+  and active alerts. An alert bar appears above it while anything is firing.
+- **Cluster view** — one tile per node with CPU/RAM/disk bars, temperature and
+  ping, or the reason it's offline.
 
-Alerts log, top processes, SSH sessions, top traffic IPs, and firewall are
-dropped entirely — they're either list-shaped (better suited to an
-authenticated, scrollable view) or interactive (`ProcessesCard`'s CPU/MEM
-sort toggle), neither of which fits a screen nobody can touch. A media query
-at ≥ 960px wide **and** ≤ 700px tall (the 1024x600 panel) shrinks type,
-padding and chart heights so every card stays on screen; the per-card row caps
-(`MAX_PROCESSES`, `MAX_INTERFACES` and friends in `src/components/dashboard/cards/`)
-bound each card's height. `KioskDashboard.tsx` is the source of truth for this
-layout.
+The header shows the countdown to the next view, the rotation choice
+(10s/30s/60s/off), *Switch*, the clock and *Exit*. `src/components/kiosk/KioskScreen.tsx`
+is the source of truth for this layout.
 
 ## Tech stack
 
@@ -316,7 +312,7 @@ that departs sharply from its own recent baseline even under the absolute thresh
 
 Every alert shows on the dashboard's alert card and is persisted to
 `data/alerts.json`. The **`/alerts`** page is the full history with a level
-filter, text search, and a 48-hour incident timeline. **`/alerts/settings`**
+filter, text search, and a 48-hour incident timeline. **`/settings/rules`**
 lets you tune any threshold from the browser — changes apply on the next tick,
 no restart needed (they're stored in `data/alert-overrides.json` and take
 priority over the matching `.env` value, which stays the default).

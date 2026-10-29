@@ -2,7 +2,8 @@
 
 import { useCallback, useSyncExternalStore } from 'react';
 
-// Shared polling for `{ success, data }` JSON endpoints. Every component asking
+// Shared polling for JSON endpoints — `{ success, data }` envelopes by default,
+// or the raw body for the older routes (`envelope: false`). Every component asking
 // for the same url shares one request loop (so four KPI cards on the same range
 // cost one fetch), which starts with the first subscriber and stops with the
 // last. Keeps the last good value across failed polls; null until the first
@@ -14,6 +15,7 @@ interface Envelope<T> {
 }
 
 interface Entry {
+  envelope: boolean;
   data: unknown;
   listeners: Set<() => void>;
   timer: ReturnType<typeof setInterval> | null;
@@ -21,10 +23,10 @@ interface Entry {
 
 const entries = new Map<string, Entry>();
 
-function entryFor(url: string): Entry {
+function entryFor(url: string, envelope: boolean): Entry {
   let entry = entries.get(url);
   if (!entry) {
-    entry = { data: null, listeners: new Set(), timer: null };
+    entry = { envelope, data: null, listeners: new Set(), timer: null };
     entries.set(url, entry);
   }
   return entry;
@@ -32,10 +34,16 @@ function entryFor(url: string): Entry {
 
 function load(url: string, entry: Entry): void {
   fetch(url, { cache: 'no-store' })
-    .then(response => (response.ok ? (response.json() as Promise<Envelope<unknown>>) : null))
+    .then(response => (response.ok ? (response.json() as Promise<unknown>) : null))
     .then(body => {
-      if (!body?.success || body.data === undefined) return;
-      entry.data = body.data;
+      if (body === null) return;
+      if (entry.envelope) {
+        const wrapped = body as Envelope<unknown>;
+        if (!wrapped.success || wrapped.data === undefined) return;
+        entry.data = wrapped.data;
+      } else {
+        entry.data = body;
+      }
       entry.listeners.forEach(notify => notify());
     })
     .catch(() => {
@@ -49,11 +57,11 @@ export function refreshPolled(url: string): void {
   if (entry) load(url, entry);
 }
 
-export function usePolled<T>(url: string | null, intervalMs: number): T | null {
+export function usePolled<T>(url: string | null, intervalMs: number, envelope = true): T | null {
   const subscribe = useCallback(
     (notify: () => void) => {
       if (url === null) return () => {};
-      const entry = entryFor(url);
+      const entry = entryFor(url, envelope);
       entry.listeners.add(notify);
       if (entry.timer === null) {
         load(url, entry);
@@ -67,7 +75,7 @@ export function usePolled<T>(url: string | null, intervalMs: number): T | null {
         }
       };
     },
-    [url, intervalMs]
+    [url, intervalMs, envelope]
   );
 
   return useSyncExternalStore(

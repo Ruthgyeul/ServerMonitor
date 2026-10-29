@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { areaPath, indexAt, linePath, niceMax } from '@/components/charts/paths';
+import { areaPath, indexAt, linePath, niceMax, padToWindow } from '@/components/charts/paths';
 
 const box = { x: 0, y: 0, width: 100, height: 10 };
 
@@ -42,5 +42,12 @@ describe('indexAt', () => {
     expect(indexAt(0.5, 3)).toBe(1);
     expect(indexAt(2, 3)).toBe(2);
     expect(indexAt(0.4, 1)).toBe(0);
+  });
+});
+
+describe('padToWindow', () => {
+  it('right-aligns a short series and trims a long one', () => {
+    expect(padToWindow([1, 2], 4)).toEqual([null, null, 1, 2]);
+    expect(padToWindow([1, 2, 3, 4, 5], 3)).toEqual([3, 4, 5]);
   });
 });

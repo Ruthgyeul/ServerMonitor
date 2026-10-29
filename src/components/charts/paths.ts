@@ -61,3 +61,10 @@ export function indexAt(fraction: number, length: number): number {
   if (length <= 1) return 0;
   return Math.round(Math.min(1, Math.max(0, fraction)) * (length - 1));
 }
+
+// Left-pad a short series with gaps so it fills only the right end of a fixed
+// window (a chart that has collected 4 of 60 samples draws 4 points at "now").
+export function padToWindow(values: (number | null)[], length: number): (number | null)[] {
+  if (values.length >= length) return values.slice(-length);
+  return [...Array<null>(length - values.length).fill(null), ...values];
+}

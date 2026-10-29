@@ -1,35 +1,31 @@
 'use client';
 
 import { useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 
-import { TerminalScreen } from '@/components/common/TerminalWindow';
-import { KioskDashboard } from '@/components/dashboard/KioskDashboard';
-import { StartupState } from '@/components/dashboard/StartupState';
+import { KioskScreen } from '@/components/kiosk/KioskScreen';
 import { useNow } from '@/hooks/useNow';
 import { useSystemData } from '@/hooks/useSystemData';
-import { useKioskRotate } from '@/hooks/useKioskRotate';
 
-const HOME_PATH = '/monitor';
+// Wall display for the 7" panel wired to this machine (and the console's Kiosk
+// button). Point the kiosk browser (scripts/run.sh's KIOSK_URL) at this route
+// through the loopback bypass port (KIOSK_BYPASS_ENABLED/KIOSK_BYPASS_PORT,
+// see server.js + src/utils/apiAuth.ts) so it shows live data with no login.
+// ?rotate=<seconds> sets the host↔cluster rotation (default 30s, 0 = off).
 
-// Dedicated kiosk view for the 7" display wired directly to this machine.
-// Point the kiosk browser (scripts/run.sh's KIOSK_URL) at this route through
-// the loopback bypass port (KIOSK_BYPASS_ENABLED/KIOSK_BYPASS_PORT, see
-// server.js + src/utils/apiAuth.ts) so it shows live data with no login.
-//
-// Renders KioskDashboard, a trimmed 11-card set (uptime/load/cores/fan/temp/
-// gauges/network/interfaces/bandwidth/ping strip/monthly bandwidth) in its
-// own 2-column layout — not the full 17-card Dashboard the authenticated `/`
-// page uses. No DashboardControls (notification toggle/export) or tab
-// title/favicon alert effects here — there's no visible tab and no one to
-// click a toggle on an unattended kiosk screen. authRequired still redirects
-// to /login as a fallback for when the bypass isn't configured or this page
-// is reached through the network-facing port instead.
+const DEFAULT_ROTATE_SECONDS = 30;
+
+function rotateFromUrl(): number {
+  if (typeof window === 'undefined') return DEFAULT_ROTATE_SECONDS;
+  const raw = new URLSearchParams(window.location.search).get('rotate');
+  const seconds = raw === null ? DEFAULT_ROTATE_SECONDS : Number(raw);
+  return Number.isFinite(seconds) && seconds >= 0 ? Math.round(seconds) : DEFAULT_ROTATE_SECONDS;
+}
+
 export default function MonitorPage() {
-  const { data, error, connected, lastUpdate, networkHistory, authRequired } = useSystemData();
+  const router = useRouter();
+  const { data, error, networkHistory, authRequired } = useSystemData();
   const now = useNow();
-  // Declares /monitor as the rotation's home so /cluster's own rotation sends
-  // the cycle back here instead of the ordinary dashboard (`/`).
-  useKioskRotate('/cluster', HOME_PATH);
 
   useEffect(() => {
     if (authRequired) {
@@ -39,33 +35,31 @@ export default function MonitorPage() {
   }, [authRequired]);
 
   useEffect(() => {
-    const wakeLock = async () => {
-      try {
-        if ('wakeLock' in navigator) {
-          await navigator.wakeLock.request('screen');
-        }
-      } catch (err) {
-        console.log('Wake lock failed:', err);
-      }
-    };
-    wakeLock();
+    // Keep the panel awake; refused when the tab is hidden, which is fine.
+    if (!('wakeLock' in navigator)) return;
+    navigator.wakeLock.request('screen').catch(() => {});
   }, []);
 
-  if (data === null) {
+  const exit = () => {
+    if (document.fullscreenElement) void document.exitFullscreen().catch(() => {});
+    router.push('/');
+  };
+
+  if (data === null || now === null) {
     return (
-      <TerminalScreen>
-        <StartupState error={error} />
-      </TerminalScreen>
+      <main className="flex min-h-screen items-center justify-center bg-canvas text-sm text-muted">
+        {error ? `Cannot reach the server — ${error}` : 'Connecting…'}
+      </main>
     );
   }
 
   return (
-    <KioskDashboard
+    <KioskScreen
       data={data}
-      connected={connected}
-      lastUpdate={lastUpdate}
-      now={now}
       networkHistory={networkHistory}
+      now={now}
+      initialEvery={rotateFromUrl()}
+      onExit={exit}
     />
   );
 }

@@ -46,25 +46,3 @@ export const PALETTE = {
   critFg: '#f6b0ad',
   infoFg: '#a9cdf6'
 } as const;
-
-// Kept for the legacy terminal-themed cards until they are rebuilt on the new
-// design (Phase 1/2). Values now point at the console palette so those cards
-// already pick up the new colors.
-export const TERM = {
-  bg: PALETTE.canvas,
-  panel: PALETTE.card,
-  inset: PALETTE.inset,
-  card: PALETTE.card,
-  border: PALETTE.lineStrong,
-  text: PALETTE.text,
-  subtext: PALETTE.text2,
-  muted: PALETTE.muted,
-  faint: PALETTE.subtle,
-  fainter: PALETTE.divider,
-  accent: PALETTE.accent,
-  green: PALETTE.ok,
-  yellow: PALETTE.warn,
-  red: PALETTE.crit,
-  pink: '#f472b6',
-  lime: '#a3e635'
-} as const;

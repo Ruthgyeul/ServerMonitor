@@ -4,25 +4,13 @@ import React from 'react';
 import Link from 'next/link';
 import { CircleCheck, TriangleAlert } from 'lucide-react';
 
+import { setMute } from '@/components/alerts/muteApi';
 import { useToast } from '@/components/providers/ToastProvider';
 import type { DashboardData } from '@/utils/dashboardData';
 import { formatHourMinute, formatShortStamp } from '@/utils/timeFormat';
 
 // One-line state of the host above the overview panels: active alerts (with a
 // quick mute), muted alerts, or "all systems normal" with key facts.
-
-async function setMute(minutes: number | null): Promise<boolean> {
-  try {
-    const response = await fetch('/api/alerts/mute', {
-      method: minutes === null ? 'DELETE' : 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: minutes === null ? undefined : JSON.stringify({ minutes })
-    });
-    return response.ok;
-  } catch {
-    return false;
-  }
-}
 
 const bar = 'flex flex-wrap items-center gap-x-5 gap-y-2.5 rounded-lg border px-4 py-[11px]';
 
