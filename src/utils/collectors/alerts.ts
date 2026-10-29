@@ -832,3 +832,10 @@ export function getAlertTiming(at: number = Date.now()): AlertTiming {
     suppressedSpikes: suppressedAt.length
   };
 }
+
+// Audit trail for control actions (src/utils/control.ts): logged on screen and
+// in the persisted history, never sent to the webhook.
+export function logControlAction(message: string, ok: boolean, at: number = Date.now()): void {
+  ensureLoaded();
+  push(ok ? 'info' : 'warning', `Control: ${message}`, at, false, 'control');
+}

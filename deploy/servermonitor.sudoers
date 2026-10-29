@@ -1,0 +1,21 @@
+# /etc/sudoers.d/servermonitor — lets the ServerMonitor service user run ONLY
+# the systemctl commands its opt-in control actions need (CONTROL_ENABLED).
+# Install with: sudo visudo -cf deploy/servermonitor.sudoers && \
+#   sudo install -m 0440 deploy/servermonitor.sudoers /etc/sudoers.d/servermonitor
+#
+# The bundled servermonitor.service sets NoNewPrivileges=true, which blocks
+# sudo; relax it with a drop-in (systemctl edit servermonitor →
+# [Service] NoNewPrivileges=false) if you use the unit/job actions.
+#
+# Replace `servermonitor` with the service user and list exactly the units
+# you also put in CONTROL_ALLOWLIST_UNITS. Arguments must match exactly, so
+# each allowed command is spelled out; nothing else becomes runnable.
+
+# Services page / failed-unit "Restart"
+servermonitor ALL=(root) NOPASSWD: /usr/bin/systemctl restart nginx.service
+servermonitor ALL=(root) NOPASSWD: /usr/bin/systemctl restart fail2ban.service
+
+# Jobs page "Run now" (starts the timer's service) and Enable / Disable
+servermonitor ALL=(root) NOPASSWD: /usr/bin/systemctl start --no-block restic-backup.service
+servermonitor ALL=(root) NOPASSWD: /usr/bin/systemctl enable --now restic-backup.timer
+servermonitor ALL=(root) NOPASSWD: /usr/bin/systemctl disable --now restic-backup.timer

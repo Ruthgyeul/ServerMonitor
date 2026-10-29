@@ -3,6 +3,8 @@
 import React, { useMemo, useState } from 'react';
 import { Boxes } from 'lucide-react';
 
+import { ControlButton } from '@/components/control/ControlButton';
+import { permissionFor, sendControl, unitUrl, useControlStatus } from '@/components/control/controlApi';
 import { matchesFilter, sortUnits, unitColors, type UnitFilter } from '@/components/services/unitState';
 import { useShellActions } from '@/components/shell/ShellActions';
 import { EmptyState } from '@/components/ui/EmptyState';
@@ -16,12 +18,12 @@ import { cn } from '@/lib/utils';
 import type { ServiceUnitList } from '@/types/system';
 import { formatAge } from '@/utils/timeFormat';
 
-// Every loaded systemd service: counts, a running/stopped filter, search and
-// per-unit logs.
+// Every loaded systemd service: counts, a running/stopped filter, search,
+// per-unit logs and (when control actions are on) restart.
 
 const UNITS_URL = '/api/services';
 const POLL_MS = 10_000;
-const COLUMNS = 'grid grid-cols-[minmax(0,1.2fr)_minmax(0,1.8fr)_90px_90px_90px_80px] gap-3';
+const COLUMNS = 'grid grid-cols-[minmax(0,1.2fr)_minmax(0,1.8fr)_90px_90px_90px_130px] gap-3';
 
 const FILTERS = [
   { value: 'all', label: 'All' },
@@ -33,6 +35,7 @@ export default function ServicesPage() {
   const list = usePolled<ServiceUnitList>(UNITS_URL, POLL_MS);
   const now = useNow();
   const { openLogs } = useShellActions();
+  const control = useControlStatus();
   const [filter, setFilter] = useState<UnitFilter>('all');
   const [query, setQuery] = useState('');
 
@@ -148,6 +151,18 @@ export default function ServicesPage() {
                       >
                         Logs
                       </button>
+                      <ControlButton
+                        label="Restart"
+                        permission={permissionFor(control, 'unit', unit.name)}
+                        run={() => sendControl(unitUrl(unit.name), { action: 'restart' })}
+                        refresh={[UNITS_URL]}
+                        confirm={{
+                          title: `Restart ${unit.name}?`,
+                          body: `systemctl restart ${unit.name} — the service is briefly unavailable while it restarts.`,
+                          confirmLabel: 'Restart'
+                        }}
+                        className="py-[3px]"
+                      />
                     </span>
                   </div>
                 );

@@ -57,6 +57,9 @@ const handle = app.getRequestHandler();
 const PORT = Number(process.env.PORT) || 3000;
 const HOSTNAME = process.env.HOSTNAME || '0.0.0.0';
 const LOOPBACK_HEADER = 'x-internal-loopback';
+// The socket's peer address, for the control-action CIDR check
+// (src/utils/control.ts). Always overwritten here, so a client can't supply it.
+const PEER_HEADER = 'x-servermonitor-peer';
 const BYPASS_ENABLED = /^(1|true|yes)$/i.test(process.env.KIOSK_BYPASS_ENABLED ?? '');
 const BYPASS_PORT = Number(process.env.KIOSK_BYPASS_PORT) || 3001;
 
@@ -67,6 +70,7 @@ app.prepare().then(() => {
   // the header themselves.
   createServer((req, res) => {
     delete req.headers[LOOPBACK_HEADER];
+    req.headers[PEER_HEADER] = req.socket.remoteAddress ?? '';
     handle(req, res);
   }).listen(PORT, HOSTNAME, () => {
     console.log(`> Ready on http://${HOSTNAME}:${PORT}`);
@@ -75,6 +79,7 @@ app.prepare().then(() => {
   if (BYPASS_ENABLED && BYPASS_PORT !== PORT) {
     createServer((req, res) => {
       req.headers[LOOPBACK_HEADER] = '1';
+      req.headers[PEER_HEADER] = req.socket.remoteAddress ?? '';
       handle(req, res);
     }).listen(BYPASS_PORT, '127.0.0.1', () => {
       console.log(`> Kiosk loopback bypass on http://127.0.0.1:${BYPASS_PORT} (local-only, no password)`);
