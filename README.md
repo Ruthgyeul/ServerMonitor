@@ -26,6 +26,18 @@ that aggregates several nodes on one screen.
   - alert log, top processes, SSH sessions, top traffic peers, firewall state
   - keeps the last known values on screen when the stream drops, and says so
     in the header instead of blanking the display
+- **Services** (`/services`) — every loaded systemd service with its state,
+  sub-state and how long it has been up, a running/stopped filter, search, and
+  per-unit logs (`journalctl -u`) in a side drawer with level filter, follow
+  and download.
+- **Docker** (`/docker`) — containers with live CPU/memory/network, an
+  inspector (ports, networks, mounts, restart policy, health, command, memory
+  limit) and container logs, plus images, volumes and networks with what uses
+  them, and Docker's disk usage with what pruning would reclaim.
+- **Compare** (`/compare`) — CPU, memory, disk, network or load for today,
+  this week or this month against the previous period: average, 95th
+  percentile and peak with the change, an overlaid chart, and per-block
+  averages. Hourly history is kept for 62 days for this.
 - **Cluster view** (`/cluster`) — a compact grid that shows multiple
   ServerMonitor instances (e.g. an x86 server plus several Raspberry Pi
   nodes) side by side. The browser polls a single same-origin endpoint
@@ -68,9 +80,8 @@ that aggregates several nodes on one screen.
 
 ### Console shell
 
-Every authenticated page (`/`, `/cluster`, `/alerts`, `/settings/rules`,
-`/status-preview`)
-renders inside one console frame (`src/app/(console)/layout.tsx`):
+Every authenticated page (`/`, `/compare`, `/cluster`, `/docker`, `/services`,
+`/alerts`, `/settings/rules`, `/status-preview`) renders inside one console frame (`src/app/(console)/layout.tsx`):
 
 - **Sidebar** — Monitor / Configure navigation with live badges (active alert
   count), an *Install as an app* card, and the host block (hostname, address,
@@ -157,6 +168,9 @@ missing. A few need more than `/proc` to show real numbers:
 | GPU usage/temperature | an AMD card (`gpu_busy_percent` in sysfs) or `nvidia-smi`. Intel iGPUs have no percentage to read, so they stay `N/A`. |
 | Top traffic IPs (in bytes) | `nf_conntrack` with `net.netfilter.nf_conntrack_acct=1`. Without it the panel ranks peers by open connections instead. |
 | Firewall blocked attempts | read access to the kernel journal (usually membership in `systemd-journal` or `adm`). |
+| Services page | `systemctl` (systemd 247+ for the "since" column). |
+| Unit logs | read access to the journal (`systemd-journal` or `adm`). |
+| Docker page, container logs | the `docker` CLI and access to the Docker socket (the `docker` group, or the socket mounted into the container). |
 | Last reboot reason | readable `/var/log/wtmp` and a `last` binary; reports whether the previous shutdown was clean. |
 | SSH sessions | detected from sshd session processes (`/proc/<pid>/comm` + cmdline) and established connections on the SSH port(s), so it works without utmp and catches PTY-less sessions (scp/sftp). The remote IP is filled in from the socket when `/proc/<pid>/fd` is readable (own user, or root); otherwise it may read `—`. `who` is merged in as a fallback. Set `SSH_PORTS` if sshd listens somewhere other than 22 and can't read `sshd_config`. |
 

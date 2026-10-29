@@ -1,4 +1,5 @@
 import React from 'react';
+import Link from 'next/link';
 import { Container } from 'lucide-react';
 
 import { EmptyState } from '@/components/ui/EmptyState';
@@ -19,12 +20,17 @@ export function DockerPanel({ docker }: { docker: DockerInfo }) {
       className="flex-[2_1_560px]"
       title="Docker containers"
       actions={
-        docker.available && (
-          <span className="font-mono text-xs text-muted">
-            <span className="text-ok-fg">{docker.running}</span> / {docker.total} up ·{' '}
-            {formatRate(docker.netRxRate + docker.netTxRate)}
-          </span>
-        )
+        <>
+          {docker.available && (
+            <span className="font-mono text-xs text-muted">
+              <span className="text-ok-fg">{docker.running}</span> / {docker.total} up ·{' '}
+              {formatRate(docker.netRxRate + docker.netTxRate)}
+            </span>
+          )}
+          <Link href="/docker" className="text-xs">
+            Manage
+          </Link>
+        </>
       }
     >
       {!docker.available || docker.containers.length === 0 ? (

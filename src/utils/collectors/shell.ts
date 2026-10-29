@@ -1,10 +1,11 @@
-import { exec } from 'child_process';
+import { exec, execFile } from 'child_process';
 import { promisify } from 'util';
 import { readFile } from 'fs/promises';
 
 import { logger } from '@/utils/logger';
 
 const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
 
 // `ip`, `sensors`, `ps`, etc. are often installed in /usr/sbin or /sbin, but a
 // systemd/pm2 service running as a non-root user has those paths missing from
@@ -19,6 +20,31 @@ export const EXEC_ENV = {
 export async function run(command: string, timeout = 5000): Promise<string> {
   const { stdout } = await execAsync(command, { env: EXEC_ENV, timeout });
   return stdout.trim();
+}
+
+// Like run(), but without a shell: the arguments go to the program verbatim,
+// so values that came from outside (unit or container names) can never be
+// interpreted as shell syntax. Callers still validate names before passing them.
+export async function runArgs(
+  file: string,
+  args: string[],
+  timeout = 5000,
+  maxBuffer = 4 * 1024 * 1024
+): Promise<string> {
+  const { stdout } = await execFileAsync(file, args, { env: EXEC_ENV, timeout, maxBuffer });
+  return stdout.trim();
+}
+
+// runArgs() for programs that write part of their output to stderr (docker
+// logs replays a container's stderr there): both streams, kept separate.
+export async function runArgsBoth(
+  file: string,
+  args: string[],
+  timeout = 5000,
+  maxBuffer = 4 * 1024 * 1024
+): Promise<{ stdout: string; stderr: string }> {
+  const { stdout, stderr } = await execFileAsync(file, args, { env: EXEC_ENV, timeout, maxBuffer });
+  return { stdout, stderr };
 }
 
 export async function readSys(filePath: string): Promise<string | null> {
