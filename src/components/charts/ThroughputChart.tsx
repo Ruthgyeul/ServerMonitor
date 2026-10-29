@@ -25,8 +25,11 @@ interface ThroughputChartProps {
   unit: string;
 }
 
-const fmt = (value: number | null | undefined) =>
-  value === null || value === undefined ? '—' : value >= 100 ? value.toFixed(0) : value.toFixed(1);
+const fmt = (value: number | null | undefined) => {
+  if (value === null || value === undefined) return '—';
+  if (value >= 100) return value.toFixed(0);
+  return value.toFixed(value < 1 ? 2 : 1);
+};
 
 export function ThroughputChart({ down, up, labels, xLabels, marks, unit }: ThroughputChartProps) {
   const peak = Math.max(

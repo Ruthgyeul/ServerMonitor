@@ -40,6 +40,11 @@ interface HeaderProps {
   onCustomize?: () => void;
 }
 
+// The click is the user gesture fullscreen needs; it carries over to /monitor.
+function enterFullscreen() {
+  document.documentElement.requestFullscreen?.().catch(() => {});
+}
+
 function muteLabel(mute: MuteState | null): string | null {
   if (!mute) return null;
   if (mute.globalMutedUntil)
@@ -89,6 +94,7 @@ export function Header(props: HeaderProps) {
       <div className="relative flex gap-1.5">
         <Link
           href="/monitor"
+          onClick={enterFullscreen}
           title="Kiosk mode: full-screen wall display with auto-rotation"
           className={cn(iconButton, 'px-3')}
         >

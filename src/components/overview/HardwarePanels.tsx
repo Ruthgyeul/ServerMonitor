@@ -1,6 +1,6 @@
 import React from 'react';
 
-import { linePath } from '@/components/charts/paths';
+import { linePath, padToWindow } from '@/components/charts/paths';
 import { Panel } from '@/components/ui/Panel';
 import { Tag } from '@/components/ui/Tag';
 import type { DiskIoPoint } from '@/hooks/useSystemData';
@@ -14,6 +14,8 @@ import { formatLinkSpeed, formatMbPair, formatNetSpeed } from '@/utils/format';
 
 // Temperature bar scale: 90°C fills it.
 const TEMP_SCALE = 90;
+// Disk I/O samples the stream keeps (one per second).
+const IO_WINDOW = 60;
 
 const row = 'flex justify-between border-b border-line-soft px-[18px] py-[11px] text-[12.5px]';
 
@@ -94,7 +96,10 @@ export function HardwarePanel({ data, diskIo }: { data: DashboardData; diskIo: D
           <svg viewBox="0 0 200 30" preserveAspectRatio="none" className="block h-[34px] w-full">
             <path
               d={linePath(
-                diskIo.map(point => point.write),
+                padToWindow(
+                  diskIo.map(point => point.write),
+                  IO_WINDOW
+                ),
                 ioBox,
                 ioMax
               )}
@@ -105,7 +110,10 @@ export function HardwarePanel({ data, diskIo }: { data: DashboardData; diskIo: D
             />
             <path
               d={linePath(
-                diskIo.map(point => point.read),
+                padToWindow(
+                  diskIo.map(point => point.read),
+                  IO_WINDOW
+                ),
                 ioBox,
                 ioMax
               )}

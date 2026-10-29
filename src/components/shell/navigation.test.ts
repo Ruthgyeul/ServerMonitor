@@ -11,9 +11,9 @@ describe('pageMeta', () => {
     });
   });
 
-  it('describes every console page in the sidebar except the public status page', () => {
+  it('describes every console page in the sidebar', () => {
     const hrefs = NAV_GROUPS.flatMap(group => group.items.map(item => item.href)).filter(
-      href => href !== '/' && href !== '/status'
+      href => href !== '/'
     );
     for (const href of hrefs) expect(pageMeta(href, 'h').title).not.toBe('Overview');
   });

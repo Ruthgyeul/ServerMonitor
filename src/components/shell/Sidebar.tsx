@@ -5,10 +5,12 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { LogOut, Server } from 'lucide-react';
 
+import type { ClusterNode } from '@/components/cluster/clusterTypes';
 import { useSystem } from '@/components/providers/SystemDataProvider';
 import { InstallPwa } from '@/components/shell/InstallPwa';
 import { NAV_GROUPS, isActive, type NavBadgeKey, type NavItem } from '@/components/shell/navigation';
 import { SITE_NAME } from '@/config/siteConfig';
+import { usePolled } from '@/hooks/usePolled';
 import { cn } from '@/lib/utils';
 import type { DashboardData } from '@/utils/dashboardData';
 import { shortKernel } from '@/utils/format';
@@ -18,15 +20,30 @@ interface Badge {
   alarm: boolean;
 }
 
-function badgeFor(key: NavBadgeKey | undefined, data: DashboardData | null): Badge | null {
-  if (!key || !data) return null;
+// Live counts behind the sidebar badges.
+interface BadgeSources {
+  data: DashboardData | null;
+  cluster: ClusterNode[] | null;
+}
+
+function badgeFor(key: NavBadgeKey | undefined, { data, cluster }: BadgeSources): Badge | null {
   switch (key) {
     case 'alerts': {
-      const count = data.activeAlerts.length;
+      const count = data?.activeAlerts.length ?? 0;
       return count > 0 ? { text: String(count), alarm: true } : null;
     }
+    case 'cluster': {
+      if (!cluster || cluster.length === 0) return null;
+      const online = cluster.filter(node => node.result.ok).length;
+      return { text: `${online}/${cluster.length}`, alarm: online < cluster.length };
+    }
+    default:
+      return null;
   }
 }
+
+// The cluster badge only needs a coarse refresh; the Cluster page polls fast.
+const CLUSTER_BADGE_POLL_MS = 30_000;
 
 const NavLink: React.FC<{ item: NavItem; active: boolean; badge: Badge | null; onNavigate: () => void }> = ({
   item,
@@ -74,6 +91,8 @@ async function signOut() {
 export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
   const pathname = usePathname();
   const { data, connected } = useSystem();
+  const cluster =
+    usePolled<{ nodes: ClusterNode[] }>('/api/cluster', CLUSTER_BADGE_POLL_MS, false)?.nodes ?? null;
 
   const defaultIp = data?.network.interfaces.find(iface => iface.isDefault)?.ip ?? null;
   const healthy = data !== null && connected && data.activeAlerts.length === 0;
@@ -118,7 +137,7 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
                   key={item.href}
                   item={item}
                   active={isActive(pathname, item.href)}
-                  badge={badgeFor(item.badge, data)}
+                  badge={badgeFor(item.badge, { data, cluster })}
                   onNavigate={onClose}
                 />
               ))}

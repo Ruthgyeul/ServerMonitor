@@ -7,6 +7,37 @@ import { DashboardData, toDashboardData } from '@/utils/dashboardData';
 
 const MAX_POINTS = 60;
 
+// The last sample is kept in localStorage so an installed app opened offline
+// (or with the server down) shows it — flagged as stale by the offline banner —
+// instead of an empty screen. Saved at most this often.
+const SNAPSHOT_KEY = 'sm-last-snapshot';
+const SNAPSHOT_EVERY_MS = 15_000;
+
+interface StoredSnapshot {
+  at: number;
+  payload: ServerData;
+}
+
+function saveSnapshot(payload: ServerData, at: number): void {
+  try {
+    localStorage.setItem(SNAPSHOT_KEY, JSON.stringify({ at, payload } satisfies StoredSnapshot));
+  } catch {
+    /* storage full or blocked — the offline fallback just won't exist */
+  }
+}
+
+function loadSnapshot(): StoredSnapshot | null {
+  try {
+    const raw = localStorage.getItem(SNAPSHOT_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as StoredSnapshot;
+    assertServerData(parsed.payload);
+    return typeof parsed.at === 'number' ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
 // Without these fields the response either isn't from /api/system or is badly broken.
 const REQUIRED_FIELDS = [
   'cpu',
@@ -73,6 +104,7 @@ export function useSystemData(): SystemDataHandle {
     // connecting we probe the endpoint once to tell "server down" from "401
     // token gate", so the page can send the user to /login in the latter case.
     let probed = false;
+    let savedAt = 0;
     const probeAuth = () => {
       if (probed) return;
       probed = true;
@@ -104,6 +136,11 @@ export function useSystemData(): SystemDataHandle {
         assertServerData(payload);
 
         const data = toDashboardData(payload);
+        const receivedAt = Date.now();
+        if (receivedAt - savedAt >= SNAPSHOT_EVERY_MS) {
+          savedAt = receivedAt;
+          saveSnapshot(payload, receivedAt);
+        }
         const time = new Date().toLocaleTimeString('en-US', {
           hour: '2-digit',
           minute: '2-digit',
@@ -116,7 +153,7 @@ export function useSystemData(): SystemDataHandle {
           error: null,
           connected: true,
           authRequired: false,
-          lastUpdate: Date.now(),
+          lastUpdate: receivedAt,
           networkHistory: [
             ...previous.networkHistory,
             { time, download: data.network.download, upload: data.network.upload }
@@ -140,11 +177,21 @@ export function useSystemData(): SystemDataHandle {
       // info. EventSource retries reconnection on its own, and onopen restores things on success.
       // Before the first sample there is nothing to keep showing, so surface the
       // failure instead of an endless loading state.
-      setState(previous => ({
-        ...previous,
-        connected: false,
-        error: previous.data ? previous.error : 'Cannot reach the server stream'
-      }));
+      setState(previous => {
+        if (previous.data) return { ...previous, connected: false };
+        // Nothing received this session: fall back to the stored snapshot so
+        // the page renders it under the offline banner.
+        const stored = loadSnapshot();
+        if (stored) {
+          return {
+            ...previous,
+            connected: false,
+            data: toDashboardData(stored.payload),
+            lastUpdate: stored.at
+          };
+        }
+        return { ...previous, connected: false, error: 'Cannot reach the server stream' };
+      });
       // Only probe when we've never had a successful message (data === null via
       // the closure is stale, so use the probed guard + connection state).
       probeAuth();

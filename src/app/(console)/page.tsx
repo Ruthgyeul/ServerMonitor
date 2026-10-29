@@ -19,7 +19,6 @@ import { usePanelPrefs } from '@/components/overview/usePanelPrefs';
 import { useSystem } from '@/components/providers/SystemDataProvider';
 import { useShellActions } from '@/components/shell/ShellActions';
 import { PageBody, PanelRow } from '@/components/ui/PageBody';
-import { useKioskRotate } from '@/hooks/useKioskRotate';
 import { useNow } from '@/hooks/useNow';
 import { usePolled } from '@/hooks/usePolled';
 import type { HostEvent } from '@/types/system';
@@ -37,8 +36,6 @@ export default function OverviewPage() {
   const { prefs } = usePanelPrefs();
   const { openCustomize } = useShellActions();
   const events = usePolled<HostEvent[]>(EVENTS_URL, EVENTS_POLL_MS) ?? [];
-  // Kiosk rotation: with ?rotate=<seconds> the panel cycles to /cluster and back.
-  useKioskRotate('/cluster');
 
   useEffect(() => {
     // Keep a wall-mounted screen from locking while the overview is open.

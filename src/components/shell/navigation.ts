@@ -10,7 +10,7 @@ import {
 // Console routes: sidebar entries plus the header breadcrumb/title for each page.
 // Pages land here as their phase ships; the order follows the design.
 
-export type NavBadgeKey = 'alerts';
+export type NavBadgeKey = 'alerts' | 'cluster';
 
 export interface NavItem {
   href: string;
@@ -30,14 +30,14 @@ export const NAV_GROUPS: NavGroup[] = [
     title: 'Monitor',
     items: [
       { href: '/', label: 'Overview', icon: LayoutDashboard },
-      { href: '/cluster', label: 'Cluster', icon: ServerCog },
+      { href: '/cluster', label: 'Cluster', icon: ServerCog, badge: 'cluster' },
       { href: '/alerts', label: 'Alerts', icon: TriangleAlert, badge: 'alerts' },
-      { href: '/status', label: 'Status page', icon: Globe }
+      { href: '/status-preview', label: 'Status page', icon: Globe }
     ]
   },
   {
     title: 'Configure',
-    items: [{ href: '/alerts/settings', label: 'Alert rules', icon: SlidersHorizontal }]
+    items: [{ href: '/settings/rules', label: 'Alert rules', icon: SlidersHorizontal }]
   }
 ];
 
@@ -55,14 +55,16 @@ export function pageMeta(pathname: string, host: string): PageMeta {
       return { section: 'Monitor', item: 'Cluster', title: 'Cluster' };
     case '/alerts':
       return { section: 'Monitor', item: 'Alerts', title: 'Alert history' };
-    case '/alerts/settings':
+    case '/status-preview':
+      return { section: 'Monitor', item: 'Status page', title: 'Public status' };
+    case '/settings/rules':
       return { section: 'Configure', item: 'Alert rules', title: 'Alert rules' };
     default:
       return { section: 'Hosts', item: host, title: 'Overview' };
   }
 }
 
-// Exact match: "/alerts" must not light up while on "/alerts/settings".
+// Exact match: "/settings" style parents must not light up on child pages.
 export function isActive(pathname: string, href: string): boolean {
   return pathname === href;
 }

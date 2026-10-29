@@ -125,7 +125,7 @@ export function CapacityPanel({ data, now }: { data: DashboardData; now: number 
       )}
       <div className="mt-auto px-[18px] py-3 text-xs text-subtle">
         Alerts when a forecast drops under <span className="font-mono text-fg-2">{threshold}h</span> ·{' '}
-        <Link href="/alerts/settings">Edit rule</Link>
+        <Link href="/settings/rules">Edit rule</Link>
       </div>
     </Panel>
   );
