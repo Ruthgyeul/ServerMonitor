@@ -1,9 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 import {
-  CONFIGURABLE_THRESHOLDS,
   clearOverride,
-  getAllOverrides,
+  getThresholdValues,
   isConfigurableThreshold,
   setOverride,
   wouldInvertHysteresis
@@ -18,30 +17,14 @@ import { requireApiAuth } from '@/utils/apiAuth';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-function currentValues() {
-  const overrides = getAllOverrides();
-  return CONFIGURABLE_THRESHOLDS.map(threshold => {
-    const override = overrides[threshold.key];
-    const raw = process.env[threshold.key];
-    const envValue =
-      raw !== undefined && raw.trim() !== '' && Number.isFinite(Number(raw)) ? Number(raw) : null;
-    return {
-      key: threshold.key,
-      label: threshold.label,
-      default: threshold.default,
-      envValue,
-      override: override ?? null,
-      // What actually applies right now, same precedence as alerts.ts's num().
-      value: override ?? envValue ?? threshold.default
-    };
-  });
-}
-
 export function GET(request: Request) {
   const unauthorized = requireApiAuth(request);
   if (unauthorized) return unauthorized;
 
-  return NextResponse.json({ thresholds: currentValues() }, { headers: { 'Cache-Control': 'no-store' } });
+  return NextResponse.json(
+    { thresholds: getThresholdValues() },
+    { headers: { 'Cache-Control': 'no-store' } }
+  );
 }
 
 export async function POST(request: NextRequest) {
@@ -63,7 +46,7 @@ export async function POST(request: NextRequest) {
   }
 
   setOverride(body.key, body.value);
-  return NextResponse.json({ thresholds: currentValues() });
+  return NextResponse.json({ thresholds: getThresholdValues() });
 }
 
 export async function DELETE(request: NextRequest) {
@@ -76,5 +59,5 @@ export async function DELETE(request: NextRequest) {
   }
 
   clearOverride(body.key);
-  return NextResponse.json({ thresholds: currentValues() });
+  return NextResponse.json({ thresholds: getThresholdValues() });
 }

@@ -79,6 +79,7 @@ export interface DashboardData {
   activeAlerts: ActiveAlert[];
   mute: MuteState;
   loginEnabled: boolean;
+  thresholds: Record<string, number>;
   timestamp: string;
   warnings: string[];
 }
@@ -159,6 +160,7 @@ export function toDashboardData(raw: ServerData): DashboardData {
     activeAlerts: raw.activeAlerts ?? [],
     mute: raw.mute ?? { globalMutedUntil: null, quietHours: null, quietNow: false },
     loginEnabled: raw.loginEnabled ?? false,
+    thresholds: raw.thresholds ?? {},
     timestamp: raw.timestamp ?? new Date().toISOString(),
     warnings: raw.warnings ?? []
   };

@@ -1,97 +1,13 @@
 import React from 'react';
 import { Server, TriangleAlert } from 'lucide-react';
 
-import { DiskIoPoint } from '@/hooks/useSystemData';
 import { cn } from '@/lib/utils';
 import { COLORS } from '@/lib/statusColors';
-import { NetworkHistoryEntry } from '@/types/system';
 import { DashboardData } from '@/utils/dashboardData';
 import { formatClock, shortKernel } from '@/utils/format';
 
-import {
-  AlertsCard,
-  BandwidthCard,
-  BandwidthHistoryCard,
-  CapacityCard,
-  CoresCard,
-  CpuDayCard,
-  DiskIoCard,
-  DockerCard,
-  FanCard,
-  FirewallCard,
-  GaugeRow,
-  InterfacesCard,
-  LoadCard,
-  NetworkCard,
-  NetworkStripCard,
-  ProcessesCard,
-  SshCard,
-  SwapCard,
-  TemperatureCard,
-  TrafficCard,
-  UptimeCard
-} from './cards';
-
-// Cards flow in a multi-column layout (.dash-grid), becoming 1/2/3 columns with
-// screen width. The column count and dimensions are all set by src/styles/globals.css.
-// Each card's own file (src/components/dashboard/cards/) documents the per-card
-// row caps (MAX_PROCESSES, MAX_INTERFACES, etc.) that keep the 7" kiosk layout
-// within its 600px height budget — see README's "Layout" section.
-
-interface DashboardProps {
-  data: DashboardData;
-  now: number | null;
-  networkHistory: NetworkHistoryEntry[];
-  diskIoHistory: DiskIoPoint[];
-}
-
-// Rendered inside the console shell, which owns the page header (title, clock,
-// connection state) — so only the alert bar and the card grid live here.
-export const Dashboard: React.FC<DashboardProps> = ({ data, now, networkHistory, diskIoHistory }) => (
-  <div className="text-gray-100">
-    <AlertBar data={data} />
-
-    {/* The column makeup and the order within each column follow the design.
-        As the screen narrows, columns fold below whole; cards are never rearranged. */}
-    <div className="dash-layout">
-      <div className="dash-col">
-        <UptimeCard data={data} />
-        <LoadCard data={data} />
-        <CoresCard data={data} />
-        <SwapCard data={data} />
-        <DiskIoCard data={data} history={diskIoHistory} />
-        <CapacityCard data={data} />
-        <div className="dash-subgrid">
-          <FanCard data={data} />
-          <TemperatureCard data={data} />
-        </div>
-      </div>
-
-      <div className="dash-col">
-        <GaugeRow data={data} />
-        <CpuDayCard data={data} />
-        <NetworkCard data={data} history={networkHistory} />
-        <div className="dash-subgrid">
-          <InterfacesCard data={data} />
-          <BandwidthCard data={data} />
-        </div>
-        <NetworkStripCard data={data} />
-        <BandwidthHistoryCard />
-      </div>
-
-      <div className="dash-col">
-        <AlertsCard data={data} now={now} />
-        <ProcessesCard data={data} />
-        <DockerCard data={data} />
-        <SshCard data={data} now={now} />
-        <TrafficCard data={data} />
-        <FirewallCard data={data} />
-      </div>
-    </div>
-  </div>
-);
-
-// --- Header / alerts -------------------------------------------------------
+// Header and alert bar for the /monitor kiosk layout (the console pages use the
+// shell header instead). Rebuilt on the console design with the kiosk in Phase 2.
 
 // Pick only "a problem right now" worth showing in the banner. Past events are handled by the ALERTS LOG.
 function currentAlerts(data: DashboardData): string[] {

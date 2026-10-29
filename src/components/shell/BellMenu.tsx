@@ -4,7 +4,7 @@ import React from 'react';
 import Link from 'next/link';
 
 import { Toggle } from '@/components/ui/Toggle';
-import { LEVEL_STYLES } from '@/lib/statusColors';
+import { LevelTag } from '@/components/ui/LevelTag';
 import { cn } from '@/lib/utils';
 import type { AlertEntry, AlertLevel } from '@/types/system';
 import { formatAge } from '@/utils/timeFormat';
@@ -49,18 +49,12 @@ export function BellMenu({ alerts, now, soundEnabled, onToggleSound, onClose }: 
         ) : (
           <ul>
             {items.map(alert => {
-              const style = LEVEL_STYLES[alert.level];
               return (
                 <li
                   key={alert.id}
                   className="grid grid-cols-[auto_1fr_auto] items-start gap-2.5 border-b border-line-soft px-4 py-2.5"
                 >
-                  <span
-                    className="mt-0.5 rounded-[3px] px-1.5 py-px font-mono text-[10px]"
-                    style={{ color: style.fg, background: style.bg }}
-                  >
-                    {style.tag}
-                  </span>
+                  <LevelTag level={alert.level} />
                   <span className="text-[12.5px] leading-[1.4] text-fg-2">{alert.message}</span>
                   <span className="font-mono text-[11px] text-faint">
                     {formatAge(now - new Date(alert.at).getTime())}

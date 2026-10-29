@@ -364,6 +364,9 @@ export interface ServerData {
   mute?: MuteState;
   // Whether DASHBOARD_PASSWORD login is on, so the sidebar knows to offer Sign out.
   loginEnabled?: boolean;
+  // Effective alert thresholds by env name (ALERT_CPU_ENTER → 90), for the
+  // threshold marks drawn on meters.
+  thresholds?: Record<string, number>;
   // Added in 2.3 (all optional: old-node compatible).
   memoryDetail?: MemoryDetail;
   services?: ServicesInfo;
@@ -384,4 +387,34 @@ export interface NetworkHistoryEntry {
   time: string;
   download: number;
   upload: number;
+}
+
+// --- Console charts (/api/history, /api/events) ------------------------------
+
+export type HistoryRange = '1h' | '6h' | '24h' | '7d';
+
+// One chart point. Metrics are null where the server wasn't sampling.
+export interface MetricPoint {
+  at: string; // ISO 8601, start of the bucket
+  cpu: number | null; // %
+  mem: number | null; // %
+  disk: number | null; // %
+  down: number | null; // KB/s
+  up: number | null; // KB/s
+}
+
+export interface MetricSeries {
+  range: HistoryRange;
+  stepSeconds: number;
+  points: MetricPoint[];
+}
+
+// Something that happened to the host, drawn as a marker on time charts.
+export type HostEventKind = 'reboot' | 'deploy' | 'restart';
+
+export interface HostEvent {
+  id: string;
+  kind: HostEventKind;
+  label: string;
+  at: string; // ISO 8601
 }

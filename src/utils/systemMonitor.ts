@@ -42,8 +42,11 @@ import { getKernelErrorCount, getFailedLoginCount } from '@/utils/collectors/ker
 import { getPackagesInfo } from '@/utils/collectors/packages';
 import { getSmartInfo } from '@/utils/collectors/smart';
 import { getHistory, getLoad30mAverage, recordSample, recordTrend } from '@/utils/collectors/history';
+import { recordMinuteSample } from '@/utils/collectors/metricSeries';
+import { recordHostState } from '@/utils/collectors/events';
 import { evaluateAlerts, getActiveAlerts } from '@/utils/collectors/alerts';
 import { muteStatus } from '@/utils/collectors/alertMute';
+import { getEffectiveThresholds } from '@/utils/collectors/alertOverrides';
 import { isAnomalous } from '@/utils/collectors/anomaly';
 
 // Cached system info
@@ -654,10 +657,25 @@ export async function getSystemInfo(): Promise<ServerData> {
       mem: collectorFailed('memory') ? null : memory.percentage,
       disk: collectorFailed('disk') ? null : disk.percentage,
       temp: typeof cpu.temperature === 'number' ? cpu.temperature : null,
-      net: collectorFailed('network') ? null : network.download + network.upload
+      net: collectorFailed('network') ? null : network.download + network.upload,
+      down: collectorFailed('network') ? null : network.download,
+      up: collectorFailed('network') ? null : network.upload
     },
     now
   );
+  recordMinuteSample(
+    {
+      cpu: cpu.usage,
+      mem: collectorFailed('memory') ? null : memory.percentage,
+      disk: collectorFailed('disk') ? null : disk.percentage,
+      down: collectorFailed('network') ? null : network.download,
+      up: collectorFailed('network') ? null : network.upload
+    },
+    now
+  );
+  if (!collectorFailed('host')) {
+    recordHostState(host.bootTime, host.rebootReason, docker.available ? docker.containers : [], now);
+  }
   recordDiskSample(disk.percentage, now);
   const diskHoursToFull = getHoursToFull(now);
   // A failed memory/network collector returns its zero-filled fallback (see
@@ -744,6 +762,7 @@ export async function getSystemInfo(): Promise<ServerData> {
     activeAlerts: getActiveAlerts(),
     mute: { globalMutedUntil, quietHours, quietNow },
     loginEnabled: Boolean(process.env.DASHBOARD_PASSWORD),
+    thresholds: getEffectiveThresholds(),
     timestamp: new Date(now).toISOString(),
     ...(warnings.length > 0 ? { warnings } : {})
   };

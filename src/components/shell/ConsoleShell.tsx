@@ -1,14 +1,16 @@
 'use client';
 
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { usePathname } from 'next/navigation';
 
 import { useSystem } from '@/components/providers/SystemDataProvider';
 import { useToast } from '@/components/providers/ToastProvider';
+import { CustomizeModal } from '@/components/overview/CustomizeModal';
 import { ConnectError } from '@/components/shell/ConnectError';
 import { Header, type LinkState } from '@/components/shell/Header';
 import { OfflineBanner } from '@/components/shell/OfflineBanner';
 import { PageSkeleton } from '@/components/shell/PageSkeleton';
+import { ShellActionsContext } from '@/components/shell/ShellActions';
 import { Sidebar } from '@/components/shell/Sidebar';
 import { pageMeta } from '@/components/shell/navigation';
 import { downloadSnapshot } from '@/components/shell/snapshot';
@@ -29,6 +31,8 @@ export function ConsoleShell({ children }: { children: React.ReactNode }) {
   const flash = useToast();
   const [navOpen, setNavOpen] = useState(false);
   const [bellOpen, setBellOpen] = useState(false);
+  const [customizeOpen, setCustomizeOpen] = useState(false);
+  const actions = useMemo(() => ({ openCustomize: () => setCustomizeOpen(true) }), []);
   const notify = useAlertNotifications(data?.alerts ?? []);
 
   useAlertTabIndicator((data?.activeAlerts.length ?? 0) > 0);
@@ -54,8 +58,9 @@ export function ConsoleShell({ children }: { children: React.ReactNode }) {
   let link: LinkState = offline ? 'reconnecting' : 'live';
   if (data === null) link = error ? 'down' : 'connecting';
 
+  const onOverview = pathname === '/';
   const exportSnapshot =
-    pathname === '/' && data
+    onOverview && data
       ? () => {
           downloadSnapshot(data, Date.now());
           flash('Snapshot downloaded');
@@ -95,12 +100,14 @@ export function ConsoleShell({ children }: { children: React.ReactNode }) {
           onToggleSound={notify.toggle}
           onOpenNav={() => setNavOpen(true)}
           onExport={exportSnapshot}
+          onCustomize={onOverview ? actions.openCustomize : undefined}
         />
         {offline && lastUpdate !== null && now !== null && (
           <OfflineBanner lastUpdate={lastUpdate} now={now} onRetry={retry} />
         )}
-        {content}
+        <ShellActionsContext.Provider value={actions}>{content}</ShellActionsContext.Provider>
       </main>
+      {customizeOpen && onOverview && <CustomizeModal onClose={() => setCustomizeOpen(false)} />}
     </div>
   );
 }

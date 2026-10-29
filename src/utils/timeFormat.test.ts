@@ -1,12 +1,19 @@
 import { describe, expect, it } from 'vitest';
 
-import { formatAge, formatDuration, formatHourMinute, formatTimestamp } from '@/utils/timeFormat';
+import {
+  formatAge,
+  formatDuration,
+  formatHourMinute,
+  formatShortStamp,
+  formatTimestamp
+} from '@/utils/timeFormat';
 
 describe('formatTimestamp / formatHourMinute', () => {
   it('formats local time with zero padding', () => {
     const at = new Date(2026, 0, 2, 3, 4, 5).getTime();
     expect(formatTimestamp(at)).toBe('2026-01-02 03:04:05');
     expect(formatHourMinute(at)).toBe('03:04');
+    expect(formatShortStamp(at)).toBe('01-02 03:04');
   });
 });
 

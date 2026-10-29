@@ -167,3 +167,38 @@ export function clearOverride(key: string): void {
   ensureLoaded();
   if (overrides.delete(key)) writeStoreSync();
 }
+
+export interface ThresholdValue {
+  key: string;
+  label: string;
+  default: number;
+  envValue: number | null;
+  override: number | null;
+  // What actually applies right now, same precedence as alerts.ts's num().
+  value: number;
+}
+
+// Every configurable threshold with its default, environment and override
+// values and the one in effect.
+export function getThresholdValues(): ThresholdValue[] {
+  const overrides = getAllOverrides();
+  return CONFIGURABLE_THRESHOLDS.map(threshold => {
+    const override = overrides[threshold.key];
+    const raw = process.env[threshold.key];
+    const envValue =
+      raw !== undefined && raw.trim() !== '' && Number.isFinite(Number(raw)) ? Number(raw) : null;
+    return {
+      key: threshold.key,
+      label: threshold.label,
+      default: threshold.default,
+      envValue,
+      override: override ?? null,
+      value: override ?? envValue ?? threshold.default
+    };
+  });
+}
+
+// Just the effective values, keyed by env name (ALERT_CPU_ENTER → 90).
+export function getEffectiveThresholds(): Record<string, number> {
+  return Object.fromEntries(getThresholdValues().map(threshold => [threshold.key, threshold.value]));
+}
