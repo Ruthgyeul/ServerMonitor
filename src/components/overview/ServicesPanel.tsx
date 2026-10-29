@@ -4,6 +4,8 @@ import React from 'react';
 import Link from 'next/link';
 import { Boxes } from 'lucide-react';
 
+import { ControlButton } from '@/components/control/ControlButton';
+import { permissionFor, sendControl, unitUrl, useControlStatus } from '@/components/control/controlApi';
 import { useShellActions } from '@/components/shell/ShellActions';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { Panel } from '@/components/ui/Panel';
@@ -13,6 +15,7 @@ import type { ServicesInfo } from '@/types/system';
 // systemd health: failed units first and prominent.
 export function ServicesPanel({ services }: { services: ServicesInfo }) {
   const { openLogs } = useShellActions();
+  const control = useControlStatus();
   const failed = services.failed;
   return (
     <Panel
@@ -59,6 +62,12 @@ export function ServicesPanel({ services }: { services: ServicesInfo }) {
               >
                 Logs
               </button>
+              <ControlButton
+                label="Restart"
+                permission={permissionFor(control, 'unit', unit)}
+                run={() => sendControl(unitUrl(unit), { action: 'restart' })}
+                className="border-0 px-0 py-0 text-xs text-link hover:bg-transparent"
+              />
             </div>
           ))}
           {failed > services.failedUnits.length && (

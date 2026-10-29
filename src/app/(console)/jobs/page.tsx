@@ -2,6 +2,8 @@
 
 import React from 'react';
 
+import { ControlButton } from '@/components/control/ControlButton';
+import { jobUrl, permissionFor, sendControl, useControlStatus } from '@/components/control/controlApi';
 import { JobDot, JobResultPill, NoJobs } from '@/components/jobs/JobParts';
 import {
   durationLabel,
@@ -26,7 +28,6 @@ import type { JobList } from '@/types/system';
 
 const POLL_MS = 30_000;
 const COLUMNS = 'grid grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)_120px_92px_160px_100px_210px] gap-3.5';
-const CONTROL_HINT = 'Set CONTROL_ENABLED=true to run or toggle jobs from the dashboard';
 const ROW_BUTTON =
   'rounded-[5px] border border-line-strong px-[9px] py-1 text-[11.5px] text-fg-3 hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:bg-transparent';
 
@@ -34,6 +35,7 @@ export default function JobsPage() {
   const list = usePolled<JobList>(JOBS_URL, POLL_MS);
   const now = useNow();
   const { openLogs } = useShellActions();
+  const control = useControlStatus();
   const jobs = list?.jobs ?? [];
 
   if (now === null) return null;
@@ -140,9 +142,16 @@ export default function JobsPage() {
                       {job.enabled ? relativeIn(job.nextRunAt, now) : '—'}
                     </span>
                     <div className="flex justify-end gap-1.5">
-                      <button disabled title={CONTROL_HINT} className={ROW_BUTTON}>
-                        Run now
-                      </button>
+                      <ControlButton
+                        label={job.running ? 'Running…' : 'Run now'}
+                        permission={
+                          job.running
+                            ? { allowed: false, reason: 'Already running' }
+                            : permissionFor(control, 'unit', job.id)
+                        }
+                        run={() => sendControl(jobUrl(job.id), { action: 'run' })}
+                        refresh={[JOBS_URL]}
+                      />
                       <button
                         onClick={() =>
                           openLogs({ kind: 'unit', name: job.service, title: `journalctl -u ${job.service}` })
@@ -151,9 +160,23 @@ export default function JobsPage() {
                       >
                         Output
                       </button>
-                      <button disabled title={CONTROL_HINT} className={ROW_BUTTON}>
-                        {job.enabled ? 'Disable' : 'Enable'}
-                      </button>
+                      <ControlButton
+                        label={job.enabled ? 'Disable' : 'Enable'}
+                        permission={permissionFor(control, 'unit', job.id)}
+                        run={() =>
+                          sendControl(jobUrl(job.id), { action: job.enabled ? 'disable' : 'enable' })
+                        }
+                        refresh={[JOBS_URL]}
+                        confirm={
+                          job.enabled
+                            ? {
+                                title: `Disable ${job.name}?`,
+                                body: `systemctl disable --now ${job.id} — it won't run again until enabled.`,
+                                confirmLabel: 'Disable'
+                              }
+                            : undefined
+                        }
+                      />
                     </div>
                   </div>
                 );

@@ -83,6 +83,10 @@ that aggregates several nodes on one screen.
   service worker caches only the page shell (network-first); live data never
   comes from a cache. The last sample is kept in the browser, so the app opened
   offline shows it under the offline banner and reconnects on its own.
+- **Control actions (opt-in)** — start/stop/restart containers, restart
+  units, run or toggle jobs and prune Docker from the console, behind login,
+  an address allowlist and per-target allowlists. Off by default; see
+  [Control actions](#control-actions-opt-in).
 - **Kiosk launch script** — boots the dashboard full-screen in Firefox for
   a dedicated status display.
 
@@ -445,6 +449,53 @@ The app also sends hardening response headers (`X-Frame-Options: DENY`,
 `Referrer-Policy`, `Permissions-Policy`, HSTS) from `next.config.ts`, and the
 process list reports executable names only (never full command lines) so
 secrets passed as CLI arguments are never exposed.
+
+## Control actions (opt-in)
+
+Off by default — the dashboard is read-only until you turn this on. When
+enabled, the console can:
+
+- **Docker** (`/docker`): start, stop, restart, pause and unpause containers;
+  remove an unused image; prune unused images, anonymous volumes or the build
+  cache.
+- **Services** (`/services`, and failed units on the overview): restart a unit.
+- **Jobs** (`/jobs`): *Run now* (starts the timer's service), enable or disable
+  the timer.
+
+Every request must pass all of these (`src/utils/control.ts`):
+
+1. a valid login — `DASHBOARD_PASSWORD` (or `API_AUTH_TOKEN`) must be set; with
+   no login configured, control stays off whatever else is set;
+2. `CONTROL_ENABLED=true`;
+3. not the kiosk's loopback connection, which stays read-only;
+4. same-origin, and within a strict rate budget (about 10 actions a minute);
+5. the caller's address inside `CONTROL_ALLOWED_CIDRS` (default
+   `192.168.0.0/24`). The address comes from the socket via the bundled
+   `server.js` (`npm start`) — a bare `next start` has no trustworthy address,
+   so control is refused there. Behind a reverse proxy on the same host, set
+   `CONTROL_TRUST_PROXY=true` to use its `X-Forwarded-For`;
+6. the target in an allowlist: `CONTROL_ALLOWLIST_CONTAINERS` (container
+   names), `CONTROL_ALLOWLIST_UNITS` (service units, and timers for jobs), or
+   `CONTROL_ALLOW_PRUNE=true` for pruning and image removal. `*` allows every
+   name — use it knowingly.
+
+Commands run without a shell (`execFile` with an argument list). Stop, prune,
+image removal, unit restart and disabling a job ask for confirmation first.
+Each action, and its failure, is recorded in the alert history (never sent to
+the webhook). Buttons stay visible but disabled, with the reason as a
+tooltip, while the gate is closed.
+
+**Permissions.** Docker actions need the Docker socket (the `docker` group).
+`systemctl` changes need root: the service runs `sudo -n systemctl …`, so add
+a sudoers rule for exactly the commands you allow —
+`deploy/servermonitor.sudoers` is a template. The bundled unit sets
+`NoNewPrivileges=true`, which stops `sudo`; to use unit and job actions, relax
+it in a drop-in (`sudo systemctl edit servermonitor` →
+`[Service]` / `NoNewPrivileges=false`) — the sudoers rule is then what limits
+what can run. In the Docker image, mounting
+`/var/run/docker.sock` gives the container control of the host's Docker
+daemon, which is effectively root on the host; only do it if you want the
+Docker actions.
 
 ## Deploying a cluster
 

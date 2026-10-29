@@ -3,6 +3,15 @@
 import React, { useMemo, useState } from 'react';
 import { Container } from 'lucide-react';
 
+import { ControlButton } from '@/components/control/ControlButton';
+import {
+  containerUrl,
+  imageUrl,
+  permissionFor,
+  PRUNE_URL,
+  sendControl,
+  useControlStatus
+} from '@/components/control/controlApi';
 import { ContainerInspector } from '@/components/docker/ContainerInspector';
 import { DiskUsagePanel } from '@/components/docker/DiskUsagePanel';
 import { formatSize } from '@/components/docker/format';
@@ -17,7 +26,7 @@ import { usePolled } from '@/hooks/usePolled';
 import { containerDot } from '@/lib/statusColors';
 import { PALETTE } from '@/lib/theme';
 import { cn } from '@/lib/utils';
-import type { DockerContainerDetail, DockerDetails } from '@/types/system';
+import type { DockerContainerDetail, DockerDetails, DockerDiskUsage } from '@/types/system';
 
 // Containers with live usage and a configuration inspector, plus images,
 // volumes, networks and Docker's disk usage.
@@ -40,6 +49,42 @@ const statusColor = (state: string) =>
       ? PALETTE.warnFg
       : PALETTE.subtle;
 
+type ContainerAction = 'start' | 'stop' | 'restart' | 'pause' | 'unpause';
+
+// The actions that make sense in each state, as in `docker ps`.
+const ACTIONS_BY_STATE: Record<string, ContainerAction[]> = {
+  running: ['restart', 'pause', 'stop'],
+  paused: ['unpause', 'stop'],
+  restarting: ['stop'],
+  exited: ['start'],
+  created: ['start'],
+  dead: ['start']
+};
+
+const ACTION_LABEL: Record<ContainerAction, string> = {
+  start: 'Start',
+  stop: 'Stop',
+  restart: 'Restart',
+  pause: 'Pause',
+  unpause: 'Unpause'
+};
+
+const PRUNES: {
+  kind: 'images' | 'volumes' | 'buildCache';
+  type: DockerDiskUsage['type'];
+  label: string;
+  what: string;
+}[] = [
+  { kind: 'images', type: 'images', label: 'Prune images', what: 'every image no container uses' },
+  {
+    kind: 'volumes',
+    type: 'volumes',
+    label: 'Prune volumes',
+    what: 'unused anonymous volumes (named volumes are kept)'
+  },
+  { kind: 'buildCache', type: 'buildCache', label: 'Clear build cache', what: 'the whole build cache' }
+];
+
 function matches(container: DockerContainerDetail, filter: Filter, query: string): boolean {
   const running = container.state === 'running';
   if ((filter === 'running' && !running) || (filter === 'stopped' && running)) return false;
@@ -52,6 +97,7 @@ export default function DockerPage() {
   const { data } = useSystem();
   const now = useNow();
   const { openLogs } = useShellActions();
+  const control = useControlStatus();
   const [filter, setFilter] = useState<Filter>('all');
   const [query, setQuery] = useState('');
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -107,6 +153,76 @@ export default function DockerPage() {
       color: reclaimable ? PALETTE.warnFg : PALETTE.okFg
     }
   ];
+
+  const containerActions = (container: DockerContainerDetail) => (
+    <>
+      {(ACTIONS_BY_STATE[container.state] ?? []).map(action => (
+        <ControlButton
+          key={action}
+          label={ACTION_LABEL[action]}
+          permission={permissionFor(control, 'container', container.name)}
+          tone={
+            action === 'stop' ? 'danger' : action === 'start' || action === 'unpause' ? 'positive' : 'default'
+          }
+          run={() => sendControl(containerUrl(container.name), { action })}
+          refresh={[DETAILS_URL]}
+          confirm={
+            action === 'stop'
+              ? {
+                  title: `Stop ${container.name}?`,
+                  body: `docker stop ${container.name} — the container stays stopped until started again.`,
+                  confirmLabel: 'Stop container'
+                }
+              : undefined
+          }
+          className="px-2.5"
+        />
+      ))}
+      {logsButton(container)}
+    </>
+  );
+
+  const pruneButtons = PRUNES.map(prune => {
+    const bytes = details.disk.find(entry => entry.type === prune.type)?.reclaimableBytes ?? 0;
+    return (
+      <ControlButton
+        key={prune.kind}
+        label={prune.label}
+        permission={
+          bytes > 0 ? permissionFor(control, 'prune') : { allowed: false, reason: 'Nothing to reclaim' }
+        }
+        run={() => sendControl(PRUNE_URL, { kind: prune.kind })}
+        refresh={[DETAILS_URL]}
+        confirm={{
+          title: `${prune.label}?`,
+          body: `Removes ${prune.what}, reclaiming about ${formatSize(bytes)}. This can't be undone.`,
+          confirmLabel: prune.label
+        }}
+        className="flex items-center justify-between rounded-md px-[11px] py-[7px] text-xs"
+      >
+        <span>{prune.label}</span>
+        <span className="font-mono text-[11px] text-subtle">{bytes > 0 ? formatSize(bytes) : 'nothing'}</span>
+      </ControlButton>
+    );
+  });
+
+  const imageActions = (id: string, inUse: boolean) => (
+    <ControlButton
+      label="Remove"
+      permission={
+        inUse ? { allowed: false, reason: 'In use by a container' } : permissionFor(control, 'prune')
+      }
+      tone="danger"
+      run={() => sendControl(imageUrl(id), undefined, 'DELETE')}
+      refresh={[DETAILS_URL]}
+      confirm={{
+        title: 'Remove image?',
+        body: `docker image rm ${id.slice(0, 12)} — it will be pulled again if needed.`,
+        confirmLabel: 'Remove image'
+      }}
+      className="px-2 py-0.5 text-[11px]"
+    />
+  );
 
   const logsButton = (container: DockerContainerDetail) => (
     <button
@@ -211,7 +327,7 @@ export default function DockerPage() {
               container={selected}
               live={live.get(selected.id)}
               now={now}
-              actions={logsButton(selected)}
+              actions={containerActions(selected)}
             />
           ) : (
             <p className="px-[18px] py-5 text-[12.5px] text-subtle">Select a container to inspect it.</p>
@@ -220,8 +336,8 @@ export default function DockerPage() {
       </div>
 
       <div className="flex flex-wrap items-start gap-4">
-        <ResourceTabs details={details} now={now} />
-        <DiskUsagePanel disk={details.disk} />
+        <ResourceTabs details={details} now={now} imageActions={imageActions} />
+        <DiskUsagePanel disk={details.disk} footer={pruneButtons} />
       </div>
     </PageBody>
   );

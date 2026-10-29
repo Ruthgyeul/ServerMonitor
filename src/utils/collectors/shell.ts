@@ -81,7 +81,13 @@ export async function collect<T>(
 // (before any value exists) awaits the collector. This keeps a slow refresh
 // (apt/SMART/journal, up to seconds) from blocking the 1s collection loop, since
 // getSystemInfo awaits every collector before the next tick is scheduled.
-export function withTtl<T>(ttlMs: number, fn: () => Promise<T>): () => Promise<T> {
+//
+// `.refresh()` collects now and waits for it — after a control action changed
+// what the collector reads, so the next poll isn't served the old value.
+export function withTtl<T>(
+  ttlMs: number,
+  fn: () => Promise<T>
+): (() => Promise<T>) & { refresh: () => Promise<T> } {
   let value: T;
   let hasValue = false;
   let expiresAt = 0;
@@ -103,7 +109,7 @@ export function withTtl<T>(ttlMs: number, fn: () => Promise<T>): () => Promise<T
     return inflight;
   };
 
-  return async () => {
+  const get = async () => {
     if (hasValue && expiresAt > Date.now()) return value; // fresh
     if (hasValue) {
       // Stale: kick off a background refresh (swallow its error — the stale value
@@ -113,6 +119,7 @@ export function withTtl<T>(ttlMs: number, fn: () => Promise<T>): () => Promise<T
     }
     return refresh(); // no value yet: must await the first collection
   };
+  return Object.assign(get, { refresh });
 }
 
 export function clamp(value: number, low: number, high: number): number {

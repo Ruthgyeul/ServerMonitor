@@ -13,7 +13,10 @@
 #   /var/log (ro)      → optional; lets `last` read wtmp for the reboot reason.
 #   docker.sock        → optional; lets the Docker collector list containers and
 #                        their CPU/mem/network usage. Omit it and the DOCKER
-#                        CONTAINERS card just hides itself.
+#                        CONTAINERS card just hides itself. The opt-in control
+#                        actions (CONTROL_ENABLED) use it too — `:ro` does not
+#                        make the Docker API read-only, so mounting it at all
+#                        gives the app control of the host's Docker daemon.
 #   ./data             → history.json / alerts.json persist across restarts.
 #
 # This is a lot of host access by design — it is the point of a host monitor.
