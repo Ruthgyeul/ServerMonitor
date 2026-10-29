@@ -1,4 +1,5 @@
 import {
+  ActiveAlert,
   AlertEntry,
   HistoryInfo,
   HostInfo,
@@ -20,7 +21,8 @@ import {
   PackagesInfo,
   SmartDevice,
   ReadOnlyMount,
-  DockerInfo
+  DockerInfo,
+  MuteState
 } from '@/types/system';
 
 // The API's new fields are all optional (old-node compatible). Rather than
@@ -74,6 +76,9 @@ export interface DashboardData {
   docker: DockerInfo;
   history: HistoryInfo;
   alerts: AlertEntry[];
+  activeAlerts: ActiveAlert[];
+  mute: MuteState;
+  loginEnabled: boolean;
   timestamp: string;
   warnings: string[];
 }
@@ -151,6 +156,9 @@ export function toDashboardData(raw: ServerData): DashboardData {
     },
     history: raw.history ?? EMPTY_HISTORY,
     alerts: raw.alerts ?? [],
+    activeAlerts: raw.activeAlerts ?? [],
+    mute: raw.mute ?? { globalMutedUntil: null, quietHours: null, quietNow: false },
+    loginEnabled: raw.loginEnabled ?? false,
     timestamp: raw.timestamp ?? new Date().toISOString(),
     warnings: raw.warnings ?? []
   };

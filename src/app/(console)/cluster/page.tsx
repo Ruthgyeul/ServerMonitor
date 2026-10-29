@@ -15,13 +15,11 @@ import {
   TriangleAlert
 } from 'lucide-react';
 
-import { TerminalTitleBar } from '@/components/common/TerminalWindow';
 import { Gauge, Sparkline } from '@/components/charts/primitives';
-import { useNow } from '@/hooks/useNow';
 import { useKioskRotate, useKioskRotateHome } from '@/hooks/useKioskRotate';
 import { cn } from '@/lib/utils';
 import { NetworkHistoryEntry, ServerData } from '@/types/system';
-import { formatClock, formatRate } from '@/utils/format';
+import { formatRate } from '@/utils/format';
 import { COLORS, statusColor, tempColor } from '@/lib/statusColors';
 
 // This page uses the same terminal design as the main dashboard
@@ -61,7 +59,6 @@ export default function ClusterPage() {
       return null;
     }
   });
-  const now = useNow();
   // Normally rotates back to the dashboard, but follows `?home=` back to
   // /monitor when that's where the cycle started (see src/app/monitor/page.tsx).
   useKioskRotate(useKioskRotateHome('/'));
@@ -144,9 +141,8 @@ export default function ClusterPage() {
   const total = nodes?.length ?? 0;
 
   return (
-    <div className="terminal-bg min-h-screen text-gray-100">
-      <TerminalTitleBar host="cluster" path="~/monitor/cluster" />
-      <ClusterHeader online={onlineCount} total={total} now={now} />
+    <div className="text-gray-100">
+      <ClusterSummary online={onlineCount} total={total} />
 
       {nodes !== null && nodes.length === 0 ? (
         <EmptyCluster />
@@ -263,45 +259,19 @@ const NodeModal: React.FC<{ node: ClusterNode; onClose: () => void }> = ({ node,
 
 // --- Top chrome / header ---------------------------------------------------
 
-interface ClusterHeaderProps {
-  online: number;
-  total: number;
-  now: number | null;
-}
-
-const ClusterHeader: React.FC<ClusterHeaderProps> = ({ online, total, now }) => {
-  const allUp = total > 0 && online === total;
-
+// Node count under the console header (which carries the title and clock).
+const ClusterSummary: React.FC<{ online: number; total: number }> = ({ online, total }) => {
+  if (total === 0) return null;
+  const allUp = online === total;
   return (
-    <header className="dash-head sticky top-0 z-10 flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-gray-700 bg-gray-800/95 backdrop-blur">
-      <div className="flex min-w-0 flex-1 items-center gap-2">
-        <Server size={16} color="#38bdf8" strokeWidth={2} className="shrink-0" />
-        <span className="t-value shrink-0 font-bold text-emerald-400 select-none">❯</span>
-        <h1 className="t-value truncate font-bold">Cluster Monitor</h1>
-        <div className="h-[7px] w-[7px] shrink-0 animate-[pulseDot_2s_ease-in-out_infinite] rounded-full bg-emerald-400" />
-      </div>
-
-      {/* Don't render the time before mount (avoids a hydration mismatch). */}
-      <span className="t-body order-1 whitespace-nowrap font-mono text-gray-300 md:order-3">
-        {now === null ? ' ' : formatClock(new Date(now))}
+    <div className="flex items-center gap-2 px-4 pt-4 desk:px-7">
+      <span
+        className={cn('h-1.5 w-1.5 rounded-full', allUp ? 'animate-live bg-ok' : 'animate-alarm bg-crit')}
+      />
+      <span className={cn('text-[12.5px]', allUp ? 'text-muted' : 'text-crit-fg')}>
+        {online}/{total} nodes online
       </span>
-
-      <div className="order-2 flex w-full items-center justify-between gap-3 md:order-2 md:w-auto md:justify-end">
-        <div className="flex shrink-0 items-center gap-1">
-          <div
-            className={cn(
-              'h-1.5 w-1.5 rounded-full',
-              allUp
-                ? 'animate-[pulseDot_2s_ease-in-out_infinite] bg-emerald-400'
-                : 'animate-[pulseDot_0.6s_ease-in-out_infinite] bg-red-400'
-            )}
-          />
-          <span className={cn('t-label', allUp ? 'text-gray-400' : 'text-red-400')}>
-            {online}/{total} nodes online
-          </span>
-        </div>
-      </div>
-    </header>
+    </div>
   );
 };
 

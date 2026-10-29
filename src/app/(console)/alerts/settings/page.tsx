@@ -1,9 +1,6 @@
 'use client';
 
 import React, { useCallback, useEffect, useState } from 'react';
-import Link from 'next/link';
-
-import { TerminalHeaderBar, TerminalTitleBar } from '@/components/common/TerminalWindow';
 
 // Lets an operator tune alert thresholds without editing .env and restarting
 // the process — POST/DELETE /api/alerts/config write to a runtime override
@@ -103,17 +100,7 @@ export default function AlertSettingsPage() {
   }, []);
 
   return (
-    <div className="terminal-bg min-h-screen text-gray-100">
-      <TerminalTitleBar path="~/monitor/alerts/settings" />
-      <TerminalHeaderBar
-        title="Alert thresholds"
-        right={
-          <Link href="/alerts" className="t-label text-gray-400 transition-colors hover:text-gray-200">
-            ← Alert history
-          </Link>
-        }
-      />
-
+    <div className="text-gray-100">
       <div className="mx-auto max-w-3xl p-4 sm:p-6">
         <p className="t-body mb-4 text-gray-400">
           Changes here apply immediately, on the next collection tick — no restart needed. A value stays

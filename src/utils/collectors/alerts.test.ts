@@ -234,4 +234,34 @@ describe('evaluateAlerts', () => {
     const log = evaluateAlerts(baseInput({ cpu: 70 }), t0 + 4000); // clear (4) -> flap
     expect(log.some(e => e.message.includes('flapping'))).toBe(true);
   });
+
+  it('tracks breached rules as active alerts with a live message and clears them on recovery', async () => {
+    const { evaluateAlerts, getActiveAlerts } = await freshAlerts();
+    const t0 = Date.UTC(2026, 0, 2, 12, 0, 0);
+
+    evaluateAlerts(baseInput(), t0);
+    expect(getActiveAlerts()).toEqual([]);
+
+    evaluateAlerts(baseInput({ cpu: 95 }), t0 + 1000);
+    evaluateAlerts(baseInput({ cpu: 97 }), t0 + 2000);
+    const [cpu] = getActiveAlerts();
+    expect(cpu.key).toBe('cpu');
+    expect(cpu.message).toContain('97%');
+    // `since` stays at the entry tick even as the value moves.
+    expect(cpu.since).toBe(new Date(t0 + 1000).toISOString());
+
+    evaluateAlerts(baseInput({ cpu: 70 }), t0 + 3000);
+    expect(getActiveAlerts()).toEqual([]);
+  });
+
+  it('reports an inactive firewall as an active critical alert', async () => {
+    const { evaluateAlerts, getActiveAlerts } = await freshAlerts();
+    const t0 = Date.UTC(2026, 0, 2, 12, 0, 0);
+
+    evaluateAlerts(baseInput({ firewall: 'inactive', cpu: 95 }), t0);
+    const active = getActiveAlerts();
+    // Critical sorts ahead of the CPU warning.
+    expect(active.map(a => a.key)).toEqual(['firewall', 'cpu']);
+    expect(active[0].level).toBe('critical');
+  });
 });

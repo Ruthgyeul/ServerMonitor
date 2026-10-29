@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 
 import { NetworkHistoryEntry, ServerData } from '@/types/system';
 import { DashboardData, toDashboardData } from '@/utils/dashboardData';
@@ -36,6 +36,12 @@ export interface SystemDataState {
   authRequired: boolean;
 }
 
+export interface SystemDataHandle extends SystemDataState {
+  // Drop the current stream and open a fresh one now, instead of waiting for
+  // EventSource's own retry delay (the offline banner's "Retry now").
+  reconnect: () => void;
+}
+
 function assertServerData(payload: unknown): asserts payload is ServerData {
   if (!payload || typeof payload !== 'object') {
     throw new Error('Invalid data format received');
@@ -48,7 +54,10 @@ function assertServerData(payload: unknown): asserts payload is ServerData {
   }
 }
 
-export function useSystemData(): SystemDataState {
+export function useSystemData(): SystemDataHandle {
+  // Bumped by reconnect() to tear down and reopen the EventSource.
+  const [attempt, setAttempt] = useState(0);
+  const reconnect = useCallback(() => setAttempt(previous => previous + 1), []);
   const [state, setState] = useState<SystemDataState>({
     data: null,
     error: null,
@@ -129,7 +138,13 @@ export function useSystemData(): SystemDataState {
       // Disconnected. Don't clear the last received value. If the screen went
       // blank on a brief drop, a wall-mounted dashboard would actually show less
       // info. EventSource retries reconnection on its own, and onopen restores things on success.
-      setState(previous => ({ ...previous, connected: false }));
+      // Before the first sample there is nothing to keep showing, so surface the
+      // failure instead of an endless loading state.
+      setState(previous => ({
+        ...previous,
+        connected: false,
+        error: previous.data ? previous.error : 'Cannot reach the server stream'
+      }));
       // Only probe when we've never had a successful message (data === null via
       // the closure is stale, so use the probed guard + connection state).
       probeAuth();
@@ -138,7 +153,7 @@ export function useSystemData(): SystemDataState {
     return () => {
       source.close();
     };
-  }, []);
+  }, [attempt]);
 
-  return state;
+  return { ...state, reconnect };
 }

@@ -2,7 +2,8 @@
 // values come from src/lib/theme.ts (the canonical palette) rather than being
 // hardcoded here a second time.
 
-import { TERM } from '@/lib/theme';
+import { PALETTE, TERM } from '@/lib/theme';
+import type { AlertLevel } from '@/types/system';
 
 export const COLORS = {
   ok: TERM.green,
@@ -75,8 +76,36 @@ export function loadCellColor(load: number | null, cores: number): string {
 }
 
 export const ALERT_LEVEL_COLORS: Record<string, string> = {
-  ok: TERM.green,
-  info: '#60a5fa',
-  warning: TERM.yellow,
-  critical: TERM.red
+  ok: PALETTE.ok,
+  info: PALETTE.accent,
+  warning: PALETTE.warn,
+  critical: PALETTE.crit
 };
+
+// How an alert level renders in the console: the short tag, the tag's text and
+// tinted background, and the solid dot/marker color.
+export interface LevelStyle {
+  tag: string;
+  fg: string;
+  bg: string;
+  dot: string;
+}
+
+export const LEVEL_STYLES: Record<AlertLevel, LevelStyle> = {
+  critical: { tag: 'CRIT', fg: PALETTE.critFg, bg: 'rgba(239, 95, 90, 0.14)', dot: PALETTE.crit },
+  warning: { tag: 'WARN', fg: PALETTE.warnFg, bg: 'rgba(232, 180, 69, 0.12)', dot: PALETTE.warn },
+  info: { tag: 'INFO', fg: PALETTE.infoFg, bg: 'rgba(90, 169, 240, 0.12)', dot: PALETTE.accent },
+  ok: { tag: 'OK', fg: PALETTE.okFg, bg: 'rgba(60, 207, 145, 0.1)', dot: PALETTE.ok }
+};
+
+// Utilization bands used across the console: warn from 70%, critical from 85%.
+export const USAGE_WARN = 70;
+export const USAGE_CRIT = 85;
+
+// Bar/meter color for a utilization percentage. Below the warn band it uses the
+// accent (`calm`) — blue on node bars, green on kiosk tiles.
+export function usageColor(percentage: number, calm: string = PALETTE.accent): string {
+  if (percentage >= USAGE_CRIT) return PALETTE.crit;
+  if (percentage >= USAGE_WARN) return PALETTE.warn;
+  return calm;
+}

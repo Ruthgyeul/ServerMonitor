@@ -42,7 +42,8 @@ import { getKernelErrorCount, getFailedLoginCount } from '@/utils/collectors/ker
 import { getPackagesInfo } from '@/utils/collectors/packages';
 import { getSmartInfo } from '@/utils/collectors/smart';
 import { getHistory, getLoad30mAverage, recordSample, recordTrend } from '@/utils/collectors/history';
-import { evaluateAlerts } from '@/utils/collectors/alerts';
+import { evaluateAlerts, getActiveAlerts } from '@/utils/collectors/alerts';
+import { muteStatus } from '@/utils/collectors/alertMute';
 import { isAnomalous } from '@/utils/collectors/anomaly';
 
 // Cached system info
@@ -701,6 +702,8 @@ export async function getSystemInfo(): Promise<ServerData> {
     now
   );
 
+  const { globalMutedUntil, quietHours, quietNow } = muteStatus(now);
+
   const data: ServerData = {
     cpu,
     memory: {
@@ -738,6 +741,9 @@ export async function getSystemInfo(): Promise<ServerData> {
     docker,
     history,
     alerts,
+    activeAlerts: getActiveAlerts(),
+    mute: { globalMutedUntil, quietHours, quietNow },
+    loginEnabled: Boolean(process.env.DASHBOARD_PASSWORD),
     timestamp: new Date(now).toISOString(),
     ...(warnings.length > 0 ? { warnings } : {})
   };

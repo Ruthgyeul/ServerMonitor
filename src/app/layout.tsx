@@ -28,7 +28,7 @@ const geistMono = Geist_Mono({
 export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
-  themeColor: '#0a0d13'
+  themeColor: '#0b0d12'
 };
 
 export const metadata: Metadata = {
@@ -108,9 +108,7 @@ export default function RootLayout({
         <meta name="mobile-web-app-title" content={SITE_SHORT_NAME} />
         <title>{SITE_NAME}</title>
       </head>
-      <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased h-auto bg-gray-900 text-gray-100`}
-      >
+      <body className={`${geistSans.variable} ${geistMono.variable} antialiased h-auto bg-canvas text-fg`}>
         <ErrorBoundary FallbackComponent={Error}>
           <Suspense fallback={<Loading />}>{children}</Suspense>
         </ErrorBoundary>

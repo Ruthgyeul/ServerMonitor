@@ -1,9 +1,7 @@
 'use client';
 
 import React, { useEffect, useMemo, useState } from 'react';
-import Link from 'next/link';
 
-import { TerminalHeaderBar, TerminalTitleBar } from '@/components/common/TerminalWindow';
 import { ALERT_LEVEL_COLORS } from '@/lib/statusColors';
 import type { AlertEntry, AlertLevel } from '@/types/system';
 
@@ -67,25 +65,7 @@ export default function AlertsPage() {
   }, [alerts, level, query]);
 
   return (
-    <div className="terminal-bg min-h-screen text-gray-100">
-      <TerminalTitleBar path="~/monitor/alerts" />
-      <TerminalHeaderBar
-        title="Alert history"
-        right={
-          <div className="flex items-center gap-3">
-            <Link
-              href="/alerts/settings"
-              className="t-label text-gray-400 transition-colors hover:text-gray-200"
-            >
-              Thresholds →
-            </Link>
-            <Link href="/" className="t-label text-gray-400 transition-colors hover:text-gray-200">
-              ← Dashboard
-            </Link>
-          </div>
-        }
-      />
-
+    <div className="text-gray-100">
       <div className="mx-auto max-w-3xl p-4 sm:p-6">
         {/* 48h incident timeline */}
         <Timeline alerts={alerts} now={now} />

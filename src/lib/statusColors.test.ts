@@ -1,6 +1,16 @@
 import { describe, expect, it } from 'vitest';
 
-import { COLORS, heatColor, loadCellColor, loadColor, statusColor, tempColor } from '@/lib/statusColors';
+import {
+  COLORS,
+  LEVEL_STYLES,
+  heatColor,
+  loadCellColor,
+  loadColor,
+  statusColor,
+  tempColor,
+  usageColor
+} from '@/lib/statusColors';
+import { PALETTE } from '@/lib/theme';
 
 // rgb(r, g, b) to [r,g,b]. The point is checking the "green->red direction" rather than the exact color.
 function channels(color: string): [number, number, number] {
@@ -99,5 +109,33 @@ describe('tempColor', () => {
   it('steps up as the temperature rises', () => {
     const steps = [tempColor(40), tempColor(60), tempColor(70), tempColor(80)];
     expect(new Set(steps).size).toBe(4);
+  });
+});
+
+describe('usageColor', () => {
+  it('stays calm below 70%, warns from 70% and is critical from 85%', () => {
+    expect(usageColor(0)).toBe(PALETTE.accent);
+    expect(usageColor(69.9)).toBe(PALETTE.accent);
+    expect(usageColor(70)).toBe(PALETTE.warn);
+    expect(usageColor(84.9)).toBe(PALETTE.warn);
+    expect(usageColor(85)).toBe(PALETTE.crit);
+  });
+
+  it('uses the given calm color below the warn band', () => {
+    expect(usageColor(12, PALETTE.ok)).toBe(PALETTE.ok);
+    expect(usageColor(90, PALETTE.ok)).toBe(PALETTE.crit);
+  });
+});
+
+describe('LEVEL_STYLES', () => {
+  it('maps every alert level to a short tag', () => {
+    expect(
+      Object.fromEntries(Object.entries(LEVEL_STYLES).map(([level, style]) => [level, style.tag]))
+    ).toEqual({
+      critical: 'CRIT',
+      warning: 'WARN',
+      info: 'INFO',
+      ok: 'OK'
+    });
   });
 });
