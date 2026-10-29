@@ -14,7 +14,7 @@ export function uptimeConditions(checks: UptimeCheck[]): ExternalCondition[] {
       {
         key: `http:${check.id}`,
         level: 'critical' as const,
-        message: `HTTP check failed: ${check.name} (${last.code ?? 'timeout'})`,
+        message: `HTTP check failed: ${check.name} (${last.code ?? last.error ?? 'timeout'})`,
         recoveredMessage: `HTTP check recovered: ${check.name}`,
         rule: 'uptime check'
       }

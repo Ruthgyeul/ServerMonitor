@@ -3,10 +3,20 @@
 import React, { useMemo, useState } from 'react';
 import Link from 'next/link';
 
+import { ClipboardList } from 'lucide-react';
+
 import { AlertTimeline } from '@/components/alerts/AlertTimeline';
+import {
+  formatSpan,
+  incidentDuration,
+  INCIDENTS_URL,
+  openIncidentByKey,
+  STATUS_STYLE
+} from '@/components/alerts/incidentView';
 import { setMute } from '@/components/alerts/muteApi';
 import { useSystem } from '@/components/providers/SystemDataProvider';
 import { useToast } from '@/components/providers/ToastProvider';
+import { EmptyState } from '@/components/ui/EmptyState';
 import { LevelTag } from '@/components/ui/LevelTag';
 import { PageBody } from '@/components/ui/PageBody';
 import { useNow } from '@/hooks/useNow';
@@ -14,13 +24,16 @@ import { usePolled } from '@/hooks/usePolled';
 import { LEVEL_STYLES } from '@/lib/statusColors';
 import { cn } from '@/lib/utils';
 import type { AlertEntry, AlertLevel } from '@/types/system';
-import { formatTimestamp } from '@/utils/timeFormat';
+import type { Incident } from '@/utils/collectors/incidents';
+import { formatAge, formatTimestamp } from '@/utils/timeFormat';
 
-// Alert history: what is firing now, a 48h timeline, and the full persisted
-// log (/api/alerts) with a level filter and text search.
+// Alert history: what is waiting to fire or resolve, what is firing now, the
+// incidents those opened, a 48h timeline, and the full persisted log
+// (/api/alerts) with a level filter and text search.
 
 const LOG_URL = '/api/alerts';
 const LOG_POLL_MS = 10_000;
+const INCIDENT_COLUMNS = 'grid grid-cols-[110px_minmax(0,1fr)_54px_100px_110px] gap-3';
 
 type Filter = 'all' | AlertLevel;
 
@@ -37,6 +50,7 @@ export default function AlertsPage() {
   const now = useNow();
   const flash = useToast();
   const log = usePolled<{ alerts: AlertEntry[] }>(LOG_URL, LOG_POLL_MS, false)?.alerts ?? null;
+  const incidentList = usePolled<{ incidents: Incident[] }>(INCIDENTS_URL, LOG_POLL_MS)?.incidents ?? null;
   const [filter, setFilter] = useState<Filter>('all');
   const [query, setQuery] = useState('');
 
@@ -58,6 +72,11 @@ export default function AlertsPage() {
   if (!data || now === null) return null;
   const active = data.activeAlerts;
   const muted = data.mute.globalMutedUntil !== null;
+  const waiting = data.pendingAlerts;
+  const fireDelay = data.alertTiming.fireDelaySec;
+  const incidentsShown = incidentList ?? [];
+  const openIncidents = openIncidentByKey(incidentsShown);
+  const openCount = incidentsShown.filter(incident => incident.status !== 'resolved').length;
 
   const mute = async (minutes: number | null) => {
     const ok = await setMute(minutes);
@@ -72,6 +91,43 @@ export default function AlertsPage() {
 
   return (
     <PageBody className="max-w-[1100px]">
+      {waiting.length > 0 && (
+        <section className="rounded-[10px] border border-warn/30 bg-card">
+          <div className="flex flex-wrap items-center gap-x-5 gap-y-2.5 border-b border-white/5 px-[18px] py-3.5">
+            <h2 className="flex-1 text-[13.5px] font-medium">Pending &amp; recovering</h2>
+            <span className="text-xs text-dim">
+              Threshold rules fire after {fireDelay ? `${fireDelay}s` : 'no delay'}
+            </span>
+            <Link href="/settings/rules#timing" className="text-xs">
+              Alert timing
+            </Link>
+          </div>
+          {waiting.map(alert => {
+            const left = Math.max(0, Math.ceil((new Date(alert.dueAt).getTime() - now) / 1000));
+            const pendingRow = alert.state === 'pending';
+            return (
+              <div
+                key={`${alert.state}-${alert.key}`}
+                className="grid grid-cols-[auto_1fr_auto] items-center gap-3 border-t border-line-soft px-[18px] py-[11px] first:border-t-0"
+              >
+                <span
+                  className={cn(
+                    'rounded-[3px] px-1.5 py-px font-mono text-[10px]',
+                    pendingRow ? 'bg-warn/12 text-warn-fg' : 'bg-ok/10 text-ok-fg'
+                  )}
+                >
+                  {pendingRow ? 'PEND' : 'RECOV'}
+                </span>
+                <span className="text-[13px] text-fg">{alert.message}</span>
+                <span className="font-mono text-[11.5px] text-fg-3">
+                  {pendingRow ? `fires in ${left}s` : `resolves in ${left}s`}
+                </span>
+              </div>
+            );
+          })}
+        </section>
+      )}
+
       <section
         className={cn('rounded-[10px] border bg-card', active.length > 0 ? 'border-crit/30' : 'border-line')}
       >
@@ -95,18 +151,91 @@ export default function AlertsPage() {
             No rules are firing. All metrics are within their thresholds.
           </p>
         ) : (
-          active.map(alert => (
-            <div
-              key={alert.key}
-              className="grid grid-cols-[auto_1fr_auto] items-center gap-3 border-t border-line-soft px-[18px] py-[11px] first:border-t-0"
-            >
-              <LevelTag level={alert.level} />
-              <span className="text-[13px] text-fg">{alert.message}</span>
-              <span className="font-mono text-[11px] text-subtle">
-                {alert.key} · since {formatTimestamp(new Date(alert.since).getTime()).slice(5, 16)}
-              </span>
+          active.map(alert => {
+            const incident = openIncidents.get(alert.key);
+            const row = (
+              <>
+                <LevelTag level={alert.level} />
+                <span className="text-[13px] text-fg">{alert.message}</span>
+                <span className="font-mono text-[11px] text-subtle">
+                  {alert.rule ?? alert.key} · since{' '}
+                  {formatTimestamp(new Date(alert.since).getTime()).slice(5, 16)}
+                </span>
+                <span className="text-xs text-link">{incident ? 'Incident →' : ''}</span>
+              </>
+            );
+            const rowClass =
+              'grid grid-cols-[auto_1fr_auto_auto] items-center gap-3 border-t border-line-soft px-[18px] py-[11px] text-inherit first:border-t-0';
+            return incident ? (
+              <Link
+                key={alert.key}
+                href={`/alerts/incidents/${incident.id}`}
+                className={cn(rowClass, 'hover:bg-white/3 hover:text-inherit')}
+              >
+                {row}
+              </Link>
+            ) : (
+              <div key={alert.key} className={rowClass}>
+                {row}
+              </div>
+            );
+          })
+        )}
+      </section>
+
+      <section className="overflow-hidden rounded-[10px] border border-line bg-card">
+        <div className="flex items-center gap-3 border-b border-white/5 px-[18px] py-3.5">
+          <h2 className="flex-1 text-[13.5px] font-medium">Incidents</h2>
+          <span className="font-mono text-[11.5px] text-subtle">{openCount} open</span>
+        </div>
+        {incidentList !== null && incidentsShown.length === 0 ? (
+          <EmptyState
+            icon={ClipboardList}
+            title="No incidents"
+            body="An incident opens automatically when an alert fires, with its own timeline and notes."
+          />
+        ) : (
+          <div className="overflow-x-auto">
+            <div className="min-w-[640px]">
+              <div className={`${INCIDENT_COLUMNS} px-[18px] pt-[9px] pb-1.5 text-[11px] text-faint`}>
+                <span>Status</span>
+                <span>Incident</span>
+                <span>Level</span>
+                <span>Started</span>
+                <span className="text-right">Duration</span>
+              </div>
+              {incidentsShown.map(incident => {
+                const status = STATUS_STYLE[incident.status];
+                const age = formatAge(now - new Date(incident.openedAt).getTime());
+                return (
+                  <Link
+                    key={incident.id}
+                    href={`/alerts/incidents/${incident.id}`}
+                    className={`${INCIDENT_COLUMNS} items-center border-t border-line-soft px-[18px] py-2.5 text-inherit hover:bg-white/3 hover:text-inherit`}
+                  >
+                    <span>
+                      <span
+                        className="rounded-full px-2 py-0.5 text-[11px]"
+                        style={{ color: status.fg, background: status.bg }}
+                      >
+                        {status.label}
+                      </span>
+                    </span>
+                    <span className="truncate text-[12.5px] text-fg">{incident.title}</span>
+                    <span className="justify-self-start">
+                      <LevelTag level={incident.level} />
+                    </span>
+                    <span className="font-mono text-[11.5px] text-muted">
+                      {age === 'now' ? 'just now' : `${age} ago`}
+                    </span>
+                    <span className="text-right font-mono text-[11.5px] text-muted">
+                      {formatSpan(incidentDuration(incident, now))}
+                    </span>
+                  </Link>
+                );
+              })}
             </div>
-          ))
+          </div>
         )}
       </section>
 

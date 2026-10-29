@@ -1,6 +1,7 @@
 import {
   Activity,
   Archive,
+  BellRing,
   Boxes,
   Container,
   GitCompare,
@@ -47,7 +48,10 @@ export const NAV_GROUPS: NavGroup[] = [
   },
   {
     title: 'Configure',
-    items: [{ href: '/settings/rules', label: 'Alert rules', icon: SlidersHorizontal }]
+    items: [
+      { href: '/settings/rules', label: 'Alert rules', icon: SlidersHorizontal },
+      { href: '/settings/notifications', label: 'Notifications', icon: BellRing }
+    ]
   }
 ];
 
@@ -60,6 +64,9 @@ export interface PageMeta {
 
 // `host` fills the overview crumb ("Hosts / <hostname>").
 export function pageMeta(pathname: string, host: string): PageMeta {
+  if (pathname.startsWith('/alerts/incidents/')) {
+    return { section: 'Alerts', item: 'Incident', title: 'Incident' };
+  }
   switch (pathname) {
     case '/cluster':
       return { section: 'Monitor', item: 'Cluster', title: 'Cluster' };
@@ -79,6 +86,8 @@ export function pageMeta(pathname: string, host: string): PageMeta {
       return { section: 'Monitor', item: 'Status page', title: 'Public status' };
     case '/settings/rules':
       return { section: 'Configure', item: 'Alert rules', title: 'Alert rules' };
+    case '/settings/notifications':
+      return { section: 'Configure', item: 'Notifications', title: 'Notifications' };
     default:
       return { section: 'Hosts', item: host, title: 'Overview' };
   }

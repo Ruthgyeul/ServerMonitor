@@ -532,6 +532,8 @@ export interface UptimeSample {
   ok: boolean;
   ms: number | null; // null on timeout / network error
   code: number | null; // HTTP status, null when no response
+  // Why there was no response: no answer within the timeout, or the connection failed.
+  error?: 'timeout' | 'unreachable';
 }
 
 export interface UptimeCheck {

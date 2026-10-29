@@ -2,6 +2,7 @@ import fs from 'fs';
 import path from 'path';
 
 import { AlertLevel } from '@/types/system';
+import { processSingleton } from '@/utils/processSingleton';
 
 // Which notification channels are on and which alert levels they carry, set
 // from the Notifications page. Browser push is per device (the browser keeps
@@ -83,9 +84,6 @@ class SettingsStore {
   }
 }
 
-const globalStore = globalThis as typeof globalThis & { __serverMonitorNotifySettings?: SettingsStore };
-
 export function notificationSettings(): SettingsStore {
-  globalStore.__serverMonitorNotifySettings ??= new SettingsStore();
-  return globalStore.__serverMonitorNotifySettings;
+  return processSingleton('notificationSettings', () => new SettingsStore());
 }

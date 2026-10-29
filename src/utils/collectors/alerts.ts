@@ -15,6 +15,7 @@ import { dispatchAlert, webhookWouldSend } from '@/utils/collectors/notify';
 import { isMuted } from '@/utils/collectors/alertMute';
 import { getOverride } from '@/utils/collectors/alertOverrides';
 import { incidents } from '@/utils/collectors/incidents';
+import { processSingleton } from '@/utils/processSingleton';
 
 // The recent view streamed with every /api/system response (kept small so the
 // SSE payload stays light). The dashboard alert card reads this.
@@ -268,23 +269,51 @@ const ANOMALY_ENABLED = /^(1|true|yes)$/i.test(process.env.ALERT_ANOMALY_ENABLE 
 const HISTORY_MAX = num('ALERT_HISTORY_MAX', 500);
 const HISTORY_RETENTION_MS = num('ALERT_HISTORY_RETENTION_DAYS', 7) * 24 * 60 * 60 * 1000;
 
-// Rules currently in the breached state, keyed by rule key. The message is
-// refreshed every tick so the bell/sidebar show the live value, while `since`
-// stays at the moment the rule entered.
-const active = new Map<string, ActiveAlert>();
-const log: AlertEntry[] = [];
-let knownSessions: Set<string> | null = null;
-let knownFirewall: FirewallInfo['status'] | null = null;
-// When the firewall last changed state, so an inactive firewall reports how long it has been down.
-let firewallSince = 0;
-let knownIfaceDown: Set<string> | null = null;
-let knownPortScanIps: Set<string> | null = null;
-let sequence = 0;
-// Per-rule last external-notify time. Used for the re-notify cooldown.
-const lastNotifiedAt = new Map<string, number>();
-// Per-rule recent transition timestamps and current flapping state.
-const transitions = new Map<string, number[]>();
-const flapping = new Set<string>();
+// The engine's mutable state, shared by every bundle in the process (see
+// processSingleton) so the background loop and the stream's loop evaluate one
+// set of alerts instead of each firing — and notifying — on their own.
+const state = processSingleton('alerts', () => ({
+  // Rules currently in the breached state, keyed by rule key. The message is
+  // refreshed every tick so the bell/sidebar show the live value, while `since`
+  // stays at the moment the rule entered.
+  active: new Map<string, ActiveAlert>(),
+  log: [] as AlertEntry[],
+  knownSessions: null as Set<string> | null,
+  knownFirewall: null as FirewallInfo['status'] | null,
+  // When the firewall last changed state, so an inactive firewall reports how long it has been down.
+  firewallSince: 0,
+  knownIfaceDown: null as Set<string> | null,
+  knownPortScanIps: null as Set<string> | null,
+  sequence: 0,
+  // Per-rule last external-notify time. Used for the re-notify cooldown.
+  lastNotifiedAt: new Map<string, number>(),
+  // Per-rule recent transition timestamps and current flapping state.
+  transitions: new Map<string, number[]>(),
+  flapping: new Set<string>(),
+  // Rules breached but still inside the fire delay: key → when the breach began.
+  pending: new Map<string, { since: number; level: AlertLevel; message: string }>(),
+  // Active rules recovered but still inside the resolve delay: key → when recovery began.
+  recovering: new Map<string, number>(),
+  suppressedAt: [] as number[],
+  // External conditions' recovery messages, kept from when they fired.
+  externalRecovery: new Map<string, string>(),
+  externalPrimed: false,
+  loaded: false,
+  saveTimer: null as ReturnType<typeof setTimeout> | null,
+  writing: false,
+  exitHooked: false
+}));
+const {
+  active,
+  log,
+  lastNotifiedAt,
+  transitions,
+  flapping,
+  pending,
+  recovering,
+  suppressedAt,
+  externalRecovery
+} = state;
 
 // Alert timing (0 = off, the default). A threshold breach must hold for the
 // fire delay before it alerts; shorter breaches are logged as suppressed
@@ -295,16 +324,6 @@ const SUPPRESSED_WINDOW_MS = 24 * 60 * 60 * 1000;
 function delayMs(key: string): number {
   return Math.min(Math.max(0, num(key, 0)), MAX_DELAY_SECONDS) * 1000;
 }
-// Rules breached but still inside the fire delay: key → when the breach began.
-const pending = new Map<string, { since: number; level: AlertLevel; message: string }>();
-// Active rules recovered but still inside the resolve delay: key → when recovery began.
-const recovering = new Map<string, number>();
-const suppressedAt: number[] = [];
-
-// External conditions (HTTP checks, jobs, failed units) fed in each tick by
-// evaluateExternal(); their recovery message is kept from when they fired.
-const externalRecovery = new Map<string, string>();
-let externalPrimed = false;
 
 // Record an enter/clear transition and report whether the rule is now flapping.
 function recordTransition(key: string, at: number): boolean {
@@ -328,10 +347,9 @@ interface StoreShape {
   log: AlertEntry[];
 }
 
-let loaded = false;
 function ensureLoaded(): void {
-  if (loaded) return;
-  loaded = true;
+  if (state.loaded) return;
+  state.loaded = true;
   try {
     const raw = fs.readFileSync(/*turbopackIgnore: true*/ STORE_FILE, 'utf-8');
     const parsed = JSON.parse(raw) as StoreShape;
@@ -344,13 +362,11 @@ function ensureLoaded(): void {
   }
 }
 
-let saveTimer: ReturnType<typeof setTimeout> | null = null;
-let writing = false;
 const SAVE_INTERVAL_MS = 5000;
 
 async function writeStore(): Promise<void> {
-  if (writing) return;
-  writing = true;
+  if (state.writing) return;
+  state.writing = true;
   const payload: StoreShape = { v: STORE_VERSION, log };
   try {
     await fs.promises.mkdir(DATA_DIR, { recursive: true });
@@ -360,17 +376,17 @@ async function writeStore(): Promise<void> {
   } catch {
     // A disk write failure is not fatal. Retry on the next save.
   } finally {
-    writing = false;
+    state.writing = false;
   }
 }
 
 function scheduleSave(): void {
-  if (saveTimer) return;
-  saveTimer = setTimeout(() => {
-    saveTimer = null;
+  if (state.saveTimer) return;
+  state.saveTimer = setTimeout(() => {
+    state.saveTimer = null;
     void writeStore();
   }, SAVE_INTERVAL_MS);
-  if (typeof saveTimer.unref === 'function') saveTimer.unref();
+  if (typeof state.saveTimer.unref === 'function') state.saveTimer.unref();
 }
 
 // On a shutdown signal, write the final state synchronously once more. Even if
@@ -385,10 +401,9 @@ function flushSync(): void {
   }
 }
 
-let exitHooked = false;
 function hookExit(): void {
-  if (exitHooked) return;
-  exitHooked = true;
+  if (state.exitHooked) return;
+  state.exitHooked = true;
   process.once('SIGTERM', () => flushSync());
   process.once('SIGINT', () => flushSync());
   process.once('beforeExit', () => flushSync());
@@ -410,8 +425,8 @@ function push(
   notify: boolean,
   key: string | null = null
 ): void {
-  sequence += 1;
-  const entry: AlertEntry = { id: `${at}-${sequence}`, level, message, at: new Date(at).toISOString() };
+  state.sequence += 1;
+  const entry: AlertEntry = { id: `${at}-${state.sequence}`, level, message, at: new Date(at).toISOString() };
   log.unshift(entry);
   pruneHistory(at);
   scheduleSave();
@@ -465,7 +480,8 @@ export function evaluateAlerts(input: AlertInput, at: number = Date.now()): Aler
   ensureLoaded();
   hookExit();
 
-  const firstEvaluation = knownSessions === null && knownFirewall === null && knownIfaceDown === null;
+  const firstEvaluation =
+    state.knownSessions === null && state.knownFirewall === null && state.knownIfaceDown === null;
   const loadPerCore =
     input.loadAvg1 !== undefined && input.cores && input.cores > 0 ? input.loadAvg1 / input.cores : null;
   const values: Values = {
@@ -576,33 +592,34 @@ export function evaluateAlerts(input: AlertInput, at: number = Date.now()): Aler
   // session reprint as a new login whenever the timestamp jitters slightly
   // (spam), so record it once for the life of the session.
   const sessionKeys = new Set(input.sshSessions.map(s => `${s.user}@${s.ip}`));
-  if (knownSessions === null) {
-    knownSessions = sessionKeys;
+  if (state.knownSessions === null) {
+    state.knownSessions = sessionKeys;
   } else {
     for (const session of input.sshSessions) {
       const key = `${session.user}@${session.ip}`;
-      if (!knownSessions.has(key)) push('info', `SSH login: ${session.user}@${session.ip}`, at, true, 'ssh');
+      if (!state.knownSessions.has(key))
+        push('info', `SSH login: ${session.user}@${session.ip}`, at, true, 'ssh');
     }
-    knownSessions = sessionKeys;
+    state.knownSessions = sessionKeys;
   }
 
   // Interface-down transitions. up->down is a warning, down->up is a clear.
   if (input.interfaces) {
     const downNow = new Set(input.interfaces.filter(i => i.state === 'down').map(i => i.name));
-    if (knownIfaceDown === null) {
-      knownIfaceDown = downNow;
+    if (state.knownIfaceDown === null) {
+      state.knownIfaceDown = downNow;
     } else {
       for (const name of downNow) {
-        if (!knownIfaceDown.has(name)) push('warning', `Interface ${name} down`, at, true, 'interface');
+        if (!state.knownIfaceDown.has(name)) push('warning', `Interface ${name} down`, at, true, 'interface');
       }
-      for (const name of knownIfaceDown) {
+      for (const name of state.knownIfaceDown) {
         if (!downNow.has(name)) push('ok', `Interface ${name} back up`, at, true, 'interface');
       }
-      knownIfaceDown = downNow;
+      state.knownIfaceDown = downNow;
     }
-  } else if (knownIfaceDown === null) {
+  } else if (state.knownIfaceDown === null) {
     // If interface info isn't available yet, initialize to an empty set so the first-evaluation flag isn't left unconsumed.
-    knownIfaceDown = new Set();
+    state.knownIfaceDown = new Set();
   }
 
   // Port-scan suspects: alert only when an IP NEWLY appears in the flagged
@@ -611,7 +628,7 @@ export function evaluateAlerts(input: AlertInput, at: number = Date.now()): Aler
   // silently suppressed forever (same idiom as the interface-down handling above).
   if (input.portScanSuspects) {
     const currentIps = new Set(input.portScanSuspects.map(suspect => suspect.ip));
-    if (knownPortScanIps === null) {
+    if (state.knownPortScanIps === null) {
       // Unlike the SSH-session/interface-down precedent above (which stays
       // silent about state already present at startup), log — but don't
       // externally notify — any suspect already active on the first
@@ -627,10 +644,10 @@ export function evaluateAlerts(input: AlertInput, at: number = Date.now()): Aler
           'portscan'
         );
       }
-      knownPortScanIps = currentIps;
+      state.knownPortScanIps = currentIps;
     } else {
       for (const suspect of input.portScanSuspects) {
-        if (!knownPortScanIps.has(suspect.ip)) {
+        if (!state.knownPortScanIps.has(suspect.ip)) {
           push(
             'warning',
             `Possible port scan from ${suspect.ip} (${suspect.distinctPorts} ports)`,
@@ -640,14 +657,14 @@ export function evaluateAlerts(input: AlertInput, at: number = Date.now()): Aler
           );
         }
       }
-      knownPortScanIps = currentIps;
+      state.knownPortScanIps = currentIps;
     }
-  } else if (knownPortScanIps === null) {
-    knownPortScanIps = new Set();
+  } else if (state.knownPortScanIps === null) {
+    state.knownPortScanIps = new Set();
   }
 
-  if (input.firewall !== 'unknown' && input.firewall !== knownFirewall) {
-    if (knownFirewall !== null) {
+  if (input.firewall !== 'unknown' && input.firewall !== state.knownFirewall) {
+    if (state.knownFirewall !== null) {
       push(
         input.firewall === 'active' ? 'ok' : 'critical',
         `Firewall ${input.firewall}`,
@@ -670,8 +687,8 @@ export function evaluateAlerts(input: AlertInput, at: number = Date.now()): Aler
         incidents().autoResolve('firewall', at);
       }
     }
-    knownFirewall = input.firewall;
-    firewallSince = at;
+    state.knownFirewall = input.firewall;
+    state.firewallSince = at;
   }
 
   // Return only the recent view for the dashboard/SSE; the full history is read
@@ -684,12 +701,12 @@ export function evaluateAlerts(input: AlertInput, at: number = Date.now()): Aler
 // point-in-time and live only in the log.
 export function getActiveAlerts(): ActiveAlert[] {
   const list = [...active.values()].map(alert => ({ ...alert }));
-  if (knownFirewall === 'inactive') {
+  if (state.knownFirewall === 'inactive') {
     list.push({
       key: 'firewall',
       level: 'critical',
       message: 'Firewall inactive',
-      since: new Date(firewallSince).toISOString(),
+      since: new Date(state.firewallSince).toISOString(),
       rule: 'firewall status'
     });
   }
@@ -760,8 +777,8 @@ const isExternalKey = (key: string) => EXTERNAL_PREFIXES.some(prefix => key.star
 // start are recorded without paging, like the metric rules.
 export function evaluateExternal(failing: ExternalCondition[], at: number = Date.now()): void {
   ensureLoaded();
-  const notify = externalPrimed;
-  externalPrimed = true;
+  const notify = state.externalPrimed;
+  state.externalPrimed = true;
   const current = new Set(failing.map(condition => condition.key));
 
   for (const condition of failing) {

@@ -2,6 +2,7 @@ import fs from 'fs';
 import path from 'path';
 
 import { AlertLevel } from '@/types/system';
+import { processSingleton } from '@/utils/processSingleton';
 
 // Incidents: one per alert firing, opened when it fires and resolved when it
 // recovers, with a timeline an operator can add to (acknowledge, notes, manual
@@ -196,9 +197,6 @@ class IncidentStore {
   }
 }
 
-const globalStore = globalThis as typeof globalThis & { __serverMonitorIncidents?: IncidentStore };
-
 export function incidents(): IncidentStore {
-  globalStore.__serverMonitorIncidents ??= new IncidentStore();
-  return globalStore.__serverMonitorIncidents;
+  return processSingleton('incidents', () => new IncidentStore());
 }

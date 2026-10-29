@@ -11,6 +11,7 @@ export default defineConfig({
   test: {
     // Collectors use fs/os/child_process. No browser environment is needed.
     environment: 'node',
-    include: ['src/**/*.test.ts']
+    include: ['src/**/*.test.ts'],
+    setupFiles: ['src/test/setup.ts']
   }
 });

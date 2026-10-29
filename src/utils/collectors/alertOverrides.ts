@@ -1,6 +1,8 @@
 import fs from 'fs';
 import path from 'path';
 
+import { processSingleton } from '@/utils/processSingleton';
+
 // Lets an operator tune alert thresholds from the web UI (POST /api/alerts/config)
 // without editing .env and restarting the process. An override here takes
 // priority over the environment variable, which remains the effective default
@@ -95,12 +97,17 @@ function pairKeyFor(key: string): string | null {
   return null;
 }
 
-const overrides = new Map<string, number>();
+// Shared by every bundle in the process, so an override saved from the UI
+// applies to the background collection loop too.
+const state = processSingleton('alertOverrides', () => ({
+  overrides: new Map<string, number>(),
+  loaded: false
+}));
+const { overrides } = state;
 
-let loaded = false;
 function ensureLoaded(): void {
-  if (loaded) return;
-  loaded = true;
+  if (state.loaded) return;
+  state.loaded = true;
   try {
     const raw = fs.readFileSync(/*turbopackIgnore: true*/ STORE_FILE, 'utf-8');
     const parsed = JSON.parse(raw) as { v: number; overrides: Record<string, number> };

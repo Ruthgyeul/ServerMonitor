@@ -34,6 +34,16 @@ that aggregates several nodes on one screen.
   inspector (ports, networks, mounts, restart policy, health, command, memory
   limit) and container logs, plus images, volumes and networks with what uses
   them, and Docker's disk usage with what pruning would reclaim.
+- **Jobs** (`/jobs`) — backups and scheduled jobs read from systemd timers:
+  schedule in words (*Daily at 03:30*) and as written, last run and how long
+  it took, the result, the last 14 runs from the journal, next run, and the
+  run's output in the log drawer. A failed backup raises a critical alert,
+  any other failed job a warning. `JOBS_CONFIG` renames, classifies or hides
+  timers.
+- **Uptime** (`/uptime`) — HTTP checks run by the server on their own
+  schedule (10s/30s/60s/5m): add, pause, *Check now* or delete an endpoint and
+  see its status code, response time and last 60 results. A failing check
+  raises a critical alert. Checks live in `data/uptime.json`.
 - **Compare** (`/compare`) — CPU, memory, disk, network or load for today,
   this week or this month against the previous period: average, 95th
   percentile and peak with the change, an overlaid chart, and per-block
@@ -81,7 +91,9 @@ that aggregates several nodes on one screen.
 ### Console shell
 
 Every authenticated page (`/`, `/compare`, `/cluster`, `/docker`, `/services`,
-`/alerts`, `/settings/rules`, `/status-preview`) renders inside one console frame (`src/app/(console)/layout.tsx`):
+`/jobs`, `/uptime`, `/alerts`, `/alerts/incidents/<id>`, `/settings/rules`,
+`/settings/notifications`, `/status-preview`) renders inside one console frame
+(`src/app/(console)/layout.tsx`):
 
 - **Sidebar** — Monitor / Configure navigation with live badges (active alert
   count), an *Install as an app* card, and the host block (hostname, address,
@@ -103,14 +115,15 @@ and the wall display `/monitor` sit outside the shell — point a 7-inch panel a
 ### Overview
 
 `/` opens with a status banner (active alerts with *Mute 1h*, a muted state,
-or *All systems normal* with failed units, uptime and last reboot), then these
-panels in order:
+breaches waiting out the fire delay, or *All systems normal* with failed
+units, suppressed spikes, uptime and last reboot), then these panels in order:
 
 | Row | Panels |
 | --- | --- |
 | 1 | Key metrics — CPU, memory, disk, network cards with a per-card 1h/6h/24h/7d sparkline and the alert threshold marked on the bar |
 | 2 | Network throughput (range picker, reboot/deploy/restart markers) · Alert log |
 | 3 | Docker containers · Services (failed units) |
+| 3b | Backups & scheduled jobs (last good backup, last/next run, result) |
 | 4 | CPU & load (per-core bars, 24h CPU and 48h load heatmaps) · Top processes |
 | 5 | Bandwidth by day (30/90 days) · Capacity forecast |
 | 6 | Hardware · Interfaces · Security |
@@ -130,7 +143,7 @@ panel shows it at 0.8×), with no hover-only interactions:
 
 - **Host view** — CPU, memory, disk and CPU-temperature tiles, a 60-second
   network chart, and a strip with uptime, load, ping, containers, failed units
-  and active alerts. An alert bar appears above it while anything is firing.
+  and HTTP checks up. An alert bar appears above it while anything is firing.
 - **Cluster view** — one tile per node with CPU/RAM/disk bars, temperature and
   ping, or the reason it's offline.
 
@@ -170,6 +183,7 @@ missing. A few need more than `/proc` to show real numbers:
 | Firewall blocked attempts | read access to the kernel journal (usually membership in `systemd-journal` or `adm`). |
 | Services page | `systemctl` (systemd 247+ for the "since" column). |
 | Unit logs | read access to the journal (`systemd-journal` or `adm`). |
+| Jobs page | `systemctl` for the timers, and journal read access (systemd 248+) for the run history. |
 | Docker page, container logs | the `docker` CLI and access to the Docker socket (the `docker` group, or the socket mounted into the container). |
 | Last reboot reason | readable `/var/log/wtmp` and a `last` binary; reports whether the previous shutdown was clean. |
 | SSH sessions | detected from sshd session processes (`/proc/<pid>/comm` + cmdline) and established connections on the SSH port(s), so it works without utmp and catches PTY-less sessions (scp/sftp). The remote IP is filled in from the socket when `/proc/<pid>/fd` is readable (own user, or root); otherwise it may read `—`. `who` is merged in as a fallback. Set `SSH_PORTS` if sshd listens somewhere other than 22 and can't read `sshd_config`. |
@@ -324,12 +338,33 @@ and a composite **memory-pressure** rule (RAM and swap both high). Optional
 **statistical anomaly detection** (`ALERT_ANOMALY_ENABLE`) flags CPU or memory
 that departs sharply from its own recent baseline even under the absolute threshold.
 
+Besides the metric rules, a failing **HTTP check** (`/uptime`), a failed
+**scheduled job** (`/jobs`; critical for backups) and a **failed systemd unit**
+raise alerts too, and clear when they recover.
+
+**Alert timing** (off by default): a threshold breach can be required to hold
+for a *fire delay* before it alerts — shorter breaches are logged as
+*suppressed spikes* and don't notify — and an alert can be required to stay
+recovered for a *resolve delay* before it clears
+(`ALERT_FIRE_DELAY_SECONDS`, `ALERT_RESOLVE_DELAY_SECONDS`, or the *Alert
+timing* section of `/settings/rules`).
+
 Every alert shows on the dashboard's alert card and is persisted to
-`data/alerts.json`. The **`/alerts`** page is the full history with a level
-filter, text search, and a 48-hour incident timeline. **`/settings/rules`**
-lets you tune any threshold from the browser — changes apply on the next tick,
-no restart needed (they're stored in `data/alert-overrides.json` and take
-priority over the matching `.env` value, which stays the default).
+`data/alerts.json`. The **`/alerts`** page lists what is pending or recovering,
+what is firing, the incidents, a 48-hour timeline and the full history with a
+level filter and text search. Each firing opens an **incident**
+(`/alerts/incidents/<id>`, kept 30 days in `data/incidents.json`) with a
+timeline — fired, notified, acknowledged, notes, resolved, reopened — and the
+metric around it; it resolves itself when the alert clears.
+**`/settings/rules`** lets you tune any threshold from the browser — changes
+apply on the next tick, no restart needed (they're stored in
+`data/alert-overrides.json` and take priority over the matching `.env` value,
+which stays the default).
+
+**`/settings/notifications`** switches channels on and off — this browser's
+desktop notifications and the webhook — chooses which levels they carry
+(stored in `data/notifications.json`; every level is on by default), sends a
+test message to the configured webhooks, and mutes for 1h/4h/24h.
 
 Outbound notifications (off until `ALERT_WEBHOOK_URL` is set) support `json`,
 `slack`, and `discord` shapes, **per-severity routing** (`ALERT_WEBHOOK_URL_CRITICAL`

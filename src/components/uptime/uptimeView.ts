@@ -43,7 +43,7 @@ export function historyBars(history: UptimeSample[]): HistoryBar[] {
       ? Math.round(Math.max(MIN_BAR_PCT, Math.min(100, ((sample.ms ?? 0) / scale) * 100)))
       : 100,
     color: !sample.ok ? PALETTE.crit : (sample.ms ?? 0) > SLOW_MS ? PALETTE.warn : PALETTE.ok,
-    tip: sample.ok ? `${sample.ms} ms` : `failed (${sample.code ?? 'timeout'})`
+    tip: sample.ok ? `${sample.ms} ms` : `failed (${sample.code ?? sample.error ?? 'timeout'})`
   }));
   // Left-pad so the newest result is always at the right edge.
   const empty: HistoryBar = { heightPct: EMPTY_BAR_PCT, color: PALETTE.track, tip: 'no data' };
@@ -59,9 +59,15 @@ export function checkView(check: UptimeCheck, now: number): CheckView {
 
   return {
     down,
-    codeLabel: !last ? 'pending' : last.code === null ? 'timeout' : String(last.code),
+    codeLabel: !last ? 'pending' : last.code === null ? (last.error ?? 'timeout') : String(last.code),
     codeOk: last?.ok ?? true,
-    responseLabel: !last ? '—' : last.ms === null ? '> 10 s' : `${last.ms} ms`,
+    responseLabel: !last
+      ? '—'
+      : last.ms === null
+        ? last.error === 'unreachable'
+          ? 'no answer'
+          : '> 10 s'
+        : `${last.ms} ms`,
     uptimeLabel: uptimePercent(check.history, all),
     nextLabel: check.paused ? 'paused' : `next in ${nextIn}s`,
     bars: historyBars(check.history)

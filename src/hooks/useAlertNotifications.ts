@@ -1,13 +1,18 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import type { AlertEntry } from '@/types/system';
+import type { AlertEntry, AlertLevel } from '@/types/system';
 
-// Desktop notification + audible beep when a NEW critical alert appears, so an
-// unattended wall panel can still get someone's attention. Opt-in: nothing fires
-// until the viewer enables it (which also requests Notification permission). The
-// enabled flag is remembered per-browser in localStorage.
+// Desktop notification when a NEW alert of an allowed level appears (plus an
+// audible beep for critical ones), so an unattended wall panel can still get
+// someone's attention. Opt-in: nothing fires until the viewer enables it (which
+// also requests Notification permission). The enabled flag is remembered
+// per-browser in localStorage; the allowed levels come from the Notifications
+// page (critical only until those settings load).
+
+const LEVEL_RANK: Record<AlertLevel, number> = { critical: 0, warning: 1, info: 2, ok: 3 };
+const CRITICAL_ONLY: Record<AlertLevel, boolean> = { critical: true, warning: false, info: false, ok: false };
 
 const STORAGE_KEY = 'sm-alert-notify';
 
@@ -36,7 +41,10 @@ export interface AlertNotifications {
   toggle: () => void;
 }
 
-export function useAlertNotifications(alerts: AlertEntry[]): AlertNotifications {
+export function useAlertNotifications(
+  alerts: AlertEntry[],
+  levels: Record<AlertLevel, boolean> = CRITICAL_ONLY
+): AlertNotifications {
   // Restore the saved preference lazily. Safe against hydration: this only drives
   // the corner toggle icon, which isn't in the initial SSR HTML (the page shows
   // the startup state until data loads).
@@ -68,7 +76,7 @@ export function useAlertNotifications(alerts: AlertEntry[]): AlertNotifications 
     }
     if (newest.id === seenId.current) return;
 
-    // Fire for any new critical alert that arrived since we last looked.
+    // Fire for the most severe allowed alert that arrived since we last looked.
     const previousMarker = seenId.current;
     seenId.current = newest.id;
     const fresh: AlertEntry[] = [];
@@ -76,20 +84,23 @@ export function useAlertNotifications(alerts: AlertEntry[]): AlertNotifications 
       if (alert.id === previousMarker) break;
       fresh.push(alert);
     }
-    const critical = fresh.find(alert => alert.level === 'critical');
-    if (!critical) return;
+    const allowed = fresh
+      .filter(alert => levels[alert.level])
+      .sort((a, b) => LEVEL_RANK[a.level] - LEVEL_RANK[b.level]);
+    const top = allowed[0];
+    if (!top) return;
 
-    beep();
+    if (top.level === 'critical') beep();
     try {
       if ('Notification' in window && Notification.permission === 'granted') {
-        new Notification('Server Monitor', { body: critical.message });
+        new Notification('Server Monitor', { body: top.message });
       }
     } catch {
       /* notifications unavailable */
     }
-  }, [enabled, alerts]);
+  }, [enabled, alerts, levels]);
 
-  const toggle = () => {
+  const toggle = useCallback(() => {
     const next = !enabled;
     setEnabled(next);
     try {
@@ -100,7 +111,7 @@ export function useAlertNotifications(alerts: AlertEntry[]): AlertNotifications 
     if (next && 'Notification' in window && Notification.permission === 'default') {
       void Notification.requestPermission();
     }
-  };
+  }, [enabled]);
 
-  return { enabled, toggle };
+  return useMemo(() => ({ enabled, toggle }), [enabled, toggle]);
 }

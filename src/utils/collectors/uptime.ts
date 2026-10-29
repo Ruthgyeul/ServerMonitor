@@ -3,6 +3,7 @@ import path from 'path';
 
 import { UptimeCheck, UptimeSample } from '@/types/system';
 import { logger } from '@/utils/logger';
+import { processSingleton } from '@/utils/processSingleton';
 
 // HTTP uptime checks: GET each endpoint on its interval, keep the last 60
 // results, persist to data/uptime.json. One service instance per process
@@ -79,8 +80,15 @@ export async function probe(url: string, at: number = Date.now()): Promise<Uptim
       ms,
       code: response.status
     };
-  } catch {
-    return { at: new Date(at).toISOString(), ok: false, ms: null, code: null };
+  } catch (error) {
+    const timedOut = error instanceof Error && (error.name === 'TimeoutError' || error.name === 'AbortError');
+    return {
+      at: new Date(at).toISOString(),
+      ok: false,
+      ms: null,
+      code: null,
+      error: timedOut ? 'timeout' : 'unreachable'
+    };
   }
 }
 
@@ -204,9 +212,6 @@ class UptimeService {
   }
 }
 
-const globalStore = globalThis as typeof globalThis & { __serverMonitorUptime?: UptimeService };
-
 export function uptime(): UptimeService {
-  globalStore.__serverMonitorUptime ??= new UptimeService();
-  return globalStore.__serverMonitorUptime;
+  return processSingleton('uptime', () => new UptimeService());
 }

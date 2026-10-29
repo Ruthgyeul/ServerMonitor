@@ -40,7 +40,7 @@ export function BellMenu({ alerts, now, soundEnabled, onToggleSound, onClose }: 
       >
         <div className="flex items-center border-b border-line px-4 py-3">
           <span className="flex-1 text-[13px] font-medium">Notifications</span>
-          <Link href="/settings/rules" onClick={onClose} className="text-xs">
+          <Link href="/settings/notifications" onClick={onClose} className="text-xs">
             Settings
           </Link>
         </div>

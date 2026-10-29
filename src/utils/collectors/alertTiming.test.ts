@@ -7,8 +7,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { AlertInput } from '@/utils/collectors/alerts';
 
 // Fire/resolve delays, suppressed spikes, external conditions and the
-// incidents they open. Module state is reset per test; the incident store
-// lives on globalThis, so it is dropped too.
+// incidents they open. Modules are re-imported per test; shared process state
+// is reset by the test setup.
 const ENV_KEYS = [
   'DATA_DIR',
   'ALERTS_FILE',
@@ -20,7 +20,6 @@ const ENV_KEYS = [
 
 async function fresh(env: Record<string, string> = {}) {
   vi.resetModules();
-  delete (globalThis as { __serverMonitorIncidents?: unknown }).__serverMonitorIncidents;
   const dir = mkdtempSync(join(tmpdir(), 'alert-timing-'));
   process.env.DATA_DIR = dir;
   process.env.ALERTS_FILE = join(dir, 'alerts.json');

@@ -69,14 +69,22 @@ describe('probe', () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(async () => {
-        throw new Error('timeout');
+        throw new TypeError('fetch failed');
       })
     );
     expect(await probe('https://example.com', 0)).toEqual({
       at: new Date(0).toISOString(),
       ok: false,
       ms: null,
-      code: null
+      code: null,
+      error: 'unreachable'
     });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        throw new DOMException('The operation timed out.', 'TimeoutError');
+      })
+    );
+    expect(await probe('https://example.com', 0)).toMatchObject({ ok: false, error: 'timeout' });
   });
 });

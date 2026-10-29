@@ -2,7 +2,7 @@
 
 import React from 'react';
 import Link from 'next/link';
-import { CircleCheck, TriangleAlert } from 'lucide-react';
+import { CircleCheck, Timer, TriangleAlert } from 'lucide-react';
 
 import { setMute } from '@/components/alerts/muteApi';
 import { useToast } from '@/components/providers/ToastProvider';
@@ -10,7 +10,8 @@ import type { DashboardData } from '@/utils/dashboardData';
 import { formatHourMinute, formatShortStamp } from '@/utils/timeFormat';
 
 // One-line state of the host above the overview panels: active alerts (with a
-// quick mute), muted alerts, or "all systems normal" with key facts.
+// quick mute), muted alerts, breaches waiting out the fire delay, or "all
+// systems normal" with key facts.
 
 const bar = 'flex flex-wrap items-center gap-x-5 gap-y-2.5 rounded-lg border px-4 py-[11px]';
 
@@ -68,6 +69,35 @@ export function StatusBanner({ data }: { data: DashboardData }) {
     );
   }
 
+  const pending = data.pendingAlerts.filter(alert => alert.state === 'pending');
+  if (pending.length > 0) {
+    return (
+      <div className={`${bar} border-warn/30 bg-warn/6`}>
+        <div className="flex items-center gap-[9px]">
+          <Timer size={15} className="text-warn" />
+          <span className="text-[13px] font-medium text-warn-fg">
+            {pending.length} pending alert{pending.length === 1 ? '' : 's'} · waiting{' '}
+            {data.alertTiming.fireDelaySec}s before notifying
+          </span>
+        </div>
+        {pending.map(alert => (
+          <span key={alert.key} className="font-mono text-xs text-fg">
+            {alert.message} · fires in{' '}
+            {Math.max(
+              0,
+              Math.ceil((new Date(alert.dueAt).getTime() - new Date(data.timestamp).getTime()) / 1000)
+            )}
+            s
+          </span>
+        ))}
+        <Link href="/settings/rules#timing" className="ml-auto text-[12.5px]">
+          Alert timing
+        </Link>
+      </div>
+    );
+  }
+
+  const suppressed = data.alertTiming.suppressedSpikes;
   const { days, hours, minutes } = data.uptime;
   return (
     <div className={`${bar} gap-x-6 border-line bg-card`}>
@@ -77,6 +107,11 @@ export function StatusBanner({ data }: { data: DashboardData }) {
       </div>
       <span className="text-[12.5px] text-dim">0 active alerts</span>
       <span className="text-[12.5px] text-dim">{data.services.failed ?? 0} failed units</span>
+      {suppressed > 0 && (
+        <span className="text-[12.5px] text-dim">
+          {suppressed} short spike{suppressed === 1 ? '' : 's'} suppressed
+        </span>
+      )}
       <span className="text-[12.5px] text-dim">
         Uptime <span className="font-mono text-fg-2">{`${days}d ${hours}h ${minutes}m`}</span>
       </span>

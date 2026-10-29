@@ -6,6 +6,9 @@ import { X } from 'lucide-react';
 import { areaPath, linePath, niceMax, padToWindow } from '@/components/charts/paths';
 import type { ClusterNode } from '@/components/cluster/clusterTypes';
 import { useCluster } from '@/components/cluster/useCluster';
+import { UPTIME_BADGE_URL, type UptimeList } from '@/components/uptime/uptimeApi';
+import { summarize } from '@/components/uptime/uptimeView';
+import { usePolled } from '@/hooks/usePolled';
 import { usageColor } from '@/lib/statusColors';
 import { PALETTE } from '@/lib/theme';
 import { cn } from '@/lib/utils';
@@ -165,6 +168,9 @@ export function KioskScreen({ data, networkHistory, now, initialEvery, onExit }:
   );
 }
 
+// The HTTP-check count only needs a coarse refresh on the wall screen.
+const UPTIME_POLL_MS = 15_000;
+
 function HostView({ data, networkHistory }: { data: DashboardData; networkHistory: NetworkHistoryEntry[] }) {
   const firing = (key: string) => data.activeAlerts.some(alert => alert.key === key);
   const temp = data.cpu.temperature === 'N/A' ? null : data.cpu.temperature;
@@ -192,6 +198,8 @@ function HostView({ data, networkHistory }: { data: DashboardData; networkHistor
   const box = { x: 0, y: 5, width: 760, height: 210 };
   const { days, hours, minutes } = data.uptime;
   const failed = data.services.failed ?? 0;
+  const checks = usePolled<UptimeList>(UPTIME_BADGE_URL, UPTIME_POLL_MS)?.checks ?? [];
+  const http = summarize(checks);
   const strip = [
     { label: 'Uptime', value: `${days}d ${hours}h ${minutes}m`, alarm: false },
     { label: 'Load 1m', value: data.load.avg1.toFixed(2), alarm: false },
@@ -206,7 +214,11 @@ function HostView({ data, networkHistory }: { data: DashboardData; networkHistor
       alarm: false
     },
     { label: 'Failed units', value: String(failed), alarm: failed > 0 },
-    { label: 'Active alerts', value: String(data.activeAlerts.length), alarm: data.activeAlerts.length > 0 }
+    {
+      label: 'HTTP checks',
+      value: http.live > 0 ? `${http.up}/${http.live}` : '—',
+      alarm: http.up < http.live
+    }
   ];
 
   return (
