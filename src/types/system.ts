@@ -502,3 +502,21 @@ export interface DockerDetails {
   networks: DockerNetwork[];
   disk: DockerDiskUsage[];
 }
+
+// --- Uptime checks (/api/uptime) ------------------------------------------
+
+export interface UptimeSample {
+  at: string; // ISO 8601
+  ok: boolean;
+  ms: number | null; // null on timeout / network error
+  code: number | null; // HTTP status, null when no response
+}
+
+export interface UptimeCheck {
+  id: string;
+  name: string;
+  url: string;
+  intervalSec: number;
+  paused: boolean;
+  history: UptimeSample[]; // oldest first, at most 60
+}

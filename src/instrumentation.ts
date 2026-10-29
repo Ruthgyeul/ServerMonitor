@@ -13,6 +13,10 @@ export async function register(): Promise<void> {
   ]);
   for (const warning of validateConfig()) logger.warn('config:', warning);
 
-  const { ensureCollecting } = await import('@/utils/systemStream');
+  const [{ ensureCollecting }, { uptime }] = await Promise.all([
+    import('@/utils/systemStream'),
+    import('@/utils/collectors/uptime')
+  ]);
   ensureCollecting();
+  uptime().start();
 }
