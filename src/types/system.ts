@@ -231,6 +231,22 @@ export interface DockerInfo {
 
 export type AlertLevel = 'ok' | 'info' | 'warning' | 'critical';
 
+// A rule that is breached right now (as opposed to an AlertEntry, which is a
+// point-in-time log line). Drives the bell count, sidebar badge and favicon.
+export interface ActiveAlert {
+  key: string;
+  level: AlertLevel;
+  message: string;
+  since: string; // ISO 8601, when the rule entered
+}
+
+// Notification mute state as of this sample (see alertMute.ts).
+export interface MuteState {
+  globalMutedUntil: string | null;
+  quietHours: string | null;
+  quietNow: boolean;
+}
+
 export interface AlertEntry {
   id: string;
   level: AlertLevel;
@@ -343,6 +359,11 @@ export interface ServerData {
   battery?: BatteryInfo | null;
   history?: HistoryInfo;
   alerts?: AlertEntry[];
+  // Added in 3.0 for the console shell (optional: old-node compatible).
+  activeAlerts?: ActiveAlert[];
+  mute?: MuteState;
+  // Whether DASHBOARD_PASSWORD login is on, so the sidebar knows to offer Sign out.
+  loginEnabled?: boolean;
   // Added in 2.3 (all optional: old-node compatible).
   memoryDetail?: MemoryDetail;
   services?: ServicesInfo;

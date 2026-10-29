@@ -64,6 +64,30 @@ that aggregates several nodes on one screen.
 
 ## Layout
 
+### Console shell
+
+Every authenticated page (`/`, `/cluster`, `/alerts`, `/alerts/settings`)
+renders inside one console frame (`src/app/(console)/layout.tsx`):
+
+- **Sidebar** — Monitor / Configure navigation with live badges (active alert
+  count), an *Install as an app* card, and the host block (hostname, address,
+  OS · kernel, *Sign out* when `DASHBOARD_PASSWORD` login is on). Below 900px
+  it becomes an off-canvas drawer behind the header's menu button.
+- **Header** — breadcrumb and page title, connection state (*Live*,
+  *Reconnecting…*), muted / quiet-hours pill, clock, and the *Kiosk*, bell and
+  page actions (*Export* on the overview). The bell lists the latest critical
+  and warning alerts and holds the per-browser sound/desktop-alert switch.
+- **Offline banner** — when the stream drops (or goes silent for 10s) the page
+  keeps the last sample on screen and says when it was received.
+
+All pages share one SSE subscription (`SystemDataProvider`). The colours and
+type come from the semantic tokens at the top of `src/styles/globals.css`,
+mirrored as `PALETTE` in `src/lib/theme.ts`. The public `/status`, `/login`
+and the wall display `/monitor` sit outside the shell — point a 7-inch panel at
+`/monitor`, which keeps the full width.
+
+### Overview cards
+
 The three columns and the card order inside each one come from the design and
 are fixed in `Dashboard.tsx` — nothing is auto-placed, so no viewport ever
 reshuffles the cards:

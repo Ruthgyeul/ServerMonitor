@@ -1,49 +1,103 @@
 @import 'tailwindcss';
 
 /* ---------------------------------------------------------------------------
-   Terminal palette
+   Console palette (Dashboard Pro design)
 
-   Carries over the terminal feel from the portfolio (github.com/Ruthgyeul).
-   To recolor without touching the many gray-* utilities across the dashboard,
-   Tailwind's gray-scale tokens are wholesale redefined to this palette. Card/
-   border/text colors follow at once, so tile layout and information are untouched.
+   Semantic tokens for the console shell and every rebuilt page. Mirrored in
+   src/lib/theme.ts (PALETTE) for inline style values — SVG strokes, computed
+   fills — that can't consume a Tailwind class. Keep both files in sync.
 
-   Mirrored in src/lib/theme.ts for inline style values (SVG strokes, icon
-   `color` props) that can't consume a CSS variable through a Tailwind class —
-   keep both files' hex values in sync when either changes.
+   The gray-* scale is also remapped onto this palette so the legacy terminal
+   cards (still rendered inside the new shell until they are rebuilt) follow the
+   new surfaces and text colors without touching their markup.
 --------------------------------------------------------------------------- */
 @theme {
+  --color-canvas: #0b0d12;
+  --color-sidebar: #0d1016;
+  --color-card: #11141b;
+  --color-raised: #141821;
+  --color-inset: #161a22;
+  --color-toast: #1a1f2a;
+  --color-track: #1b2029;
+  --color-active: #232834;
+  --color-toggle-off: #2a303c;
+  --color-brand-tile: #16202e;
+
+  --color-line: rgba(255, 255, 255, 0.06);
+  --color-line-strong: rgba(255, 255, 255, 0.08);
+  --color-line-soft: rgba(255, 255, 255, 0.04);
+
+  --color-fg: #e7e9ee;
+  --color-fg-2: #c4c9d4;
+  --color-fg-3: #aeb4c2;
+  --color-nav: #9aa1b1;
+  --color-muted: #8a91a3;
+  --color-dim: #7b8294;
+  --color-subtle: #6b7386;
+  --color-faint: #5b6275;
+  --color-divider: #3d4354;
+
+  --color-accent: #5aa9f0;
+  --color-link: #7fb4f0;
+  --color-link-hover: #a9cdf6;
+  --color-upload: #a78bfa;
+
+  --color-ok: #3ccf91;
+  --color-ok-fg: #8fe3be;
+  --color-warn: #e8b445;
+  --color-warn-fg: #f2cf86;
+  --color-crit: #ef5f5a;
+  --color-crit-fg: #f6b0ad;
+  --color-info-fg: #a9cdf6;
+
+  /* Legacy gray scale, remapped (see header comment). */
   --color-gray-50: #f4f6fb;
-  --color-gray-100: #e6e8ee; /* body */
+  --color-gray-100: #e7e9ee;
   --color-gray-200: #d5dae4;
-  --color-gray-300: #c3c8d4; /* dim body */
-  --color-gray-400: #8b93a7; /* label */
-  --color-gray-500: #5c6478; /* caption */
-  --color-gray-600: #3a4152; /* fainter / dividers */
-  --color-gray-700: rgba(255, 255, 255, 0.08); /* card border */
-  --color-gray-800: #111621; /* card background */
-  --color-gray-900: #0a0d13; /* page / inset */
+  --color-gray-300: #c4c9d4;
+  --color-gray-400: #8a91a3;
+  --color-gray-500: #6b7386;
+  --color-gray-600: #3d4354;
+  --color-gray-700: rgba(255, 255, 255, 0.06);
+  --color-gray-800: #11141b;
+  --color-gray-900: #0b0d12;
+
+  /* Below this width the sidebar becomes an off-canvas drawer. */
+  --breakpoint-desk: 900px;
+
+  --animate-live: sm-pulse 2s ease-in-out infinite;
+  --animate-alarm: sm-pulse 0.7s ease-in-out infinite;
+  --animate-skeleton: sm-pulse 1.6s ease-in-out infinite;
+}
+
+@theme inline {
+  --font-sans: var(--font-geist-sans), system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, 'SF Mono', Menlo, monospace;
+}
+
+@keyframes sm-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
 }
 
 :root {
-  --background: #0a0d13;
-  --foreground: #e6e8ee;
+  --background: #0b0d12;
+  --foreground: #e7e9ee;
   --screen-saver-timeout: 0;
 
-  --term-bg: #0a0d13;
-  --term-panel: #111621;
-  --term-inset: #0d1119;
-  --term-border: rgba(255, 255, 255, 0.08);
-  --term-accent: #38bdf8;
-  --term-green: #34d399;
-  --term-faint: #5c6478;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0d13;
-    --foreground: #e6e8ee;
-  }
+  /* Legacy terminal variables used by the not-yet-rebuilt cards. */
+  --term-bg: #0b0d12;
+  --term-panel: #11141b;
+  --term-inset: #161a22;
+  --term-border: rgba(255, 255, 255, 0.06);
+  --term-accent: #5aa9f0;
+  --term-green: #3ccf91;
+  --term-faint: #6b7386;
 }
 
 /* .dash-tip::after's tooltip box (opacity:0 while hidden) still occupies
@@ -59,16 +113,29 @@ body {
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: var(--font-geist-mono), ui-monospace, 'SF Mono', 'SFMono-Regular', Menlo, monospace;
+  font-family: var(--font-sans);
+  font-feature-settings: 'tnum';
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
 }
 
-::selection {
-  background: rgba(52, 211, 153, 0.3);
+@layer base {
+  a {
+    color: var(--color-link);
+  }
+  a:hover {
+    color: var(--color-link-hover);
+  }
+  button:not(:disabled) {
+    cursor: pointer;
+  }
 }
 
-/* Scrollbar — the same thin terminal style as the portfolio */
+::selection {
+  background: rgba(90, 169, 240, 0.3);
+}
+
+/* Thin scrollbar */
 ::-webkit-scrollbar {
   width: 10px;
   height: 10px;
@@ -77,7 +144,7 @@ body {
   background: var(--term-bg);
 }
 ::-webkit-scrollbar-thumb {
-  background: #242b3a;
+  background: #2a303c;
   border-radius: 5px;
   border: 2px solid var(--term-bg);
 }
@@ -86,7 +153,7 @@ body {
 }
 * {
   scrollbar-width: thin;
-  scrollbar-color: #242b3a var(--term-bg);
+  scrollbar-color: #2a303c var(--term-bg);
 }
 
 /* ---------------------------------------------------------------------------

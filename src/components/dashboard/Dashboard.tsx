@@ -1,7 +1,6 @@
 import React from 'react';
 import { Server, TriangleAlert } from 'lucide-react';
 
-import { TerminalTitleBar } from '@/components/common/TerminalWindow';
 import { DiskIoPoint } from '@/hooks/useSystemData';
 import { cn } from '@/lib/utils';
 import { COLORS } from '@/lib/statusColors';
@@ -41,24 +40,15 @@ import {
 
 interface DashboardProps {
   data: DashboardData;
-  connected: boolean;
-  lastUpdate: number | null;
   now: number | null;
   networkHistory: NetworkHistoryEntry[];
   diskIoHistory: DiskIoPoint[];
 }
 
-export const Dashboard: React.FC<DashboardProps> = ({
-  data,
-  connected,
-  lastUpdate,
-  now,
-  networkHistory,
-  diskIoHistory
-}) => (
-  <div className="terminal-bg min-h-screen text-gray-100">
-    <TerminalTitleBar host={data.host.hostname || 'server'} />
-    <Header data={data} connected={connected} lastUpdate={lastUpdate} now={now} />
+// Rendered inside the console shell, which owns the page header (title, clock,
+// connection state) — so only the alert bar and the card grid live here.
+export const Dashboard: React.FC<DashboardProps> = ({ data, now, networkHistory, diskIoHistory }) => (
+  <div className="text-gray-100">
     <AlertBar data={data} />
 
     {/* The column makeup and the order within each column follow the design.
@@ -123,7 +113,12 @@ function currentAlerts(data: DashboardData): string[] {
   return alerts;
 }
 
-type HeaderProps = Omit<DashboardProps, 'networkHistory' | 'diskIoHistory'>;
+interface HeaderProps {
+  data: DashboardData;
+  connected: boolean;
+  lastUpdate: number | null;
+  now: number | null;
+}
 
 // Not built on the shared TerminalHeaderBar (common/TerminalWindow.tsx) — this
 // carries a live clock, a 3-state connection dot, a "degraded collectors"

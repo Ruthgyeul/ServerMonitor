@@ -1,7 +1,14 @@
 import fs from 'fs';
 import path from 'path';
 
-import { AlertEntry, AlertLevel, FirewallInfo, SshSession, TemperatureValue } from '@/types/system';
+import {
+  ActiveAlert,
+  AlertEntry,
+  AlertLevel,
+  FirewallInfo,
+  SshSession,
+  TemperatureValue
+} from '@/types/system';
 import { dispatchAlert } from '@/utils/collectors/notify';
 import { isMuted } from '@/utils/collectors/alertMute';
 import { getOverride } from '@/utils/collectors/alertOverrides';
@@ -243,10 +250,15 @@ const ANOMALY_ENABLED = /^(1|true|yes)$/i.test(process.env.ALERT_ANOMALY_ENABLE 
 const HISTORY_MAX = num('ALERT_HISTORY_MAX', 500);
 const HISTORY_RETENTION_MS = num('ALERT_HISTORY_RETENTION_DAYS', 7) * 24 * 60 * 60 * 1000;
 
-const active = new Set<string>();
+// Rules currently in the breached state, keyed by rule key. The message is
+// refreshed every tick so the bell/sidebar show the live value, while `since`
+// stays at the moment the rule entered.
+const active = new Map<string, ActiveAlert>();
 const log: AlertEntry[] = [];
 let knownSessions: Set<string> | null = null;
 let knownFirewall: FirewallInfo['status'] | null = null;
+// When the firewall last changed state, so an inactive firewall reports how long it has been down.
+let firewallSince = 0;
 let knownIfaceDown: Set<string> | null = null;
 let knownPortScanIps: Set<string> | null = null;
 let sequence = 0;
@@ -463,7 +475,12 @@ export function evaluateAlerts(input: AlertInput, at: number = Date.now()): Aler
     }
 
     if (!active.has(rule.key) && breached(rule.direction, value, rule.enter())) {
-      active.add(rule.key);
+      active.set(rule.key, {
+        key: rule.key,
+        level: rule.level,
+        message: rule.onEnter(value),
+        since: new Date(at).toISOString()
+      });
       lastNotifiedAt.set(rule.key, at);
       const flap = recordTransition(rule.key, at);
       push(rule.level, rule.onEnter(value), at, !firstEvaluation && !flap, rule.key);
@@ -487,6 +504,9 @@ export function evaluateAlerts(input: AlertInput, at: number = Date.now()): Aler
         });
       }
     }
+
+    const current = active.get(rule.key);
+    if (current) current.message = rule.onEnter(value);
   }
 
   // Record only newly appeared SSH sessions. On the first evaluation, quietly
@@ -576,11 +596,29 @@ export function evaluateAlerts(input: AlertInput, at: number = Date.now()): Aler
       );
     }
     knownFirewall = input.firewall;
+    firewallSince = at;
   }
 
   // Return only the recent view for the dashboard/SSE; the full history is read
   // separately via getAlertLog() (/api/alerts).
   return log.slice(0, MAX_ENTRIES);
+}
+
+// Everything breached right now (threshold rules plus an inactive firewall),
+// most severe first. Event alerts (SSH login, port scan, interface flaps) are
+// point-in-time and live only in the log.
+export function getActiveAlerts(): ActiveAlert[] {
+  const list = [...active.values()].map(alert => ({ ...alert }));
+  if (knownFirewall === 'inactive') {
+    list.push({
+      key: 'firewall',
+      level: 'critical',
+      message: 'Firewall inactive',
+      since: new Date(firewallSince).toISOString()
+    });
+  }
+  const rank: Record<AlertLevel, number> = { critical: 0, warning: 1, info: 2, ok: 3 };
+  return list.sort((a, b) => rank[a.level] - rank[b.level] || a.since.localeCompare(b.since));
 }
 
 // Emit a one-time notice when a rule starts or stops flapping.
