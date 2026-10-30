@@ -18,7 +18,13 @@ describe('parseContainerInspect', () => {
         Created: '2026-10-15T10:00:00.123Z',
         Path: 'docker-entrypoint.sh',
         Args: ['postgres'],
-        State: { Status: 'running', Health: { Status: 'healthy' } },
+        State: {
+          Status: 'running',
+          Health: { Status: 'healthy' },
+          StartedAt: '2026-10-29T03:00:00.5Z',
+          FinishedAt: '0001-01-01T00:00:00Z',
+          ExitCode: 0
+        },
         Config: { Image: 'postgres:16-alpine' },
         HostConfig: { RestartPolicy: { Name: 'unless-stopped' }, Memory: 1073741824 },
         NetworkSettings: {
@@ -51,7 +57,10 @@ describe('parseContainerInspect', () => {
         health: 'healthy',
         command: 'docker-entrypoint.sh postgres',
         createdAt: '2026-10-15T10:00:00.123Z',
-        memLimitMb: 1024
+        memLimitMb: 1024,
+        startedAt: '2026-10-29T03:00:00.500Z',
+        finishedAt: null,
+        exitCode: 0
       }
     ]);
   });

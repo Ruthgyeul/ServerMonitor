@@ -15,6 +15,7 @@ export function uptimeConditions(checks: UptimeCheck[]): ExternalCondition[] {
         key: `http:${check.id}`,
         level: 'critical' as const,
         message: `HTTP check failed: ${check.name} (${last.code ?? last.error ?? 'timeout'})`,
+        short: `${check.name} down`,
         recoveredMessage: `HTTP check recovered: ${check.name}`,
         rule: 'uptime check'
       }
@@ -30,6 +31,7 @@ export function jobConditions(jobs: ScheduledJob[]): ExternalCondition[] {
       key: `job:${job.id}`,
       level: job.kind === 'backup' ? ('critical' as const) : ('warning' as const),
       message: `Job failed: ${job.name}`,
+      short: `${job.name} failed`,
       recoveredMessage: `Job recovered: ${job.name}`,
       rule: 'job exit ≠ 0'
     }));
@@ -40,6 +42,7 @@ export function unitConditions(failedUnits: string[]): ExternalCondition[] {
     key: `svc:${unit}`,
     level: 'critical' as const,
     message: `Service failed: ${unit}`,
+    short: `${unit} failed`,
     recoveredMessage: `Service recovered: ${unit}`,
     rule: 'systemctl --failed'
   }));

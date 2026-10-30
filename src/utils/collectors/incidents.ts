@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 
-import { AlertLevel } from '@/types/system';
+import { AlertLevel, AlertThreshold } from '@/types/system';
 import { processSingleton } from '@/utils/processSingleton';
 
 // Incidents: one per alert firing, opened when it fires and resolved when it
@@ -19,6 +19,8 @@ export interface IncidentEvent {
   at: string; // ISO 8601
   kind: IncidentEventKind;
   text: string;
+  // Who added it: the dashboard operator, or the system (fire, notify, auto-resolve).
+  author?: 'operator' | 'system';
 }
 
 export interface Incident {
@@ -27,6 +29,8 @@ export interface Incident {
   title: string;
   level: AlertLevel;
   rule: string | null;
+  // The threshold in force when it fired (threshold rules only).
+  threshold?: AlertThreshold | null;
   status: IncidentStatus;
   openedAt: string;
   resolvedAt: string | null;
@@ -55,7 +59,12 @@ export function applyAction(
   note = ''
 ): Incident | string {
   const stamp = new Date(at).toISOString();
-  const event = (kind: IncidentEventKind, text: string): IncidentEvent => ({ at: stamp, kind, text });
+  const event = (kind: IncidentEventKind, text: string): IncidentEvent => ({
+    at: stamp,
+    kind,
+    text,
+    author: 'operator'
+  });
   switch (action) {
     case 'ack':
       if (incident.status !== 'open') return 'Only an open incident can be acknowledged';
@@ -94,6 +103,7 @@ export interface OpenInput {
   level: AlertLevel;
   title: string;
   rule: string | null;
+  threshold?: AlertThreshold | null;
   notifyText: string;
 }
 
@@ -139,12 +149,13 @@ class IncidentStore {
       title: input.title,
       level: input.level,
       rule: input.rule,
+      threshold: input.threshold ?? null,
       status: 'open',
       openedAt: stamp,
       resolvedAt: null,
       events: [
-        { at: stamp, kind: 'trigger', text: `Rule fired: ${input.title}` },
-        { at: stamp, kind: 'notify', text: input.notifyText }
+        { at: stamp, kind: 'trigger', text: `Rule fired: ${input.title}`, author: 'system' },
+        { at: stamp, kind: 'notify', text: input.notifyText, author: 'system' }
       ]
     };
     this.incidents.unshift(incident);
@@ -159,7 +170,7 @@ class IncidentStore {
     const stamp = new Date(at).toISOString();
     incident.status = 'resolved';
     incident.resolvedAt = stamp;
-    incident.events.push({ at: stamp, kind: 'resolve', text: 'Recovered automatically' });
+    incident.events.push({ at: stamp, kind: 'resolve', text: 'Recovered automatically', author: 'system' });
     this.save();
   }
 

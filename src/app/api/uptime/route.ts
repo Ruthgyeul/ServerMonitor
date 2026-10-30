@@ -6,7 +6,7 @@ import { enforceRateLimit } from '@/utils/rateLimit';
 import { rejectCrossSite } from '@/utils/sameOrigin';
 
 // HTTP uptime checks. GET lists every check with its last 60 results; POST
-// adds one ({ name?, url, intervalSec }). Probing runs server-side on its own
+// adds one ({ name?, url, intervalSec, expect?: '200' | '2xx' }). Probing runs server-side on its own
 // schedule, so results keep accumulating with no browser open.
 
 export const runtime = 'nodejs';
@@ -44,7 +44,8 @@ export async function POST(request: Request) {
   const result = service.add({
     name: typeof body.name === 'string' ? body.name : '',
     url: typeof body.url === 'string' ? body.url : '',
-    intervalSec: typeof body.intervalSec === 'number' ? body.intervalSec : NaN
+    intervalSec: typeof body.intervalSec === 'number' ? body.intervalSec : NaN,
+    expect: body.expect === '200' || body.expect === '2xx' ? body.expect : undefined
   });
   if (typeof result === 'string') {
     return NextResponse.json({ success: false, error: result }, { status: 400 });

@@ -18,6 +18,7 @@ describe('uptimeConditions', () => {
         name: 'API',
         url: 'https://a',
         intervalSec: 30,
+        expect: '200',
         paused: false,
         history: [sample(false, 503)]
       },
@@ -26,6 +27,7 @@ describe('uptimeConditions', () => {
         name: 'Web',
         url: 'https://b',
         intervalSec: 30,
+        expect: '200',
         paused: false,
         history: [sample(false, null)]
       },
@@ -34,10 +36,19 @@ describe('uptimeConditions', () => {
         name: 'Paused',
         url: 'https://c',
         intervalSec: 30,
+        expect: '200',
         paused: true,
         history: [sample(false, 500)]
       },
-      { id: 'd', name: 'Up', url: 'https://d', intervalSec: 30, paused: false, history: [sample(true, 200)] }
+      {
+        id: 'd',
+        name: 'Up',
+        url: 'https://d',
+        intervalSec: 30,
+        expect: '200',
+        paused: false,
+        history: [sample(true, 200)]
+      }
     ];
     expect(uptimeConditions(checks).map(condition => condition.message)).toEqual([
       'HTTP check failed: API (503)',
@@ -91,6 +102,7 @@ describe('unitConditions', () => {
         key: 'svc:nginx.service',
         level: 'critical',
         message: 'Service failed: nginx.service',
+        short: 'nginx.service failed',
         recoveredMessage: 'Service recovered: nginx.service',
         rule: 'systemctl --failed'
       }

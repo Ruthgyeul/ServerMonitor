@@ -144,3 +144,28 @@ describe('evaluateExternal', () => {
     expect(fetchMock).toHaveBeenCalled();
   });
 });
+
+describe('alert descriptions', () => {
+  it('gives threshold alerts a short form, rule text and the threshold', async () => {
+    const { evaluateAlerts, getActiveAlerts, getPendingAlerts, incidents } = await fresh({
+      ALERT_FIRE_DELAY_SECONDS: '0'
+    });
+    evaluateAlerts(input(10), T0);
+    evaluateAlerts(input(95), T0 + 1000);
+    expect(getActiveAlerts()[0]).toMatchObject({
+      short: 'CPU 95% > 90%',
+      ruleText: 'cpu > 90%',
+      threshold: { value: 90, unit: '%' }
+    });
+    expect(incidents().list()[0]).toMatchObject({ threshold: { value: 90, unit: '%' } });
+    expect(incidents().list()[0].events.every(event => event.author === 'system')).toBe(true);
+    expect(getPendingAlerts(T0 + 1000)).toEqual([]);
+  });
+
+  it('carries the short form on pending breaches', async () => {
+    const { evaluateAlerts, getPendingAlerts } = await fresh({ ALERT_FIRE_DELAY_SECONDS: '30' });
+    evaluateAlerts(input(10), T0);
+    evaluateAlerts(input(93.5), T0 + 1000);
+    expect(getPendingAlerts(T0 + 1000)[0].short).toBe('CPU 93.5% > 90%');
+  });
+});

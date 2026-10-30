@@ -243,6 +243,17 @@ export interface ActiveAlert {
   since: string; // ISO 8601, when the rule entered
   // What raised it: the threshold's env key, "uptime check", "systemctl --failed", …
   rule?: string;
+  // Compact form for banners and the kiosk ("CPU 95% > 90%").
+  short?: string;
+  // The condition in words ("cpu > 90%", "uptime check").
+  ruleText?: string;
+  // The threshold that fired, for threshold rules.
+  threshold?: AlertThreshold | null;
+}
+
+export interface AlertThreshold {
+  value: number;
+  unit: string; // "%", "°C", "h" or "" (load per core)
 }
 
 // A threshold breach waiting out the fire delay, or an active alert waiting
@@ -252,6 +263,7 @@ export interface PendingAlert {
   level: AlertLevel;
   message: string;
   state: 'pending' | 'recovering';
+  short?: string;
   since: string; // ISO 8601, when the wait started
   dueAt: string; // ISO 8601, when it fires / resolves if the condition holds
 }
@@ -514,6 +526,9 @@ export interface DockerContainerDetail {
   command: string | null;
   createdAt: string | null; // ISO 8601
   memLimitMb: number | null; // null = unlimited
+  startedAt?: string | null; // ISO 8601, when the current run began
+  finishedAt?: string | null; // ISO 8601, when it last stopped
+  exitCode?: number | null; // of the last run (meaningful once stopped)
 }
 
 export interface DockerImage {
@@ -565,11 +580,15 @@ export interface UptimeSample {
   error?: 'timeout' | 'unreachable';
 }
 
+// What counts as up: exactly 200 (the default), or any 2xx/3xx after redirects.
+export type UptimeExpect = '200' | '2xx';
+
 export interface UptimeCheck {
   id: string;
   name: string;
   url: string;
   intervalSec: number;
+  expect: UptimeExpect;
   paused: boolean;
   history: UptimeSample[]; // oldest first, at most 60
 }
