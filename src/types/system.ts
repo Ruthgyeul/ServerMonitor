@@ -73,6 +73,9 @@ export interface SwapInfo {
 export interface DiskIoInfo {
   read: number; // MB/s
   write: number; // MB/s
+  // The same rates in KB/s (unrounded to 0.1 MB/s), so light I/O doesn't read 0.0.
+  readKBps?: number;
+  writeKBps?: number;
 }
 
 export interface GpuInfo {
@@ -423,6 +426,21 @@ export interface MetricPoint {
   disk: number | null; // %
   down: number | null; // KB/s
   up: number | null; // KB/s
+  load?: number | null; // 1-minute load average
+  temp?: number | null; // °C
+  swap?: number | null; // %
+  diskRead?: number | null; // KB/s
+  diskWrite?: number | null; // KB/s
+}
+
+// One metric over an arbitrary window (incident context charts), at the
+// finest resolution still kept for that time.
+export type WindowMetric = 'cpu' | 'mem' | 'disk' | 'temp' | 'swap' | 'load' | 'net';
+
+export interface MetricWindow {
+  metric: WindowMetric;
+  stepSeconds: number;
+  points: { at: string; value: number | null }[];
 }
 
 export interface MetricSeries {
@@ -450,6 +468,7 @@ export interface ServiceUnit {
   active: string; // active / inactive / failed / activating / deactivating
   sub: string; // running / exited / dead / failed / start …
   since: string | null; // ISO 8601, when it last became active
+  restarts?: number | null; // systemd's NRestarts (automatic restarts)
 }
 
 export interface ServiceUnitList {

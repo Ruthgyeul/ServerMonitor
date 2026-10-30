@@ -49,13 +49,18 @@ export async function getDiskIo(): Promise<DiskIoInfo> {
   previousSample = { ...totals, at: now };
 
   // The first sample has nothing to compare against. Using cumulative bytes as-is would look like hundreds of MB/s.
-  if (!previous) return { read: 0, write: 0 };
+  if (!previous) return { read: 0, write: 0, readKBps: 0, writeKBps: 0 };
 
   const elapsedSeconds = (now - previous.at) / 1000;
-  if (elapsedSeconds <= 0) return { read: 0, write: 0 };
+  if (elapsedSeconds <= 0) return { read: 0, write: 0, readKBps: 0, writeKBps: 0 };
 
-  const rate = (current: number, before: number) =>
-    round(Math.max(0, current - before) / 1024 / 1024 / elapsedSeconds, 1);
-
-  return { read: rate(totals.read, previous.read), write: rate(totals.write, previous.write) };
+  const kbps = (current: number, before: number) => Math.max(0, current - before) / 1024 / elapsedSeconds;
+  const readKBps = kbps(totals.read, previous.read);
+  const writeKBps = kbps(totals.write, previous.write);
+  return {
+    read: round(readKBps / 1024, 1),
+    write: round(writeKBps / 1024, 1),
+    readKBps: round(readKBps, 1),
+    writeKBps: round(writeKBps, 1)
+  };
 }

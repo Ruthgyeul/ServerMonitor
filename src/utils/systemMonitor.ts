@@ -37,24 +37,48 @@ import {
 import { getFirewallInfo, getPortScanSuspects, getSshSessions } from '@/utils/collectors/security';
 import { getMemBreakdown } from '@/utils/collectors/memdetail';
 import { getReadOnlyMounts } from '@/utils/collectors/mounts';
-import { getServicesInfo } from '@/utils/collectors/services';
+import { getServicesInfo, listServiceUnits } from '@/utils/collectors/services';
 import { getKernelErrorCount, getFailedLoginCount } from '@/utils/collectors/kernel';
 import { getPackagesInfo } from '@/utils/collectors/packages';
 import { getSmartInfo } from '@/utils/collectors/smart';
 import { getHistory, getLoad30mAverage, recordSample, recordTrend } from '@/utils/collectors/history';
 import { recordMinuteSample } from '@/utils/collectors/metricSeries';
-import { recordHostState } from '@/utils/collectors/events';
+import { recordHostState, recordUnitStates } from '@/utils/collectors/events';
 import {
   evaluateAlerts,
   evaluateExternal,
   getActiveAlerts,
   getAlertTiming,
-  getPendingAlerts
+  getPendingAlerts,
+  logHostEvent
 } from '@/utils/collectors/alerts';
 import { collectExternalConditions } from '@/utils/collectors/externalConditions';
 import { muteStatus } from '@/utils/collectors/alertMute';
 import { getEffectiveThresholds } from '@/utils/collectors/alertOverrides';
 import { isAnomalous } from '@/utils/collectors/anomaly';
+
+// systemd unit start times and restart counters, read once a minute (the
+// full unit list is too heavy for every tick) to mark unit restarts on charts.
+const UNIT_CHECK_MS = 60_000;
+let lastUnitCheckAt = 0;
+
+function trackUnitRestarts(now: number): void {
+  if (now - lastUnitCheckAt < UNIT_CHECK_MS) return;
+  lastUnitCheckAt = now;
+  void listServiceUnits()
+    .then(list => {
+      if (!list.available) return;
+      const units = Object.fromEntries(
+        list.units
+          .filter(unit => unit.active === 'active' || unit.active === 'failed')
+          .map(unit => [unit.name, { since: unit.since, restarts: unit.restarts ?? null }])
+      );
+      recordUnitStates(units, Date.now());
+    })
+    .catch(() => {
+      // systemd unavailable: no unit restart markers.
+    });
+}
 
 // Cached system info
 let cachedData: ServerData | null = null;
@@ -598,7 +622,7 @@ export async function getSystemInfo(): Promise<ServerData> {
       warnings
     ),
     collect('swap', getSwapInfo, { used: 0, total: 0, percentage: 0 }, warnings),
-    collect('diskIO', getDiskIo, { read: 0, write: 0 }, warnings),
+    collect('diskIO', getDiskIo, { read: 0, write: 0, readKBps: 0, writeKBps: 0 }, warnings),
     collect('gpu', getGpuInfo, { name: null, usage: 'N/A' as const, temperature: 'N/A' as const }, warnings),
     collect<ProcessSummary>(
       'processSummary',
@@ -666,7 +690,8 @@ export async function getSystemInfo(): Promise<ServerData> {
       temp: typeof cpu.temperature === 'number' ? cpu.temperature : null,
       net: collectorFailed('network') ? null : network.download + network.upload,
       down: collectorFailed('network') ? null : network.download,
-      up: collectorFailed('network') ? null : network.upload
+      up: collectorFailed('network') ? null : network.upload,
+      swap: collectorFailed('swap') || swap.total <= 0 ? null : swap.percentage
     },
     now
   );
@@ -676,13 +701,26 @@ export async function getSystemInfo(): Promise<ServerData> {
       mem: collectorFailed('memory') ? null : memory.percentage,
       disk: collectorFailed('disk') ? null : disk.percentage,
       down: collectorFailed('network') ? null : network.download,
-      up: collectorFailed('network') ? null : network.upload
+      up: collectorFailed('network') ? null : network.upload,
+      load: loadBase.avg1,
+      temp: typeof cpu.temperature === 'number' ? cpu.temperature : null,
+      swap: collectorFailed('swap') || swap.total <= 0 ? null : swap.percentage,
+      diskRead: collectorFailed('diskIO') ? null : (diskIO.readKBps ?? null),
+      diskWrite: collectorFailed('diskIO') ? null : (diskIO.writeKBps ?? null)
     },
     now
   );
   if (!collectorFailed('host')) {
-    recordHostState(host.bootTime, host.rebootReason, docker.available ? docker.containers : [], now);
+    const exits = recordHostState(
+      host.bootTime,
+      host.rebootReason,
+      docker.available ? docker.containers : [],
+      now,
+      host.kernel
+    );
+    for (const message of exits) logHostEvent(message, 'docker', now);
   }
+  trackUnitRestarts(now);
   recordDiskSample(disk.percentage, now);
   const diskHoursToFull = getHoursToFull(now);
   // A failed memory/network collector returns its zero-filled fallback (see

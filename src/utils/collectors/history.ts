@@ -3,32 +3,42 @@ import path from 'path';
 
 import { CpuHourSample, HistoryInfo, LoadSample, TrendSample } from '@/types/system';
 import { round } from '@/utils/collectors/shell';
+import { processSingleton } from '@/utils/processSingleton';
 
-// History buckets live in process memory but are also persisted to disk, so a
-// restart after a deploy (git pull) or a crash doesn't reset the graphs. The
-// store file lives in the gitignored data directory, so pull/build don't touch
-// it.
+// Persisted metric history in two tiers, so a restart after a deploy or a
+// crash doesn't reset the graphs:
 //
-// Retention and display are separated. Buckets keep 62 days at 1-hour
-// granularity (1488 cells) — the window for pruning/disk recovery — but the
-// graphs still draw only 48h of load and 24h of CPU as before. getHistory slices
-// to just the display window, so the screen doesn't change even as 7 days of
-// data accumulate.
-const LOAD_BUCKET_MS = 60 * 60 * 1000;
-const HOUR_BUCKET_MS = 60 * 60 * 1000;
+//   hour     1-hour buckets, kept HISTORY_RETENTION_DAYS (default 62) — the
+//            48h load grid, 24h CPU heatmap, 7d charts and Compare week/month
+//   quarter  15-minute buckets, kept 8 days — the 24h charts and Compare's
+//            "today vs yesterday" (96 points a day, as the design draws them)
+//
+// Every bucket keeps sum, count and max, so charts can show averages and
+// Compare's "Peak" is the real maximum rather than the highest average.
+// The store lives in the gitignored data directory, so pull/build don't touch it.
 
-// The retention (prune / disk recovery) window. 62 days so the Compare page
-// can put this month next to last month; display windows stay short.
-const RETENTION_HOURS = 62 * 24;
-const LOAD_RETENTION = RETENTION_HOURS;
-const CPU_RETENTION = RETENTION_HOURS;
+export const HOUR_MS = 60 * 60 * 1000;
+export const QUARTER_MS = 15 * 60 * 1000;
 
-// The window actually drawn on the graphs — unchanged from before.
-const LOAD_DISPLAY = 48; // 48 hours
-const CPU_DISPLAY = 24; // 24 hours
+const DEFAULT_RETENTION_DAYS = 62;
+const MIN_RETENTION_DAYS = 7;
+const MAX_RETENTION_DAYS = 400;
+const QUARTER_RETENTION_DAYS = 8;
 
-// A minimum save interval keeps disk writes from being too frequent. The
-// buckets are small (a few dozen), so the worst-case data loss is just this interval.
+// Pure: HISTORY_RETENTION_DAYS → whole days, clamped to a sane range.
+export function retentionDays(raw: string | undefined): number {
+  const days = Number(raw);
+  if (raw === undefined || raw.trim() === '' || !Number.isFinite(days)) return DEFAULT_RETENTION_DAYS;
+  return Math.min(MAX_RETENTION_DAYS, Math.max(MIN_RETENTION_DAYS, Math.round(days)));
+}
+
+const RETENTION_HOURS = retentionDays(process.env.HISTORY_RETENTION_DAYS) * 24;
+const QUARTER_RETENTION = QUARTER_RETENTION_DAYS * 96;
+
+// The windows drawn on the overview grids.
+const LOAD_DISPLAY = 48; // hours
+const CPU_DISPLAY = 24; // hours
+
 const SAVE_INTERVAL_MS = 30 * 1000;
 
 // process.cwd() resolves to the project root at runtime; without this ignore,
@@ -36,322 +46,377 @@ const SAVE_INTERVAL_MS = 30 * 1000;
 // project into the output bundle (the "unexpected file in NFT list" warning).
 const DATA_DIR = process.env.DATA_DIR || path.join(/*turbopackIgnore: true*/ process.cwd(), 'data');
 const STORE_FILE = process.env.HISTORY_FILE || path.join(DATA_DIR, 'history.json');
-// v2 adds the per-metric trend buckets. A v1 file still loads (its trend series
-// just start empty and fill over time).
-const STORE_VERSION = 2;
-const SUPPORTED_VERSIONS = new Set([1, 2]);
+// v3: two tiers keyed by metric, buckets carry max. v1/v2 files (hourly only,
+// one array per metric, no max) are migrated on load.
+const STORE_VERSION = 3;
 
-interface Bucket {
+export const HISTORY_METRICS = ['cpu', 'load', 'mem', 'disk', 'temp', 'net', 'down', 'up', 'swap'] as const;
+export type HistoryMetric = (typeof HISTORY_METRICS)[number];
+export type HourlyMetric = HistoryMetric;
+type TrendKey = Exclude<HistoryMetric, 'cpu' | 'load'>;
+
+export interface Bucket {
   sum: number;
   count: number;
+  max: number;
 }
 
-const loadBuckets = new Map<number, Bucket>();
-const cpuBuckets = new Map<number, Bucket>();
+type TierBuckets = Record<HistoryMetric, Map<number, Bucket>>;
 
-// Per-metric trend buckets (memory %, disk %, temperature °C, network KB/s
-// combined and split into download/upload). Same hourly granularity/retention
-// as CPU; drawn as 24h sparklines and as the overview's 24h/7d charts. Kept in
-// one record so the persistence/serialisation loops stay generic.
-const TREND_KEYS = ['mem', 'disk', 'temp', 'net', 'down', 'up'] as const;
-type TrendKey = (typeof TREND_KEYS)[number];
-const trendBuckets: Record<TrendKey, Map<number, Bucket>> = {
-  mem: new Map(),
-  disk: new Map(),
-  temp: new Map(),
-  net: new Map(),
-  down: new Map(),
-  up: new Map()
-};
+interface Tier {
+  bucketMs: number;
+  retention: number; // buckets
+  buckets: TierBuckets;
+}
 
-// --- 30-minute moving average --------------------------------------------
-// The kernel only gives 1/5/15-minute load averages, so we compute the 30-minute
-// one ourselves by keeping each sample in a short window. At a 1s interval (15s
-// when idle) the window holds at most 1800 entries — no memory burden — and,
-// unlike the buckets, it isn't persisted (it refills after a restart).
-const ROLLING_WINDOW_MS = 30 * 60 * 1000;
+function emptyBuckets(): TierBuckets {
+  return Object.fromEntries(HISTORY_METRICS.map(metric => [metric, new Map()])) as TierBuckets;
+}
 
 interface Sample {
   at: number;
   value: number;
 }
 
-const recentLoad: Sample[] = [];
+// Shared by every bundle in the process (see processSingleton), so the
+// collection loop and the routes that read history see the same buckets.
+const state = processSingleton('history', () => ({
+  hour: { bucketMs: HOUR_MS, retention: RETENTION_HOURS, buckets: emptyBuckets() } as Tier,
+  quarter: { bucketMs: QUARTER_MS, retention: QUARTER_RETENTION, buckets: emptyBuckets() } as Tier,
+  recentLoad: [] as Sample[],
+  loaded: false,
+  lastSaveAt: 0,
+  saveTimer: null as ReturnType<typeof setTimeout> | null,
+  writing: false,
+  exitHooked: false
+}));
+
+// --- 30-minute moving average --------------------------------------------
+// The kernel only gives 1/5/15-minute load averages, so the 30-minute one is
+// computed from a short window of samples (not persisted; refills after a restart).
+const ROLLING_WINDOW_MS = 30 * 60 * 1000;
 
 export interface RollingAverage {
   value: number | null;
-  // The span actually covered (seconds). The caller must be able to tell if the
-  // window is only partly filled. Reporting minutes would read "0-minute average"
-  // right after start, so it's given in seconds.
+  // The span actually covered (seconds), so the caller can tell a partly
+  // filled window from a full one.
   windowSeconds: number;
 }
 
-// Trim samples that fell out of the window from the front. They arrive in time order, so only the front needs checking.
 function pruneRecent(now: number): void {
   const oldest = now - ROLLING_WINDOW_MS;
   let drop = 0;
-  while (drop < recentLoad.length && recentLoad[drop].at < oldest) drop += 1;
-  if (drop > 0) recentLoad.splice(0, drop);
+  while (drop < state.recentLoad.length && state.recentLoad[drop].at < oldest) drop += 1;
+  if (drop > 0) state.recentLoad.splice(0, drop);
 }
 
 export function getLoad30mAverage(now: number = Date.now()): RollingAverage {
   pruneRecent(now);
-  if (recentLoad.length === 0) return { value: null, windowSeconds: 0 };
-
-  const sum = recentLoad.reduce((total, sample) => total + sample.value, 0);
-  const spanMs = now - recentLoad[0].at;
+  const recent = state.recentLoad;
+  if (recent.length === 0) return { value: null, windowSeconds: 0 };
+  const sum = recent.reduce((total, sample) => total + sample.value, 0);
   return {
-    value: round(sum / recentLoad.length, 2),
-    windowSeconds: Math.min(ROLLING_WINDOW_MS / 1000, Math.round(spanMs / 1000))
+    value: round(sum / recent.length, 2),
+    windowSeconds: Math.min(ROLLING_WINDOW_MS / 1000, Math.round((now - recent[0].at) / 1000))
   };
 }
 
-function add(buckets: Map<number, Bucket>, key: number, value: number): void {
+// --- Buckets ---------------------------------------------------------------
+
+export function addToBucket(buckets: Map<number, Bucket>, key: number, value: number): void {
   const bucket = buckets.get(key);
   if (bucket) {
     bucket.sum += value;
     bucket.count += 1;
+    bucket.max = Math.max(bucket.max, value);
   } else {
-    buckets.set(key, { sum: value, count: 1 });
+    buckets.set(key, { sum: value, count: 1, max: value });
   }
 }
 
-function prune(buckets: Map<number, Bucket>, oldestKey: number): void {
-  for (const key of buckets.keys()) {
-    if (key < oldestKey) buckets.delete(key);
+function record(tier: Tier, metric: HistoryMetric, value: number, at: number): void {
+  const key = Math.floor(at / tier.bucketMs) * tier.bucketMs;
+  const buckets = tier.buckets[metric];
+  addToBucket(buckets, key, value);
+  const oldest = key - (tier.retention - 1) * tier.bucketMs;
+  for (const bucketKey of buckets.keys()) {
+    if (bucketKey < oldest) buckets.delete(bucketKey);
   }
 }
 
-// --- Persistence ---------------------------------------------------------
-
-type SerializedBucket = [key: number, sum: number, count: number];
-interface StoreShape {
-  v: number;
-  loadBuckets: SerializedBucket[];
-  cpuBuckets: SerializedBucket[];
-  // Added in store v2 (optional so a v1 file still loads its load/cpu history).
-  memBuckets?: SerializedBucket[];
-  diskBuckets?: SerializedBucket[];
-  tempBuckets?: SerializedBucket[];
-  netBuckets?: SerializedBucket[];
-  // Added later within v2 (optional: older v2 files simply lack them).
-  downBuckets?: SerializedBucket[];
-  upBuckets?: SerializedBucket[];
+function recordBoth(metric: HistoryMetric, value: number, at: number): void {
+  record(state.hour, metric, value, at);
+  record(state.quarter, metric, value, at);
 }
 
-function serialize(buckets: Map<number, Bucket>): SerializedBucket[] {
-  return [...buckets.entries()].map(([key, { sum, count }]) => [key, sum, count]);
+// --- Persistence -----------------------------------------------------------
+
+type SerializedBucket = [key: number, sum: number, count: number, max: number];
+type SerializedTier = Partial<Record<HistoryMetric, SerializedBucket[]>>;
+
+interface StoreV3 {
+  v: 3;
+  hour: SerializedTier;
+  quarter: SerializedTier;
 }
 
-function hydrate(buckets: Map<number, Bucket>, rows: unknown, bucketMs: number, count: number): void {
+// The v1/v2 layout: hourly arrays per metric, rows without max.
+interface LegacyStore {
+  v: 1 | 2;
+  loadBuckets?: unknown;
+  cpuBuckets?: unknown;
+  memBuckets?: unknown;
+  diskBuckets?: unknown;
+  tempBuckets?: unknown;
+  netBuckets?: unknown;
+  downBuckets?: unknown;
+  upBuckets?: unknown;
+}
+
+const LEGACY_FIELDS: Record<keyof Omit<LegacyStore, 'v'>, HistoryMetric> = {
+  loadBuckets: 'load',
+  cpuBuckets: 'cpu',
+  memBuckets: 'mem',
+  diskBuckets: 'disk',
+  tempBuckets: 'temp',
+  netBuckets: 'net',
+  downBuckets: 'down',
+  upBuckets: 'up'
+};
+
+function serializeTier(tier: Tier): SerializedTier {
+  return Object.fromEntries(
+    HISTORY_METRICS.map(metric => [
+      metric,
+      [...tier.buckets[metric].entries()].map(([key, bucket]) => [key, bucket.sum, bucket.count, bucket.max])
+    ])
+  );
+}
+
+// Rows are [key, sum, count] (v1/v2) or [key, sum, count, max] (v3). A legacy
+// row's max is unknown, so its average stands in.
+function hydrate(buckets: Map<number, Bucket>, rows: unknown, tier: Tier): void {
   if (!Array.isArray(rows)) return;
-  const oldest = Math.floor(Date.now() / bucketMs) * bucketMs - (count - 1) * bucketMs;
+  const oldest =
+    Math.floor(Date.now() / tier.bucketMs) * tier.bucketMs - (tier.retention - 1) * tier.bucketMs;
   for (const row of rows) {
-    if (!Array.isArray(row) || row.length !== 3) continue;
-    const [key, sum, cnt] = row;
-    // Silently drop corrupt/stale buckets. They just show as "no data" on screen.
-    if (typeof key !== 'number' || typeof sum !== 'number' || typeof cnt !== 'number') continue;
-    if (!Number.isFinite(key) || cnt <= 0 || key < oldest) continue;
-    buckets.set(key, { sum, count: cnt });
+    if (!Array.isArray(row) || (row.length !== 3 && row.length !== 4)) continue;
+    const [key, sum, count, max] = row as number[];
+    if (![key, sum, count].every(value => typeof value === 'number' && Number.isFinite(value))) continue;
+    if (count <= 0 || key < oldest) continue;
+    buckets.set(key, {
+      sum,
+      count,
+      max: typeof max === 'number' && Number.isFinite(max) ? max : sum / count
+    });
   }
 }
 
-let loaded = false;
+// Pure: the store as written now, from whatever version was read.
+export function migrateStore(parsed: unknown): StoreV3 | null {
+  if (!parsed || typeof parsed !== 'object') return null;
+  const store = parsed as { v?: unknown };
+  if (store.v === 3) {
+    const v3 = parsed as Partial<StoreV3>;
+    return { v: 3, hour: v3.hour ?? {}, quarter: v3.quarter ?? {} };
+  }
+  if (store.v === 1 || store.v === 2) {
+    const legacy = parsed as LegacyStore;
+    const hour: SerializedTier = {};
+    for (const [field, metric] of Object.entries(LEGACY_FIELDS) as [
+      keyof typeof LEGACY_FIELDS,
+      HistoryMetric
+    ][]) {
+      const rows = legacy[field];
+      if (Array.isArray(rows)) hour[metric] = rows as SerializedBucket[];
+    }
+    // The 15-minute tier starts empty; it fills within the day.
+    return { v: 3, hour, quarter: {} };
+  }
+  return null;
+}
 
-// Read from disk once on first access. Uses a synchronous read to avoid a
-// top-level await (the file is small, so it's fine).
 function ensureLoaded(): void {
-  if (loaded) return;
-  loaded = true;
+  if (state.loaded) return;
+  state.loaded = true;
   try {
-    const raw = fs.readFileSync(/*turbopackIgnore: true*/ STORE_FILE, 'utf-8');
-    const parsed = JSON.parse(raw) as StoreShape;
-    if (parsed && SUPPORTED_VERSIONS.has(parsed.v)) {
-      hydrate(loadBuckets, parsed.loadBuckets, LOAD_BUCKET_MS, LOAD_RETENTION);
-      hydrate(cpuBuckets, parsed.cpuBuckets, HOUR_BUCKET_MS, CPU_RETENTION);
-      // v1 files simply have these undefined; hydrate no-ops on a non-array.
-      hydrate(trendBuckets.mem, parsed.memBuckets, HOUR_BUCKET_MS, CPU_RETENTION);
-      hydrate(trendBuckets.disk, parsed.diskBuckets, HOUR_BUCKET_MS, CPU_RETENTION);
-      hydrate(trendBuckets.temp, parsed.tempBuckets, HOUR_BUCKET_MS, CPU_RETENTION);
-      hydrate(trendBuckets.net, parsed.netBuckets, HOUR_BUCKET_MS, CPU_RETENTION);
-      hydrate(trendBuckets.down, parsed.downBuckets, HOUR_BUCKET_MS, CPU_RETENTION);
-      hydrate(trendBuckets.up, parsed.upBuckets, HOUR_BUCKET_MS, CPU_RETENTION);
+    const store = migrateStore(JSON.parse(fs.readFileSync(/*turbopackIgnore: true*/ STORE_FILE, 'utf-8')));
+    if (!store) return;
+    for (const metric of HISTORY_METRICS) {
+      hydrate(state.hour.buckets[metric], store.hour[metric], state.hour);
+      hydrate(state.quarter.buckets[metric], store.quarter[metric], state.quarter);
     }
   } catch {
-    // If the file is missing (first run) or unreadable, start empty.
+    // Missing (first run) or unreadable: start empty.
   }
 }
 
-let lastSaveAt = 0;
-let saveTimer: ReturnType<typeof setTimeout> | null = null;
-let writing = false;
-
-function buildPayload(): StoreShape {
-  return {
-    v: STORE_VERSION,
-    loadBuckets: serialize(loadBuckets),
-    cpuBuckets: serialize(cpuBuckets),
-    memBuckets: serialize(trendBuckets.mem),
-    diskBuckets: serialize(trendBuckets.disk),
-    tempBuckets: serialize(trendBuckets.temp),
-    netBuckets: serialize(trendBuckets.net),
-    downBuckets: serialize(trendBuckets.down),
-    upBuckets: serialize(trendBuckets.up)
-  };
+function buildPayload(): StoreV3 {
+  return { v: STORE_VERSION, hour: serializeTier(state.hour), quarter: serializeTier(state.quarter) };
 }
 
 async function writeStore(): Promise<void> {
-  if (writing) return;
-  writing = true;
-  lastSaveAt = Date.now();
-  const payload = buildPayload();
+  if (state.writing) return;
+  state.writing = true;
+  state.lastSaveAt = Date.now();
   try {
     await fs.promises.mkdir(DATA_DIR, { recursive: true });
-    // Write to a temp file and rename so no half-written file remains (atomic replace).
+    // Write to a temp file and rename so no half-written file remains.
     const tmp = `${STORE_FILE}.tmp`;
-    await fs.promises.writeFile(tmp, JSON.stringify(payload), 'utf-8');
+    await fs.promises.writeFile(tmp, JSON.stringify(buildPayload()), 'utf-8');
     await fs.promises.rename(tmp, STORE_FILE);
   } catch {
-    // A disk write failure is not fatal. Retry on the next save.
+    // Not fatal; retried on the next save.
   } finally {
-    writing = false;
+    state.writing = false;
   }
 }
 
-// Rather than writing every sample, schedule with a minimum interval.
 function scheduleSave(): void {
-  if (saveTimer) return;
-  const elapsed = Date.now() - lastSaveAt;
-  const delay = Math.max(0, SAVE_INTERVAL_MS - elapsed);
-  saveTimer = setTimeout(() => {
-    saveTimer = null;
+  if (state.saveTimer) return;
+  const delay = Math.max(0, SAVE_INTERVAL_MS - (Date.now() - state.lastSaveAt));
+  state.saveTimer = setTimeout(() => {
+    state.saveTimer = null;
     void writeStore();
   }, delay);
-  // Don't let this one timer keep the process from exiting.
-  if (typeof saveTimer.unref === 'function') saveTimer.unref();
+  if (typeof state.saveTimer.unref === 'function') state.saveTimer.unref();
 }
 
-// On a shutdown signal, write the final state synchronously once more. Even if
-// the scheduled save hasn't run yet, the recent window isn't lost.
+// On a shutdown signal, write the final state synchronously once more.
 function flushSync(): void {
   try {
-    const payload = buildPayload();
     fs.mkdirSync(DATA_DIR, { recursive: true });
-    fs.writeFileSync(STORE_FILE, JSON.stringify(payload), 'utf-8');
+    fs.writeFileSync(STORE_FILE, JSON.stringify(buildPayload()), 'utf-8');
   } catch {
     // Swallow failures during shutdown.
   }
 }
 
-let exitHooked = false;
 function hookExit(): void {
-  if (exitHooked) return;
-  exitHooked = true;
+  if (state.exitHooked) return;
+  state.exitHooked = true;
   process.once('SIGTERM', () => flushSync());
   process.once('SIGINT', () => flushSync());
   process.once('beforeExit', () => flushSync());
 }
 
-// --- Public API ----------------------------------------------------------
+// --- Recording -------------------------------------------------------------
 
 export function recordSample(cpuUsage: number, load1: number, at: number = Date.now()): void {
   ensureLoaded();
   hookExit();
-
-  const loadKey = Math.floor(at / LOAD_BUCKET_MS) * LOAD_BUCKET_MS;
-  const hourKey = Math.floor(at / HOUR_BUCKET_MS) * HOUR_BUCKET_MS;
-
-  add(loadBuckets, loadKey, load1);
-  add(cpuBuckets, hourKey, cpuUsage);
-
-  recentLoad.push({ at, value: load1 });
+  recordBoth('cpu', cpuUsage, at);
+  recordBoth('load', load1, at);
+  state.recentLoad.push({ at, value: load1 });
   pruneRecent(at);
-
-  prune(loadBuckets, loadKey - (LOAD_RETENTION - 1) * LOAD_BUCKET_MS);
-  prune(cpuBuckets, hourKey - (CPU_RETENTION - 1) * HOUR_BUCKET_MS);
-
   scheduleSave();
 }
 
-// Record the per-metric trend samples for this tick. Nulls (unavailable/N/A
-// sources) are skipped so a bucket only ever averages real readings.
+// The other metrics for this tick. Nulls (unavailable sources) are skipped so
+// a bucket only ever averages real readings.
 export function recordTrend(
   samples: Partial<Record<TrendKey, number | null>>,
   at: number = Date.now()
 ): void {
   ensureLoaded();
   hookExit();
-
-  const hourKey = Math.floor(at / HOUR_BUCKET_MS) * HOUR_BUCKET_MS;
-  const oldest = hourKey - (CPU_RETENTION - 1) * HOUR_BUCKET_MS;
-  for (const key of TREND_KEYS) {
-    const value = samples[key];
-    if (typeof value === 'number' && Number.isFinite(value)) {
-      add(trendBuckets[key], hourKey, value);
-      prune(trendBuckets[key], oldest);
-    }
+  for (const metric of HISTORY_METRICS) {
+    if (metric === 'cpu' || metric === 'load') continue;
+    const value = samples[metric];
+    if (typeof value === 'number' && Number.isFinite(value)) recordBoth(metric, value, at);
   }
   scheduleSave();
 }
 
-function series(buckets: Map<number, Bucket>, bucketMs: number, count: number, now: number, digits: number) {
-  const newestKey = Math.floor(now / bucketMs) * bucketMs;
+// --- Reading ---------------------------------------------------------------
+
+export type Stat = 'avg' | 'max';
+
+const valueOf = (bucket: Bucket | undefined, stat: Stat, digits: number) =>
+  bucket ? round(stat === 'max' ? bucket.max : bucket.sum / bucket.count, digits) : null;
+
+function tierFor(stepMs: number): Tier {
+  return stepMs === QUARTER_MS ? state.quarter : state.hour;
+}
+
+function series(
+  tier: Tier,
+  metric: HistoryMetric,
+  count: number,
+  now: number,
+  digits: number
+): TrendSample[] {
+  const newestKey = Math.floor(now / tier.bucketMs) * tier.bucketMs;
   return Array.from({ length: count }, (_, index) => {
-    const key = newestKey - (count - 1 - index) * bucketMs;
-    const bucket = buckets.get(key);
-    return {
-      at: new Date(key).toISOString(),
-      value: bucket ? round(bucket.sum / bucket.count, digits) : null
-    };
+    const key = newestKey - (count - 1 - index) * tier.bucketMs;
+    return { at: new Date(key).toISOString(), value: valueOf(tier.buckets[metric].get(key), 'avg', digits) };
   });
 }
 
 export function getHistory(now: number = Date.now()): HistoryInfo {
   ensureLoaded();
-  const load: LoadSample[] = series(loadBuckets, LOAD_BUCKET_MS, LOAD_DISPLAY, now, 2).map(
-    ({ at, value }) => ({ at, avg1: value })
-  );
-  const cpuHourly: CpuHourSample[] = series(cpuBuckets, HOUR_BUCKET_MS, CPU_DISPLAY, now, 1).map(
-    ({ at, value }) => ({ at, usage: value })
-  );
+  const hour = state.hour;
+  const load: LoadSample[] = series(hour, 'load', LOAD_DISPLAY, now, 2).map(({ at, value }) => ({
+    at,
+    avg1: value
+  }));
+  const cpuHourly: CpuHourSample[] = series(hour, 'cpu', CPU_DISPLAY, now, 1).map(({ at, value }) => ({
+    at,
+    usage: value
+  }));
   const trends = {
-    mem: series(trendBuckets.mem, HOUR_BUCKET_MS, CPU_DISPLAY, now, 1),
-    disk: series(trendBuckets.disk, HOUR_BUCKET_MS, CPU_DISPLAY, now, 1),
-    temp: series(trendBuckets.temp, HOUR_BUCKET_MS, CPU_DISPLAY, now, 1),
-    net: series(trendBuckets.net, HOUR_BUCKET_MS, CPU_DISPLAY, now, 1)
+    mem: series(hour, 'mem', CPU_DISPLAY, now, 1),
+    disk: series(hour, 'disk', CPU_DISPLAY, now, 1),
+    temp: series(hour, 'temp', CPU_DISPLAY, now, 1),
+    net: series(hour, 'net', CPU_DISPLAY, now, 1)
   };
   return { load, cpuHourly, trends };
 }
 
-export type HourlyMetric = 'cpu' | 'load' | TrendKey;
-
-function bucketsOf(metric: HourlyMetric): Map<number, Bucket> {
-  if (metric === 'cpu') return cpuBuckets;
-  if (metric === 'load') return loadBuckets;
-  return trendBuckets[metric];
-}
-
-// The last `hours` hourly averages of one metric, oldest first, for charts that
-// span more than the in-memory minute series covers (24h / 7d). Capped at the
-// retention window.
-export function getHourlySeries(
-  metric: HourlyMetric,
-  hours: number,
+// The last `count` buckets of one metric at the given step (hourly or 15-min),
+// oldest first. Capped at that tier's retention.
+export function getSeries(
+  metric: HistoryMetric,
+  stepMs: number,
+  count: number,
   now: number = Date.now()
 ): TrendSample[] {
   ensureLoaded();
-  return series(bucketsOf(metric), HOUR_BUCKET_MS, Math.min(hours, RETENTION_HOURS), now, 2);
+  const tier = tierFor(stepMs);
+  return series(tier, metric, Math.min(count, tier.retention), now, 2);
 }
 
-// Hourly averages for [from, to) (from is floored to the hour), oldest first —
-// for comparing two calendar periods. Spans are capped at the retention window.
-export function getHourlyRange(metric: HourlyMetric, from: number, to: number): (number | null)[] {
+export function getHourlySeries(
+  metric: HistoryMetric,
+  hours: number,
+  now: number = Date.now()
+): TrendSample[] {
+  return getSeries(metric, HOUR_MS, hours, now);
+}
+
+// Bucket values for [from, to) at the given step (from floored to a bucket),
+// oldest first — for comparing two calendar periods. Capped at the retention.
+export function getRange(
+  metric: HistoryMetric,
+  from: number,
+  to: number,
+  stepMs: number = HOUR_MS,
+  stat: Stat = 'avg'
+): (number | null)[] {
   ensureLoaded();
-  const buckets = bucketsOf(metric);
-  const start = Math.floor(from / HOUR_BUCKET_MS) * HOUR_BUCKET_MS;
-  const count = Math.min(RETENTION_HOURS, Math.max(0, Math.ceil((to - start) / HOUR_BUCKET_MS)));
-  return Array.from({ length: count }, (_, index) => {
-    const bucket = buckets.get(start + index * HOUR_BUCKET_MS);
-    return bucket ? round(bucket.sum / bucket.count, 2) : null;
-  });
+  const tier = tierFor(stepMs);
+  const start = Math.floor(from / tier.bucketMs) * tier.bucketMs;
+  const count = Math.min(tier.retention, Math.max(0, Math.ceil((to - start) / tier.bucketMs)));
+  return Array.from({ length: count }, (_, index) =>
+    valueOf(tier.buckets[metric].get(start + index * tier.bucketMs), stat, 2)
+  );
+}
+
+export function getHourlyRange(metric: HistoryMetric, from: number, to: number): (number | null)[] {
+  return getRange(metric, from, to, HOUR_MS);
+}
+
+// The oldest time each tier still covers, so callers can pick the finest one.
+export function quarterCoversFrom(now: number = Date.now()): number {
+  return Math.floor(now / QUARTER_MS) * QUARTER_MS - (QUARTER_RETENTION - 1) * QUARTER_MS;
 }

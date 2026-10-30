@@ -1,4 +1,5 @@
 import { logControlAction } from '@/utils/collectors/alerts';
+import { recordEvent } from '@/utils/collectors/events';
 import { getDockerDetails } from '@/utils/collectors/dockerDetails';
 import { listJobs } from '@/utils/collectors/jobs';
 import { isContainerName } from '@/utils/collectors/logs';
@@ -70,6 +71,9 @@ function systemctl(args: string[]): [string, string[]] {
 export async function containerAction(name: string, action: ContainerAction): Promise<ActionResult> {
   if (!isContainerName(name)) return { ok: false, message: 'Invalid container name' };
   const result = await run('docker', [action, name], `docker ${action} ${name}`, `${name}: ${action} done`);
+  if (result.ok && (action === 'restart' || action === 'start')) {
+    recordEvent('restart', `${name} ${action === 'start' ? 'started' : 'restarted'} (dashboard)`);
+  }
   void getDockerDetails.refresh().catch(() => {});
   return result;
 }
@@ -106,6 +110,7 @@ export async function restartUnit(unit: string): Promise<ActionResult> {
   if (!isServiceUnitName(unit)) return { ok: false, message: 'Invalid unit name' };
   const [file, args] = systemctl(['restart', unit]);
   const result = await run(file, args, `systemctl restart ${unit}`, `${unit} restarted`);
+  if (result.ok) recordEvent('restart', `${unit} restarted (dashboard)`);
   void listServiceUnits.refresh().catch(() => {});
   return result;
 }

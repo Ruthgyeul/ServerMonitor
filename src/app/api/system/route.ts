@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { corsHeaders } from '@/utils/cors';
-import { getSystemInfo } from '@/utils/systemMonitor';
+import { collectNow } from '@/utils/systemStream';
 import { isValidServerData } from '@/utils/validation';
 import { logger } from '@/utils/logger';
 import { jsonResponse } from '@/utils/http';
@@ -31,7 +31,7 @@ export async function GET(request: Request) {
   if (limited) return limited;
 
   try {
-    const data = await getSystemInfo();
+    const data = await collectNow();
 
     // Validate the data
     if (!data || !isValidServerData(data)) {

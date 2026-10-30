@@ -839,3 +839,10 @@ export function logControlAction(message: string, ok: boolean, at: number = Date
   ensureLoaded();
   push(ok ? 'info' : 'warning', `Control: ${message}`, at, false, 'control');
 }
+
+// Something that happened on the host worth a line in the alert history
+// (e.g. a container that exited), without notifying anyone.
+export function logHostEvent(message: string, key: string, at: number = Date.now()): void {
+  ensureLoaded();
+  push('info', message, at, false, key);
+}

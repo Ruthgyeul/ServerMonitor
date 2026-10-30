@@ -66,20 +66,34 @@ export function parseUnitList(output: string): Omit<ServiceUnit, 'since'>[] {
 // (blank-line separated blocks) → unit → ISO time it last became active.
 export function parseActiveSince(output: string): Map<string, string> {
   const since = new Map<string, string>();
+  for (const [id, details] of parseUnitDetails(output)) {
+    if (details.since) since.set(id, details.since);
+  }
+  return since;
+}
+
+// Pure: the same output with NRestarts too → unit → start time and restart count.
+export function parseUnitDetails(
+  output: string
+): Map<string, { since: string | null; restarts: number | null }> {
+  const units = new Map<string, { since: string | null; restarts: number | null }>();
   for (const block of output.split(/\n\s*\n/)) {
     let id: string | null = null;
-    let stamp: string | null = null;
+    let since: string | null = null;
+    let restarts: number | null = null;
     for (const line of block.split('\n')) {
       const [key, ...rest] = line.split('=');
       const value = rest.join('=').trim();
       if (key === 'Id') id = value;
-      if (key === 'ActiveEnterTimestamp') stamp = value;
+      if (key === 'ActiveEnterTimestamp') {
+        const seconds = value.startsWith('@') ? Number(value.slice(1)) : NaN;
+        if (Number.isFinite(seconds) && seconds > 0) since = new Date(seconds * 1000).toISOString();
+      }
+      if (key === 'NRestarts' && /^\d+$/.test(value)) restarts = Number(value);
     }
-    if (!id || !stamp) continue;
-    const seconds = stamp.startsWith('@') ? Number(stamp.slice(1)) : NaN;
-    if (Number.isFinite(seconds) && seconds > 0) since.set(id, new Date(seconds * 1000).toISOString());
+    if (id) units.set(id, { since, restarts });
   }
-  return since;
+  return units;
 }
 
 export const listServiceUnits = withTtl(10_000, async (): Promise<ServiceUnitList> => {
@@ -98,22 +112,29 @@ export const listServiceUnits = withTtl(10_000, async (): Promise<ServiceUnitLis
   }
   const units = parseUnitList(listing);
 
-  let since = new Map<string, string>();
+  let details = new Map<string, { since: string | null; restarts: number | null }>();
   if (units.length > 0) {
     try {
       const shown = await runArgs('systemctl', [
         'show',
         '--timestamp=unix',
         '-p',
-        'Id,ActiveEnterTimestamp',
+        'Id,ActiveEnterTimestamp,NRestarts',
         '--',
         ...units.map(unit => unit.name)
       ]);
-      since = parseActiveSince(shown);
+      details = parseUnitDetails(shown);
     } catch {
       // Older systemd without --timestamp: list without "since" rather than fail.
     }
   }
 
-  return { available: true, units: units.map(unit => ({ ...unit, since: since.get(unit.name) ?? null })) };
+  return {
+    available: true,
+    units: units.map(unit => ({
+      ...unit,
+      since: details.get(unit.name)?.since ?? null,
+      restarts: details.get(unit.name)?.restarts ?? null
+    }))
+  };
 });
