@@ -41,18 +41,19 @@ RUN_GROUP="$(id -gn "$RUN_USER")"
 NPM_BIN="$(command -v npm || true)"
 NODE_BIN="$(command -v node || true)"
 if [ -z "$NPM_BIN" ] || [ -z "$NODE_BIN" ]; then
-  err "node and npm must be installed and on PATH (Node.js 20.9+)."
+  err "node and npm must be installed and on PATH (Node.js 22.12+, 24 LTS recommended)."
   exit 1
 fi
 
-# Next.js 16 requires Node >= 20.9.0 (see package-lock engines). Enforce the full
-# minimum, not just the major, so a 18.x / 19.x / 20.0-20.8 host fails clearly here.
+# The toolchain (vitest 5) needs Node >= 22.12.0 and Node 20 is past end of
+# life (see package.json engines). Enforce the full minimum, not just the
+# major, so a 20.x / 21.x / 22.0-22.11 host fails clearly here.
 NODE_VER="$("$NODE_BIN" -p 'process.versions.node')"
 NODE_MAJOR="${NODE_VER%%.*}"
 NODE_MINOR_REST="${NODE_VER#*.}"
 NODE_MINOR="${NODE_MINOR_REST%%.*}"
-if [ "$NODE_MAJOR" -lt 20 ] || { [ "$NODE_MAJOR" -eq 20 ] && [ "$NODE_MINOR" -lt 9 ]; }; then
-  err "Node.js 20.9.0+ is required (found v$NODE_VER)."
+if [ "$NODE_MAJOR" -lt 22 ] || { [ "$NODE_MAJOR" -eq 22 ] && [ "$NODE_MINOR" -lt 12 ]; }; then
+  err "Node.js 22.12.0+ is required (found v$NODE_VER)."
   exit 1
 fi
 
