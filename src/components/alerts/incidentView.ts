@@ -71,7 +71,10 @@ const CONTEXT: Record<string, ContextDef> = {
   },
   cpuAnomaly: { metric: 'cpu', label: 'CPU usage', unit: '%', thresholdKey: null },
   memAnomaly: { metric: 'mem', label: 'Memory usage', unit: '%', thresholdKey: null },
-  memPressure: { metric: 'mem', label: 'Memory usage', unit: '%', thresholdKey: null }
+  memPressure: { metric: 'mem', label: 'Memory usage', unit: '%', thresholdKey: null },
+  // Fill forecasts alert on hours-to-full; the chart shows the usage behind it.
+  diskFill: { metric: 'disk', label: 'Disk usage', unit: '%', thresholdKey: null },
+  memFill: { metric: 'mem', label: 'Memory usage', unit: '%', thresholdKey: null }
 };
 
 const MARGIN_MS = 30 * 60_000;

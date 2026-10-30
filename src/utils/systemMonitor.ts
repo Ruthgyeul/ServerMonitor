@@ -144,10 +144,11 @@ interface NetworkInfo {
   totalTxBytes: number;
 }
 
+// RPM per fan header; null when no sensor reports it (shown as N/A).
 interface FanInfo {
-  cpu: number;
-  case1: number;
-  case2: number;
+  cpu: number | null;
+  case1: number | null;
+  case2: number | null;
 }
 
 interface UptimeInfo {
@@ -434,8 +435,11 @@ async function readHwmonFans(): Promise<number[]> {
 async function getFanSpeed(): Promise<FanInfo> {
   try {
     const sensors = await readSensors();
-    const read = (pattern: RegExp) => parseInt(sensors.match(pattern)?.[1] ?? '0', 10) || 0;
-    const fans = {
+    const read = (pattern: RegExp): number | null => {
+      const match = sensors.match(pattern)?.[1];
+      return match === undefined ? null : parseInt(match, 10);
+    };
+    const fans: FanInfo = {
       cpu: read(/fan1:\s+(\d+)/),
       case1: read(/fan2:\s+(\d+)/),
       case2: read(/fan3:\s+(\d+)/)
@@ -445,7 +449,7 @@ async function getFanSpeed(): Promise<FanInfo> {
     // sensors not installed. Fall through to hwmon.
   }
 
-  const [cpu = 0, case1 = 0, case2 = 0] = await readHwmonFans();
+  const [cpu = null, case1 = null, case2 = null] = await readHwmonFans();
   return { cpu, case1, case2 };
 }
 

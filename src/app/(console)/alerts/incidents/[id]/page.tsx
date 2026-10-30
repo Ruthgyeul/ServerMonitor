@@ -93,8 +93,11 @@ function MetricContext({ incident, now }: { incident: Incident; now: number }) {
     );
   }
 
-  const threshold =
-    incident.threshold?.value ?? (spec.thresholdKey ? (data?.thresholds[spec.thresholdKey] ?? null) : null);
+  // The stored threshold only draws when it is in the chart's unit (a fill
+  // forecast's "24h" doesn't belong on a % axis).
+  const stored =
+    incident.threshold && incident.threshold.unit === spec.unit ? incident.threshold.value : null;
+  const threshold = stored ?? (spec.thresholdKey ? (data?.thresholds[spec.thresholdKey] ?? null) : null);
   const high = Math.max(threshold ?? 0, ...values) * 1.15 || 1;
   const low = Math.max(0, Math.min(threshold ?? Infinity, ...values) * 0.75);
   const toY = (value: number) =>
@@ -136,7 +139,7 @@ function MetricContext({ incident, now }: { incident: Incident; now: number }) {
         {threshold !== null && (
           <span className="text-crit-fg">
             threshold {threshold}
-            {incident.threshold?.unit ?? spec.unit}
+            {spec.unit}
           </span>
         )}
         <span>{incident.resolvedAt ? 'after' : 'now'}</span>

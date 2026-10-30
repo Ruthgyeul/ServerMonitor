@@ -8,12 +8,6 @@ import { formatAge } from '@/utils/timeFormat';
 
 // Right-hand panel of the Docker page: one container's configuration.
 
-const HEALTH_COLOR: Record<string, string> = {
-  healthy: PALETTE.okFg,
-  unhealthy: PALETTE.critFg,
-  starting: PALETTE.warnFg
-};
-
 interface ContainerInspectorProps {
   container: DockerContainerDetail;
   live: DockerContainer | undefined;
@@ -21,11 +15,10 @@ interface ContainerInspectorProps {
   actions: React.ReactNode;
 }
 
-// A health check only means something while the container runs: a stopped
-// container's last "healthy" reads grey, not green.
+// As in the design: green only for a running container that reports
+// healthy; anything else (starting, unhealthy, stopped, no check) reads grey.
 function healthColor(container: DockerContainerDetail): string {
-  if (!container.health || container.state !== 'running') return PALETTE.subtle;
-  return HEALTH_COLOR[container.health] ?? PALETTE.subtle;
+  return container.health === 'healthy' && container.state === 'running' ? PALETTE.okFg : PALETTE.subtle;
 }
 
 export function ContainerInspector({ container, live, now, actions }: ContainerInspectorProps) {

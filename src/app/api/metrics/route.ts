@@ -109,9 +109,10 @@ export async function GET(request: Request) {
     g('server_gpu_temperature_celsius', 'GPU temperature.', data.gpu.temperature);
   }
 
-  const fanRows = (['cpu', 'case1', 'case2'] as const)
-    .filter(key => data.fan[key] > 0)
-    .map(key => line('server_fan_rpm', data.fan[key], { fan: key }));
+  const fanRows = (['cpu', 'case1', 'case2'] as const).flatMap(key => {
+    const rpm = data.fan[key];
+    return rpm === null ? [] : [line('server_fan_rpm', rpm, { fan: key })];
+  });
   metric('server_fan_rpm', 'Fan speed in RPM.', 'gauge', fanRows);
 
   // Motherboard / other temperatures (numeric ones only).
