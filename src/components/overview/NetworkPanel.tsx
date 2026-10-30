@@ -28,14 +28,18 @@ const rate = (value: number) => value.toFixed(value >= 100 ? 0 : 1);
 export function NetworkPanel({
   data,
   events,
-  now
+  now,
+  showEvents,
+  onToggleEvents
 }: {
   data: DashboardData;
   events: HostEvent[];
   now: number;
+  // Shared with the KPI cards and remembered per browser (see the overview page).
+  showEvents: boolean;
+  onToggleEvents: () => void;
 }) {
   const [range, setRange] = useState<HistoryRange>('1h');
-  const [showEvents, setShowEvents] = useState(true);
   const series = useMetricSeries(range);
   const points = series?.points ?? [];
   const { network } = data;
@@ -59,7 +63,7 @@ export function NetworkPanel({
             Upload <span className="font-mono text-fg">{rate(network.upload)} KB/s</span>
           </span>
           <button
-            onClick={() => setShowEvents(on => !on)}
+            onClick={onToggleEvents}
             title="Show reboots, deploys and restarts on the charts"
             aria-pressed={showEvents}
             className={cn(

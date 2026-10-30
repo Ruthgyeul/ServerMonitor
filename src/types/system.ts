@@ -401,6 +401,8 @@ export interface ServerData {
   capacity?: { disk: CapacityForecast; mem: CapacityForecast };
   alertTiming?: AlertTiming;
   mute?: MuteState;
+  // How many alert thresholds are overridden from the rules page (sidebar badge).
+  overrideCount?: number;
   // Whether DASHBOARD_PASSWORD login is on, so the sidebar knows to offer Sign out.
   loginEnabled?: boolean;
   // Effective alert thresholds by env name (ALERT_CPU_ENTER → 90), for the

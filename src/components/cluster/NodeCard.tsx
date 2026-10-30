@@ -1,7 +1,15 @@
 import React from 'react';
 
 import { linePath, padToWindow } from '@/components/charts/paths';
-import { formatUptime, gb, shortProcessName, type ClusterNode } from '@/components/cluster/clusterTypes';
+import {
+  formatUptime,
+  gb,
+  netHistory,
+  offlineReason,
+  pingText,
+  shortProcessName,
+  type ClusterNode
+} from '@/components/cluster/clusterTypes';
 import { usageColor } from '@/lib/statusColors';
 import { PALETTE } from '@/lib/theme';
 import { cn } from '@/lib/utils';
@@ -17,10 +25,12 @@ const WINDOW = 30;
 export function NodeCard({
   node,
   history,
+  now,
   onSelect
 }: {
   node: ClusterNode;
   history: NetworkHistoryEntry[];
+  now: number | null;
   onSelect: () => void;
 }) {
   const { result } = node;
@@ -40,19 +50,21 @@ export function NodeCard({
       {!result.ok ? (
         <div className="flex w-full flex-col gap-1.5 rounded-lg border border-crit/20 bg-crit/6 p-3.5">
           <span className="text-[13px] text-crit-fg">Offline</span>
-          <span className="font-mono text-[11.5px] text-muted">{result.error}</span>
+          <span className="font-mono text-[11.5px] text-muted">{offlineReason(node, now)}</span>
         </div>
       ) : (
-        <NodeBody data={result.data} history={history} />
+        <NodeBody node={node} data={result.data} history={netHistory(node, history)} />
       )}
     </button>
   );
 }
 
 function NodeBody({
+  node,
   data,
   history
 }: {
+  node: ClusterNode;
   data: Extract<ClusterNode['result'], { ok: true }>['data'];
   history: NetworkHistoryEntry[];
 }) {
@@ -63,7 +75,7 @@ function NodeBody({
     ['DISK', disk.percentage, `${Math.round(disk.used)}/${Math.round(disk.total)}G`]
   ];
   const max = Math.max(0.1, ...history.map(point => Math.max(point.download, point.upload))) * 1.2;
-  const top = data.processes.find(process => process.cpu > 0 || process.memory > 0);
+  const top = data.processes.find(process => process.cpu > 0 || process.memory > 0) ?? data.processes[0];
   const temp = cpu.temperature === 'N/A' ? 'N/A' : `${cpu.temperature.toFixed(1)}°C`;
 
   return (
@@ -134,16 +146,11 @@ function NodeBody({
           up <span className="font-mono text-fg-2">{formatUptime(uptime)}</span>
         </span>
         <span>
-          ping{' '}
-          <span className="font-mono text-fg-2">
-            {network.ping > 0 ? `${network.ping.toFixed(0)} ms` : '—'}
-          </span>
+          ping <span className="font-mono text-fg-2">{pingText(node)}</span>
         </span>
-        {top && (
-          <span>
-            top <span className="font-mono text-fg-2">{shortProcessName(top.name)}</span>
-          </span>
-        )}
+        <span>
+          top <span className="font-mono text-fg-2">{top ? shortProcessName(top.name) : '—'}</span>
+        </span>
       </div>
     </>
   );

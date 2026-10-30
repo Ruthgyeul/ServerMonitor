@@ -20,7 +20,7 @@ import { usePolled } from '@/hooks/usePolled';
 import { LEVEL_STYLES } from '@/lib/statusColors';
 import { cn } from '@/lib/utils';
 import type { AlertLevel } from '@/types/system';
-import { formatHourMinute } from '@/utils/timeFormat';
+import { formatTimestamp } from '@/utils/timeFormat';
 
 // Notification settings: channels (this browser's desktop notifications and
 // the server's webhook), which levels they carry, and a quick mute.
@@ -38,13 +38,17 @@ function ChannelRow({
   label,
   detail,
   on,
-  onToggle
+  onToggle,
+  disabled = false,
+  disabledReason
 }: {
   icon: LucideIcon;
   label: string;
   detail: string;
   on: boolean;
   onToggle: () => void;
+  disabled?: boolean;
+  disabledReason?: string;
 }) {
   return (
     <div className="flex items-center gap-3.5 border-t border-line-soft px-[18px] py-[13px] first:border-t-0">
@@ -53,9 +57,29 @@ function ChannelRow({
         <span className="text-[13px]">{label}</span>
         <span className="truncate font-mono text-[11.5px] text-subtle">{detail}</span>
       </div>
-      <Toggle on={on} onChange={onToggle} label={`Toggle ${label}`} />
+      <Toggle
+        on={on}
+        onChange={onToggle}
+        label={`Toggle ${label}`}
+        disabled={disabled}
+        title={disabled ? disabledReason : undefined}
+      />
     </div>
   );
+}
+
+function browserPermitted(): boolean {
+  return typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted';
+}
+
+// Shows a desktop notification on this device; false when the browser refuses.
+function showBrowserTest(): boolean {
+  try {
+    new Notification('ServerMonitor · test', { body: 'Browser notifications are working.' });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function permissionText(): string {
@@ -79,14 +103,33 @@ export default function NotificationsPage() {
     flash(result.ok ? done : (result.error ?? 'Could not save'));
   };
 
+  const webhookOn = Boolean(settings?.webhook && info?.webhookConfigured);
+  const browserOn = browserNotify.enabled && browserPermitted();
+
+  // Exercises every enabled channel: a desktop notification here, and the
+  // server's webhook(s).
   const test = async () => {
-    setBusy(true);
-    const result = await sendTestNotification();
-    setBusy(false);
+    if (!browserOn && !webhookOn) {
+      flash('Enable at least one channel first');
+      return;
+    }
+    let sent = 0;
+    let error: string | null = null;
+    if (browserOn) {
+      if (showBrowserTest()) sent += 1;
+      else error = 'The browser blocked the test notification';
+    }
+    if (webhookOn) {
+      setBusy(true);
+      const result = await sendTestNotification();
+      setBusy(false);
+      if (result.ok) sent += 1;
+      else error = result.error ?? 'Could not send the webhook test';
+    }
     flash(
-      result.ok
-        ? `Test sent to ${result.data?.targets ?? 0} webhook${result.data?.targets === 1 ? '' : 's'}`
-        : (result.error ?? 'Could not send the test')
+      error && sent > 0
+        ? `Test sent to ${sent} channel${sent === 1 ? '' : 's'} · ${error}`
+        : (error ?? `Test sent to ${sent} channel${sent === 1 ? '' : 's'}`)
     );
   };
 
@@ -108,10 +151,7 @@ export default function NotificationsPage() {
         actions={
           <button
             onClick={() => void test()}
-            disabled={busy || !info?.webhookConfigured}
-            title={
-              info?.webhookConfigured ? undefined : 'Set ALERT_WEBHOOK_URL to enable webhook notifications'
-            }
+            disabled={busy}
             className="rounded-md bg-accent/14 px-3 py-[5px] text-xs text-info-fg hover:bg-accent/22 disabled:opacity-50"
           >
             Send test
@@ -133,7 +173,9 @@ export default function NotificationsPage() {
               ? 'ALERT_WEBHOOK_URL · per-level overrides apply'
               : 'Not configured (ALERT_WEBHOOK_URL)'
           }
-          on={Boolean(settings?.webhook && info?.webhookConfigured)}
+          on={webhookOn}
+          disabled={!info?.webhookConfigured}
+          disabledReason="Set ALERT_WEBHOOK_URL to enable webhook notifications"
           onToggle={() =>
             settings &&
             void update({ webhook: !settings.webhook }, `Webhook ${settings.webhook ? 'off' : 'on'}`)
@@ -159,12 +201,12 @@ export default function NotificationsPage() {
                 }
                 className={cn(
                   'flex items-center gap-2 rounded-md border px-3 py-1.5 text-[12.5px]',
-                  on ? 'border-white/20 bg-track text-fg' : 'border-line text-subtle'
+                  on ? 'border-accent/45 bg-accent/10 text-fg' : 'border-line-strong text-subtle'
                 )}
               >
                 <span
                   className="h-[7px] w-[7px] rounded-full"
-                  style={{ background: on ? LEVEL_STYLES[level].dot : 'var(--color-faint)' }}
+                  style={{ background: LEVEL_STYLES[level].dot }}
                 />
                 {label}
               </button>
@@ -177,7 +219,9 @@ export default function NotificationsPage() {
         title="Mute"
         actions={
           <span className={cn('text-[12.5px]', mutedUntil ? 'text-warn-fg' : 'text-dim')}>
-            {mutedUntil ? `Muted until ${formatHourMinute(new Date(mutedUntil).getTime())}` : 'Not muted'}
+            {mutedUntil
+              ? `Muted until ${formatTimestamp(new Date(mutedUntil).getTime()).slice(5, 16)}`
+              : 'Not muted'}
           </span>
         }
       >

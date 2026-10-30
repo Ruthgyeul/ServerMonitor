@@ -54,7 +54,7 @@ export function StatusBanner({ data }: { data: DashboardData }) {
         </div>
         {active.map(alert => (
           <span key={alert.key} className="font-mono text-xs text-fg">
-            {alert.message}
+            {alert.short ?? alert.message}
           </span>
         ))}
         <div className="ml-auto flex gap-4">
@@ -82,7 +82,7 @@ export function StatusBanner({ data }: { data: DashboardData }) {
         </div>
         {pending.map(alert => (
           <span key={alert.key} className="font-mono text-xs text-fg">
-            {alert.message} · fires in{' '}
+            {alert.short ?? alert.message} · fires in{' '}
             {Math.max(
               0,
               Math.ceil((new Date(alert.dueAt).getTime() - new Date(data.timestamp).getTime()) / 1000)

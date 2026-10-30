@@ -15,12 +15,20 @@ import {
   UPTIME_URL,
   type UptimeList
 } from '@/components/uptime/uptimeApi';
-import { checkView, summarize } from '@/components/uptime/uptimeView';
+import {
+  checkView,
+  expectLabel,
+  expectSummary,
+  intervalLabel,
+  isProbeUrl,
+  summarize,
+  URL_ERROR
+} from '@/components/uptime/uptimeView';
 import { useNow } from '@/hooks/useNow';
 import { usePolled } from '@/hooks/usePolled';
 import { PALETTE } from '@/lib/theme';
 import { cn } from '@/lib/utils';
-import type { UptimeCheck } from '@/types/system';
+import type { UptimeCheck, UptimeExpect } from '@/types/system';
 
 // HTTP uptime checks: summary cards, an add form and one row per endpoint with
 // its last 60 results. Probing happens server-side; this page only polls.
@@ -32,6 +40,10 @@ const INTERVAL_OPTIONS = [
   { value: 60, label: '60s' },
   { value: 300, label: '5m' }
 ] as const;
+const EXPECT_OPTIONS: { value: UptimeExpect; label: string }[] = [
+  { value: '200', label: '200' },
+  { value: '2xx', label: '2xx' }
+];
 
 const INPUT =
   'rounded-[7px] border border-line-strong bg-sidebar px-2.5 py-[7px] text-[12.5px] outline-none focus:border-accent';
@@ -43,13 +55,18 @@ function AddCheckForm() {
   const [name, setName] = useState('');
   const [url, setUrl] = useState('');
   const [intervalSec, setIntervalSec] = useState<number>(30);
+  const [expect, setExpect] = useState<UptimeExpect>('200');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
+    if (!isProbeUrl(url)) {
+      setError(URL_ERROR);
+      return;
+    }
     setBusy(true);
-    const result = await addCheck({ name, url, intervalSec });
+    const result = await addCheck({ name, url, intervalSec, expect });
     setBusy(false);
     if (!result.ok || !result.data) {
       setError(result.error ?? 'Could not add check');
@@ -93,6 +110,10 @@ function AddCheckForm() {
             onChange={setIntervalSec}
             label="Interval"
           />
+        </div>
+        <div className="flex flex-col gap-1.5 text-[11.5px] text-subtle">
+          Expect
+          <Segmented options={EXPECT_OPTIONS} value={expect} onChange={setExpect} label="Expected status" />
         </div>
         <button
           type="submit"
@@ -140,7 +161,9 @@ function CheckRow({ check, now }: { check: UptimeCheck; now: number }) {
             {view.codeLabel}
           </span>
         </div>
-        <span className="truncate font-mono text-[11.5px] text-subtle">{check.url}</span>
+        <span className="truncate font-mono text-[11.5px] text-subtle">
+          {check.url} <span className="text-faint">· GET · {expectLabel(check.expect)}</span>
+        </span>
       </div>
 
       <div
@@ -160,7 +183,7 @@ function CheckRow({ check, now }: { check: UptimeCheck; now: number }) {
       <div className="grid grid-cols-[repeat(3,auto)] gap-x-5 gap-y-0.5 text-[11px] text-subtle">
         <span>Response</span>
         <span>Uptime</span>
-        <span>every {check.intervalSec}s</span>
+        <span>every {intervalLabel(check.intervalSec)}</span>
         <span className="font-mono text-[13px] text-fg">{view.responseLabel}</span>
         <span className="font-mono text-[13px] text-fg">{view.uptimeLabel}</span>
         <span className="font-mono text-xs text-fg-3">{view.nextLabel}</span>
@@ -248,7 +271,7 @@ export default function UptimePage() {
         title="Endpoints"
         actions={
           <span className="font-mono text-[11.5px] text-subtle">
-            GET · expects 2xx/3xx · timeout 10s · last 60 checks
+            GET · {expectSummary(checks)} · timeout 10s · last 60 checks
           </span>
         }
       >

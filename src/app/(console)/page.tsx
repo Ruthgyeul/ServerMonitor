@@ -1,6 +1,5 @@
 'use client';
 
-import { useEffect } from 'react';
 import { LayoutGrid } from 'lucide-react';
 
 import { AlertLogPanel } from '@/components/overview/AlertLogPanel';
@@ -22,6 +21,8 @@ import { useShellActions } from '@/components/shell/ShellActions';
 import { PageBody, PanelRow } from '@/components/ui/PageBody';
 import { useNow } from '@/hooks/useNow';
 import { usePolled } from '@/hooks/usePolled';
+import { useStoredString } from '@/hooks/useStoredString';
+import { useWakeLock } from '@/hooks/useWakeLock';
 import type { HostEvent } from '@/types/system';
 
 // Overview: status banner, then the panels this browser chose to show, in the
@@ -30,6 +31,8 @@ import type { HostEvent } from '@/types/system';
 
 const EVENTS_URL = '/api/events?days=7';
 const EVENTS_POLL_MS = 60_000;
+// Event markers on the KPI and network charts; on unless turned off here.
+const SHOW_EVENTS_KEY = 'sm-show-events';
 
 export default function OverviewPage() {
   const { data, diskIoHistory } = useSystem();
@@ -37,14 +40,12 @@ export default function OverviewPage() {
   const { prefs } = usePanelPrefs();
   const { openCustomize } = useShellActions();
   const events = usePolled<HostEvent[]>(EVENTS_URL, EVENTS_POLL_MS) ?? [];
+  const [storedShowEvents, setStoredShowEvents] = useStoredString(SHOW_EVENTS_KEY);
+  const showEvents = storedShowEvents !== '0';
+  const toggleEvents = () => setStoredShowEvents(showEvents ? '0' : '1');
 
-  useEffect(() => {
-    // Keep a wall-mounted screen from locking while the overview is open.
-    if (!('wakeLock' in navigator)) return;
-    navigator.wakeLock.request('screen').catch(() => {
-      /* denied (e.g. tab hidden) — the display just follows its own timeout */
-    });
-  }, []);
+  // Keep a wall-mounted screen from locking while the overview is open.
+  useWakeLock();
 
   if (!data || now === null) return null;
 
@@ -52,11 +53,19 @@ export default function OverviewPage() {
     <PageBody>
       <StatusBanner data={data} />
 
-      {prefs.kpis && <KpiCards data={data} events={events} now={now} />}
+      {prefs.kpis && <KpiCards data={data} events={events} now={now} showEvents={showEvents} />}
 
       {(prefs.network || prefs.alertlog) && (
         <PanelRow>
-          {prefs.network && <NetworkPanel data={data} events={events} now={now} />}
+          {prefs.network && (
+            <NetworkPanel
+              data={data}
+              events={events}
+              now={now}
+              showEvents={showEvents}
+              onToggleEvents={toggleEvents}
+            />
+          )}
           {prefs.alertlog && <AlertLogPanel alerts={data.alerts} now={now} />}
         </PanelRow>
       )}

@@ -1,6 +1,6 @@
 import { PALETTE } from '@/lib/theme';
-import type { HistoryRange, MetricPoint } from '@/types/system';
-import type { Incident, IncidentStatus } from '@/utils/collectors/incidents';
+import type { AlertThreshold, MetricWindow, WindowMetric } from '@/types/system';
+import type { Incident, IncidentEvent, IncidentStatus } from '@/utils/collectors/incidents';
 
 // Pure presentation for incidents: status pills, compact durations and the
 // metric context chart around an incident.
@@ -29,49 +29,77 @@ export function incidentDuration(incident: Incident, now: number): number {
   return end - new Date(incident.openedAt).getTime();
 }
 
-// The unresolved incident for each alert key, for "Incident →" links.
-export function openIncidentByKey(incidents: Incident[]): Map<string, Incident> {
-  const byKey = new Map<string, Incident>();
+// The incident an active alert's "Incident →" link opens, per alert key: the
+// unresolved one when there is one, else the most recent for that key (an
+// alert can outlive a manually resolved incident). Incidents arrive newest first.
+export function incidentByKey(incidents: Incident[]): Map<string, Incident> {
+  const open = new Map<string, Incident>();
+  const latest = new Map<string, Incident>();
   for (const incident of incidents) {
-    if (incident.status !== 'resolved' && !byKey.has(incident.key)) byKey.set(incident.key, incident);
+    if (!latest.has(incident.key)) latest.set(incident.key, incident);
+    if (incident.status !== 'resolved' && !open.has(incident.key)) open.set(incident.key, incident);
   }
-  return byKey;
+  for (const [key, incident] of latest) if (!open.has(key)) open.set(key, incident);
+  return open;
 }
 
 // --- Metric context ------------------------------------------------------
 
-type ChartMetric = 'cpu' | 'mem' | 'disk';
-
-// Alert keys with a matching chart series, and the threshold that fired them.
-const CONTEXT: Record<string, { metric: ChartMetric; label: string; threshold: string }> = {
-  cpu: { metric: 'cpu', label: 'CPU usage', threshold: 'ALERT_CPU_ENTER' },
-  memory: { metric: 'mem', label: 'Memory usage', threshold: 'ALERT_MEM_ENTER' },
-  disk: { metric: 'disk', label: 'Disk usage', threshold: 'ALERT_DISK_ENTER' }
-};
-
-const RANGE_SPANS: [HistoryRange, number][] = [
-  ['6h', 6 * 3_600_000],
-  ['24h', 24 * 3_600_000],
-  ['7d', 7 * 24 * 3_600_000]
-];
-
-export interface ContextSpec {
-  metric: ChartMetric;
+interface ContextDef {
+  metric: WindowMetric;
   label: string;
-  thresholdKey: string;
-  range: HistoryRange;
+  unit: string;
+  // Env key of the threshold, for incidents recorded before thresholds were stored.
+  thresholdKey: string | null;
+  // History keeps the raw 1-minute load; the rule compares it per core.
+  perCore?: boolean;
 }
 
-// Which series and range show this incident with some lead-in, or null when
-// the rule has no numeric series or the incident is older than the charts keep.
+// Alert keys with a matching series in /api/history/window.
+const CONTEXT: Record<string, ContextDef> = {
+  cpu: { metric: 'cpu', label: 'CPU usage', unit: '%', thresholdKey: 'ALERT_CPU_ENTER' },
+  memory: { metric: 'mem', label: 'Memory usage', unit: '%', thresholdKey: 'ALERT_MEM_ENTER' },
+  disk: { metric: 'disk', label: 'Disk usage', unit: '%', thresholdKey: 'ALERT_DISK_ENTER' },
+  temperature: { metric: 'temp', label: 'CPU temperature', unit: '°C', thresholdKey: 'ALERT_TEMP_ENTER' },
+  swap: { metric: 'swap', label: 'Swap usage', unit: '%', thresholdKey: 'ALERT_SWAP_ENTER' },
+  loadPerCore: {
+    metric: 'load',
+    label: 'Load per core',
+    unit: '',
+    thresholdKey: 'ALERT_LOAD_ENTER',
+    perCore: true
+  },
+  cpuAnomaly: { metric: 'cpu', label: 'CPU usage', unit: '%', thresholdKey: null },
+  memAnomaly: { metric: 'mem', label: 'Memory usage', unit: '%', thresholdKey: null },
+  memPressure: { metric: 'mem', label: 'Memory usage', unit: '%', thresholdKey: null }
+};
+
+const MARGIN_MS = 30 * 60_000;
+// /api/history/window answers spans up to 31 days; keep the newest 30.
+const MAX_SPAN_MS = 30 * 24 * 3_600_000;
+
+export interface ContextSpec extends ContextDef {
+  from: number;
+  to: number;
+}
+
+// The series and window (30 minutes either side of the incident) that show
+// this incident, or null when the rule has no numeric series. An ongoing
+// incident's window ends at the current minute, so the URL changes once a
+// minute rather than every render.
 export function contextSpec(incident: Incident, now: number): ContextSpec | null {
   const context = CONTEXT[incident.key];
   if (!context) return null;
-  const age = now - new Date(incident.openedAt).getTime();
-  // Leave a sixth of the window before the incident for context.
-  const range = RANGE_SPANS.find(([, span]) => age < (span * 5) / 6)?.[0];
-  if (!range) return null;
-  return { metric: context.metric, label: context.label, thresholdKey: context.threshold, range };
+  const opened = new Date(incident.openedAt).getTime();
+  const to = incident.resolvedAt
+    ? Math.min(now, new Date(incident.resolvedAt).getTime() + MARGIN_MS)
+    : Math.ceil(now / 60_000) * 60_000;
+  const from = Math.max(opened - MARGIN_MS, to - MAX_SPAN_MS);
+  return { ...context, from, to };
+}
+
+export function windowUrl(spec: ContextSpec): string {
+  return `/api/history/window?metric=${spec.metric}&from=${spec.from}&to=${spec.to}`;
 }
 
 export interface ContextChart {
@@ -82,20 +110,35 @@ export interface ContextChart {
 }
 
 export function contextChart(
-  points: MetricPoint[],
-  metric: ChartMetric,
+  window: MetricWindow,
   incident: Incident,
-  now: number
+  now: number,
+  divisor = 1
 ): ContextChart | null {
+  const { points } = window;
   if (points.length < 2) return null;
   const first = new Date(points[0].at).getTime();
   const last = new Date(points[points.length - 1].at).getTime();
   const span = Math.max(1, last - first);
   const fraction = (at: number) => Math.min(1, Math.max(0, (at - first) / span));
   const end = incident.resolvedAt ? new Date(incident.resolvedAt).getTime() : now;
+  const scale = divisor > 0 ? divisor : 1;
   return {
-    values: points.map(point => point[metric]),
+    values: points.map(point =>
+      point.value === null ? null : Math.round((point.value / scale) * 100) / 100
+    ),
     spanStart: fraction(new Date(incident.openedAt).getTime()),
     spanEnd: fraction(end)
   };
+}
+
+// "90%", "74°C", "2" — a stored threshold as the rule writes it.
+export function formatThreshold(threshold: AlertThreshold | null | undefined): string {
+  return threshold ? `${threshold.value}${threshold.unit}` : '—';
+}
+
+// Who an event came from. Older incidents have no author: infer it from the kind.
+export function eventAuthor(event: IncidentEvent): 'operator' | 'system' {
+  if (event.author) return event.author;
+  return event.kind === 'note' || event.kind === 'ack' || event.kind === 'reopen' ? 'operator' : 'system';
 }

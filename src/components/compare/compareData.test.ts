@@ -16,6 +16,9 @@ describe('periodWindow', () => {
     expect(new Date(w.start)).toEqual(new Date(2026, 9, 29));
     expect(new Date(w.prevStart)).toEqual(new Date(2026, 9, 28));
     expect(w.end - w.start).toBe(24 * 3_600_000);
+    // 96 quarter-hour points, fetched at 15-minute resolution.
+    expect(w.step).toBe('15m');
+    expect((w.end - w.start) / w.pointMs).toBe(96);
   });
 
   it('starts weeks on Monday', () => {
@@ -32,7 +35,8 @@ describe('periodWindow', () => {
     expect(new Date(w.start)).toEqual(new Date(2026, 2, 1));
     expect(new Date(w.prevStart)).toEqual(new Date(2026, 1, 1));
     expect(new Date(w.end)).toEqual(new Date(2026, 3, 1));
-    expect(w.hoursPerPoint).toBe(24);
+    expect(w.step).toBe('1h');
+    expect(w.foldBy).toBe(24);
   });
 });
 
@@ -40,6 +44,10 @@ describe('foldPoints', () => {
   it('averages groups and skips gaps', () => {
     expect(foldPoints([1, 3, null, null, 5], 2)).toEqual([2, null, 5]);
     expect(foldPoints([1, 2], 1)).toEqual([1, 2]);
+  });
+
+  it('keeps the peak of each group for a max series', () => {
+    expect(foldPoints([1, 3, null, null, 5], 2, 'max')).toEqual([3, null, 5]);
   });
 });
 
@@ -65,7 +73,8 @@ describe('delta', () => {
 
 describe('bucketDefs', () => {
   it('splits each period into summary rows', () => {
-    expect(bucketDefs('day', 24).map(b => b.label)).toEqual([
+    expect(bucketDefs('day', 96).at(-1)).toEqual({ label: '20–24', from: 80, to: 96 });
+    expect(bucketDefs('day', 96).map(b => b.label)).toEqual([
       '00–04',
       '04–08',
       '08–12',

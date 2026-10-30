@@ -44,8 +44,10 @@ interface KpiSpec {
   percentScale: boolean;
 }
 
-const STATE_STYLE: Record<'normal' | AlertLevel, { label: string; className: string }> = {
+const STATE_STYLE: Record<'normal' | 'pending' | AlertLevel, { label: string; className: string }> = {
   normal: { label: 'normal', className: 'bg-ok/10 text-ok-fg' },
+  // Breached but still inside the fire delay.
+  pending: { label: 'pending', className: 'bg-warn/12 text-warn-fg' },
   ok: { label: 'normal', className: 'bg-ok/10 text-ok-fg' },
   info: { label: 'info', className: 'bg-accent/12 text-info-fg' },
   warning: { label: 'warning', className: 'bg-warn/12 text-warn-fg' },
@@ -56,12 +58,14 @@ function KpiCard({
   spec,
   data,
   events,
-  now
+  now,
+  showEvents
 }: {
   spec: KpiSpec;
   data: DashboardData;
   events: HostEvent[];
   now: number;
+  showEvents: boolean;
 }) {
   const [range, setRange] = useState<HistoryRange>('1h');
   const series = useMetricSeries(range);
@@ -70,7 +74,11 @@ function KpiCard({
   const labels = points.map(point => pointLabel(point.at, range));
 
   const firing = spec.alertKey ? data.activeAlerts.find(alert => alert.key === spec.alertKey) : undefined;
-  const state = STATE_STYLE[firing?.level ?? 'normal'];
+  const pending =
+    !firing && spec.alertKey
+      ? data.pendingAlerts.some(alert => alert.key === spec.alertKey && alert.state === 'pending')
+      : false;
+  const state = STATE_STYLE[firing?.level ?? (pending ? 'pending' : 'normal')];
   const peak = Math.max(0, ...values.filter((value): value is number => value !== null));
   const max = spec.percentScale ? Math.min(100, niceMax(peak)) : niceMax(peak);
   const threshold = spec.thresholdKey ? data.thresholds[spec.thresholdKey] : undefined;
@@ -108,7 +116,7 @@ function KpiCard({
         stroke={firing ? PALETTE.crit : PALETTE.accent}
         fill={firing ? 'rgba(239,95,90,0.10)' : 'rgba(90,169,240,0.10)'}
         format={value => `${fmt(value)}${spec.unit === '%' ? '%' : ` ${spec.unit}`}`}
-        marks={eventMarks(events, range, now)}
+        marks={showEvents ? eventMarks(events, range, now) : []}
       />
       <div className="flex flex-col gap-1.5">
         <div className="relative h-1 rounded-sm bg-track">
@@ -182,11 +190,22 @@ function specsFor(data: DashboardData): KpiSpec[] {
   ];
 }
 
-export function KpiCards({ data, events, now }: { data: DashboardData; events: HostEvent[]; now: number }) {
+export function KpiCards({
+  data,
+  events,
+  now,
+  showEvents
+}: {
+  data: DashboardData;
+  events: HostEvent[];
+  now: number;
+  // The Network panel's Events toggle applies to the KPI sparklines too.
+  showEvents: boolean;
+}) {
   return (
     <div className="grid grid-cols-[repeat(auto-fit,minmax(230px,1fr))] gap-4">
       {specsFor(data).map(spec => (
-        <KpiCard key={spec.label} spec={spec} data={data} events={events} now={now} />
+        <KpiCard key={spec.label} spec={spec} data={data} events={events} now={now} showEvents={showEvents} />
       ))}
     </div>
   );

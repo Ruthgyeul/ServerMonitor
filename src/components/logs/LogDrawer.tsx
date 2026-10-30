@@ -1,27 +1,32 @@
 'use client';
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { SquareTerminal, X } from 'lucide-react';
 
+import { useToast } from '@/components/providers/ToastProvider';
 import { Segmented } from '@/components/ui/Segmented';
 import { cn } from '@/lib/utils';
 import type { LogLevel, LogLine, LogSourceKind } from '@/types/system';
 import { formatTimestamp } from '@/utils/timeFormat';
 
-// Side drawer with the recent output of one unit or container: level filter,
-// text filter, follow (re-reads the tail every few seconds and sticks to the
-// bottom) and a .log download.
+// Side drawer with the output of one unit or container: level filter, text
+// filter, follow (new lines streamed over SSE, falling back to re-reading the
+// tail every few seconds) and a .log download. With a `run` scope it shows one
+// finished run instead (Jobs → Output) and doesn't follow.
 
 export interface LogSource {
   kind: LogSourceKind;
   name: string;
-  // Header line, e.g. "journalctl -u nginx.service".
-  title: string;
+  // Header line; defaults to the equivalent command (see logTitle).
+  title?: string;
   subtitle?: string;
+  // One run only: a systemd invocation, or everything since the run started (ISO).
+  run?: { invocation?: string | null; since?: string | null };
 }
 
-const FOLLOW_MS = 3000;
-const TAIL_LINES = 300;
+export const TAIL_LINES = 500;
+const POLL_MS = 3000;
+const ACTIVE_CHECK_MS = 15_000;
 
 const LEVELS = [
   { value: 'all', label: 'All' },
@@ -36,49 +41,133 @@ const TAG: Record<LogLevel, { label: string; className: string; row: string }> =
   info: { label: 'INF', className: 'text-subtle', row: '' }
 };
 
-type Load = { status: 'loading' } | { status: 'ok'; lines: LogLine[] } | { status: 'error'; message: string };
+// The command a reader would type to see the same output.
+export function logTitle(source: LogSource): string {
+  if (source.title) return source.title;
+  if (source.run) return `journalctl -u ${source.name} · last run`;
+  return source.kind === 'container'
+    ? `docker logs -f --tail ${TAIL_LINES} ${source.name}`
+    : `journalctl -u ${source.name} -f -n ${TAIL_LINES}`;
+}
 
+export function logSubtitle(
+  source: LogSource,
+  active: boolean
+): { text: string; tone: 'ok' | 'warn' | 'plain' } {
+  if (source.subtitle) return { text: source.subtitle, tone: 'plain' };
+  if (source.run) return { text: 'output of the most recent run', tone: 'plain' };
+  if (active) return { text: 'streaming', tone: 'ok' };
+  return {
+    text:
+      source.kind === 'container'
+        ? 'container is not running · no new output'
+        : 'unit is not active · no new output',
+    tone: 'warn'
+  };
+}
+
+export function tailQuery(source: LogSource, lines: number = TAIL_LINES): string {
+  const params = new URLSearchParams({ kind: source.kind, name: source.name, lines: String(lines) });
+  if (source.run?.invocation) params.set('invocation', source.run.invocation);
+  else if (source.run?.since) params.set('since', source.run.since);
+  return params.toString();
+}
+
+type Load =
+  | { status: 'loading' }
+  | { status: 'ok'; lines: LogLine[]; active: boolean }
+  | { status: 'error'; message: string };
+
+async function fetchTail(query: string): Promise<Load> {
+  try {
+    const response = await fetch(`/api/logs?${query}`, { cache: 'no-store' });
+    const body = (await response.json().catch(() => ({}))) as {
+      success?: boolean;
+      data?: { lines: LogLine[]; active: boolean };
+      error?: string;
+    };
+    if (!response.ok || !body.success || !body.data) {
+      return { status: 'error', message: body.error ?? `HTTP ${response.status}` };
+    }
+    return { status: 'ok', lines: body.data.lines, active: body.data.active };
+  } catch {
+    return { status: 'error', message: 'Could not reach the server' };
+  }
+}
+
+// Loads the tail once, then while following appends lines from the SSE stream;
+// if the stream can't open or ends, re-reads the tail every few seconds.
 function useLogTail(source: LogSource, follow: boolean): Load {
   const [load, setLoad] = useState<Load>({ status: 'loading' });
-
-  const fetchTail = useCallback(async (): Promise<Load> => {
-    const params = new URLSearchParams({ kind: source.kind, name: source.name, lines: String(TAIL_LINES) });
-    try {
-      const response = await fetch(`/api/logs?${params}`, { cache: 'no-store' });
-      const body = (await response.json().catch(() => ({}))) as {
-        success?: boolean;
-        data?: LogLine[];
-        error?: string;
-      };
-      if (!response.ok || !body.success || !body.data) {
-        return { status: 'error', message: body.error ?? `HTTP ${response.status}` };
-      }
-      return { status: 'ok', lines: body.data };
-    } catch {
-      return { status: 'error', message: 'Could not reach the server' };
-    }
-  }, [source.kind, source.name]);
+  const query = tailQuery(source);
+  const activeQuery = tailQuery(source, 1);
+  const streamUrl = `/api/logs/stream?${new URLSearchParams({ kind: source.kind, name: source.name })}`;
+  const following = follow && !source.run;
 
   useEffect(() => {
     let cancelled = false;
-    const run = async () => {
-      const next = await fetchTail();
+    let poll: ReturnType<typeof setInterval> | null = null;
+    let activeCheck: ReturnType<typeof setInterval> | null = null;
+    let events: EventSource | null = null;
+
+    const refresh = async () => {
+      const next = await fetchTail(query);
       if (!cancelled)
         setLoad(previous => (next.status === 'error' && previous.status === 'ok' ? previous : next));
     };
-    void run();
-    const timer = follow ? setInterval(run, FOLLOW_MS) : null;
+
+    const startPolling = () => {
+      events?.close();
+      events = null;
+      if (activeCheck) clearInterval(activeCheck);
+      if (!poll && !cancelled) poll = setInterval(() => void refresh(), POLL_MS);
+    };
+
+    const startStream = () => {
+      if (cancelled || !following) return;
+      if (typeof EventSource === 'undefined') return startPolling();
+      events = new EventSource(streamUrl);
+      events.onmessage = event => {
+        let lines: LogLine[];
+        try {
+          lines = JSON.parse(event.data as string) as LogLine[];
+        } catch {
+          return;
+        }
+        setLoad(previous =>
+          previous.status === 'ok'
+            ? { ...previous, lines: [...previous.lines, ...lines].slice(-TAIL_LINES) }
+            : previous
+        );
+      };
+      events.addEventListener('end', startPolling);
+      events.onerror = startPolling;
+      // The stream carries lines only; the running state comes from a light re-read.
+      activeCheck = setInterval(async () => {
+        const next = await fetchTail(activeQuery);
+        if (!cancelled && next.status === 'ok')
+          setLoad(previous => (previous.status === 'ok' ? { ...previous, active: next.active } : previous));
+      }, ACTIVE_CHECK_MS);
+    };
+
+    void refresh().then(startStream);
+
     return () => {
       cancelled = true;
-      if (timer) clearInterval(timer);
+      events?.close();
+      if (poll) clearInterval(poll);
+      if (activeCheck) clearInterval(activeCheck);
     };
-  }, [fetchTail, follow]);
+  }, [query, activeQuery, streamUrl, following]);
 
   return load;
 }
 
+const SUBTITLE_TONE = { ok: 'text-ok-fg', warn: 'text-warn-fg', plain: 'text-fg-3' } as const;
+
 export function LogDrawer({ source, onClose }: { source: LogSource; onClose: () => void }) {
-  const [follow, setFollow] = useState(true);
+  const flash = useToast();
+  const [follow, setFollow] = useState(!source.run);
   const [level, setLevel] = useState<'all' | LogLevel>('all');
   const [query, setQuery] = useState('');
   const load = useLogTail(source, follow);
@@ -110,9 +199,20 @@ export function LogDrawer({ source, onClose }: { source: LogSource; onClose: () 
     const link = document.createElement('a');
     link.href = url;
     link.download = `${source.name}.log`;
+    document.body.appendChild(link);
     link.click();
+    link.remove();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
+    flash('Log downloaded');
   };
+
+  const subtitle =
+    load.status === 'error'
+      ? { text: load.message, className: 'text-crit-fg' }
+      : (() => {
+          const { text, tone } = logSubtitle(source, load.status === 'ok' && load.active);
+          return { text: load.status === 'loading' ? '' : text, className: SUBTITLE_TONE[tone] };
+        })();
 
   return (
     <>
@@ -125,13 +225,8 @@ export function LogDrawer({ source, onClose }: { source: LogSource; onClose: () 
         <div className="flex items-center gap-3 border-b border-line px-[18px] py-3.5">
           <SquareTerminal size={15} className="shrink-0 text-muted" />
           <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-            <span className="truncate font-mono text-[12.5px] text-fg">{source.title}</span>
-            <span className={cn('text-[11.5px]', load.status === 'error' ? 'text-crit-fg' : 'text-fg-3')}>
-              {load.status === 'error'
-                ? load.message
-                : (source.subtitle ??
-                  (follow ? `following · refreshes every ${FOLLOW_MS / 1000}s` : 'paused'))}
-            </span>
+            <span className="truncate font-mono text-[12.5px] text-fg">{logTitle(source)}</span>
+            <span className={cn('min-h-[17px] text-[11.5px]', subtitle.className)}>{subtitle.text}</span>
           </div>
           <button
             onClick={onClose}
@@ -142,7 +237,7 @@ export function LogDrawer({ source, onClose }: { source: LogSource; onClose: () 
           </button>
         </div>
         <div className="flex flex-wrap items-center gap-2 border-b border-line px-[18px] py-2.5">
-          <Segmented options={LEVELS} value={level} onChange={setLevel} label="Log level" />
+          <Segmented options={LEVELS} value={level} onChange={setLevel} font="sans" label="Log level" />
           <input
             value={query}
             onChange={event => setQuery(event.target.value)}
@@ -153,9 +248,11 @@ export function LogDrawer({ source, onClose }: { source: LogSource; onClose: () 
           <button
             onClick={() => setFollow(on => !on)}
             aria-pressed={follow}
+            disabled={Boolean(source.run)}
+            title={source.run ? 'A finished run has no new output' : undefined}
             className={cn(
-              'rounded-md px-[11px] py-[5px] text-xs',
-              follow ? 'bg-accent/14 text-link-hover' : 'text-subtle'
+              'rounded-md px-[11px] py-[5px] text-xs disabled:cursor-not-allowed disabled:opacity-50',
+              follow ? 'bg-accent text-canvas' : 'bg-white/6 text-fg-3'
             )}
           >
             Follow
@@ -188,7 +285,7 @@ export function LogDrawer({ source, onClose }: { source: LogSource; onClose: () 
           ))}
         </div>
         <div className="border-t border-line px-[18px] py-2 font-mono text-[11px] text-subtle">
-          {visible.length === all.length ? `${all.length} lines` : `${visible.length} of ${all.length} lines`}
+          {visible.length} of {all.length} lines
         </div>
       </aside>
     </>

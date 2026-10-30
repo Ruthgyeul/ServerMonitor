@@ -1,11 +1,12 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useCallback, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 
 import { KioskScreen } from '@/components/kiosk/KioskScreen';
 import { useNow } from '@/hooks/useNow';
 import { useSystemData } from '@/hooks/useSystemData';
+import { useWakeLock } from '@/hooks/useWakeLock';
 
 // Wall display for the 7" panel wired to this machine (and the console's Kiosk
 // button). Point the kiosk browser (scripts/run.sh's KIOSK_URL) at this route
@@ -34,16 +35,23 @@ export default function MonitorPage() {
     }
   }, [authRequired]);
 
-  useEffect(() => {
-    // Keep the panel awake; refused when the tab is hidden, which is fine.
-    if (!('wakeLock' in navigator)) return;
-    navigator.wakeLock.request('screen').catch(() => {});
-  }, []);
+  // Keep the panel awake; released when leaving the kiosk.
+  useWakeLock();
 
-  const exit = () => {
+  const exit = useCallback(() => {
     if (document.fullscreenElement) void document.exitFullscreen().catch(() => {});
     router.push('/');
-  };
+  }, [router]);
+
+  useEffect(() => {
+    // ESC leaves the kiosk (a fullscreen browser spends the first ESC on
+    // leaving fullscreen; the next one lands here).
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') exit();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [exit]);
 
   if (data === null || now === null) {
     return (

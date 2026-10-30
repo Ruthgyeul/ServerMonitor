@@ -42,18 +42,13 @@ export default function ServicesPage() {
   const units = useMemo(() => sortUnits(list?.units ?? []), [list]);
   const shown = units.filter(unit => matchesFilter(unit, filter, query));
   const failed = units.filter(unit => unit.active === 'failed').length;
-  const transitioning = units.filter(
-    unit => unit.active === 'activating' || unit.active === 'deactivating'
-  ).length;
+  // "Restarting" = units on their way (back) up.
+  const restarting = units.filter(unit => unit.active === 'activating').length;
   const active = units.filter(unit => unit.active === 'active').length;
 
   const stats = [
     { label: 'Total units', value: String(units.length), color: PALETTE.text },
-    {
-      label: 'Restarting',
-      value: String(transitioning),
-      color: transitioning ? PALETTE.warnFg : PALETTE.text
-    },
+    { label: 'Restarting', value: String(restarting), color: PALETTE.text },
     { label: 'Units active', value: `${active} / ${units.length}`, color: PALETTE.text },
     { label: 'Failed units', value: String(failed), color: failed ? PALETTE.critFg : PALETTE.okFg }
   ];
@@ -75,7 +70,7 @@ export default function ServicesPage() {
       </div>
 
       <div className="flex flex-wrap items-center gap-2.5">
-        <Segmented options={FILTERS} value={filter} onChange={setFilter} label="Unit state" />
+        <Segmented options={FILTERS} value={filter} onChange={setFilter} font="sans" label="Unit state" />
         <input
           value={query}
           onChange={event => setQuery(event.target.value)}
@@ -145,7 +140,10 @@ export default function ServicesPage() {
                     <span className="flex justify-end gap-1.5">
                       <button
                         onClick={() =>
-                          openLogs({ kind: 'unit', name: unit.name, title: `journalctl -u ${unit.name}` })
+                          openLogs({
+                            kind: 'unit',
+                            name: unit.name
+                          })
                         }
                         className="rounded-[5px] border border-line-strong px-[9px] py-[3px] text-[11.5px] text-fg-3 hover:bg-white/5"
                       >

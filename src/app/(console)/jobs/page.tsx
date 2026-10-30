@@ -6,9 +6,11 @@ import { ControlButton } from '@/components/control/ControlButton';
 import { jobUrl, permissionFor, sendControl, useControlStatus } from '@/components/control/controlApi';
 import { JobDot, JobResultPill, NoJobs } from '@/components/jobs/JobParts';
 import {
+  cronLimit,
   durationLabel,
   jobState,
   JOBS_URL,
+  outputSource,
   relativeAgo,
   relativeIn,
   runBars,
@@ -23,8 +25,9 @@ import { PALETTE } from '@/lib/theme';
 import { cn } from '@/lib/utils';
 import type { JobList } from '@/types/system';
 
-// Backups and scheduled jobs: summary cards, then one row per systemd timer
-// with its schedule, last result, the last 14 runs and the run's output.
+// Backups and scheduled jobs: summary cards, then one row per systemd timer or
+// cron entry with its schedule and source, last result, the last 14 runs and
+// the output of the most recent run. Only timers can be run or toggled.
 
 const POLL_MS = 30_000;
 const COLUMNS = 'grid grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)_120px_92px_160px_100px_210px] gap-3.5';
@@ -74,7 +77,7 @@ export default function JobsPage() {
       <Panel
         className="overflow-hidden"
         title="Scheduled jobs"
-        actions={<span className="font-mono text-[11.5px] text-subtle">systemd timers</span>}
+        actions={<span className="font-mono text-[11.5px] text-subtle">crontab + systemd timers</span>}
       >
         {list === null && <p className="p-[18px] text-[12.5px] text-subtle">Loading…</p>}
         {list !== null && jobs.length === 0 && <NoJobs available={list.available} />}
@@ -92,6 +95,8 @@ export default function JobsPage() {
               </div>
               {jobs.map(job => {
                 const state = jobState(job);
+                const output = outputSource(job);
+                const cronOnly = cronLimit(job);
                 return (
                   <div
                     key={job.id}
@@ -114,8 +119,8 @@ export default function JobsPage() {
                     </div>
                     <div className="flex min-w-0 flex-col gap-[3px]">
                       <span className="text-[12.5px] text-fg-2">{job.human}</span>
-                      <span className="truncate font-mono text-[11px] text-subtle">
-                        {job.schedule} · {job.id}
+                      <span title={job.id} className="truncate font-mono text-[11px] text-subtle">
+                        {job.schedule} · {job.source}
                       </span>
                     </div>
                     <div className="flex flex-col gap-[3px]">
@@ -126,14 +131,11 @@ export default function JobsPage() {
                       <JobResultPill state={state} />
                     </span>
                     <div className="flex gap-[2px]">
-                      {job.history.length === 0 && (
-                        <span className="text-[11px] text-faint">no runs recorded</span>
-                      )}
                       {runBars(job).map((bar, index) => (
                         <span
                           key={index}
                           title={bar.tip}
-                          className="h-4 max-w-[10px] flex-1 rounded-[2px]"
+                          className="h-4 flex-1 rounded-[2px]"
                           style={{ background: bar.color }}
                         />
                       ))}
@@ -147,22 +149,24 @@ export default function JobsPage() {
                         permission={
                           job.running
                             ? { allowed: false, reason: 'Already running' }
-                            : permissionFor(control, 'unit', job.id)
+                            : (cronOnly ?? permissionFor(control, 'unit', job.id))
                         }
                         run={() => sendControl(jobUrl(job.id), { action: 'run' })}
                         refresh={[JOBS_URL]}
-                      />
+                      >
+                        {job.running ? <span className="text-warn-fg">Running…</span> : undefined}
+                      </ControlButton>
                       <button
-                        onClick={() =>
-                          openLogs({ kind: 'unit', name: job.service, title: `journalctl -u ${job.service}` })
-                        }
+                        onClick={() => 'run' in output && openLogs(output)}
+                        disabled={!('run' in output)}
+                        title={'run' in output ? undefined : (output.reason ?? undefined)}
                         className={ROW_BUTTON}
                       >
                         Output
                       </button>
                       <ControlButton
                         label={job.enabled ? 'Disable' : 'Enable'}
-                        permission={permissionFor(control, 'unit', job.id)}
+                        permission={cronOnly ?? permissionFor(control, 'unit', job.id)}
                         run={() =>
                           sendControl(jobUrl(job.id), { action: job.enabled ? 'disable' : 'enable' })
                         }

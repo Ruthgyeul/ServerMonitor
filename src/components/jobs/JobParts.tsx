@@ -1,7 +1,7 @@
 import React from 'react';
 import { CalendarClock } from 'lucide-react';
 
-import { STATE_STYLE, type JobState } from '@/components/jobs/jobsView';
+import { STATE_STYLE, stateTip, type JobState } from '@/components/jobs/jobsView';
 import { EmptyState } from '@/components/ui/EmptyState';
 
 // Bits shared by the Jobs page and the overview panel.
@@ -16,6 +16,7 @@ export function JobResultPill({ state }: { state: JobState }) {
   const style = STATE_STYLE[state];
   return (
     <span
+      title={stateTip(state)}
       className="rounded-full px-2 py-0.5 text-[11px] whitespace-nowrap"
       style={{ color: style.fg, background: style.bg }}
     >
@@ -24,18 +25,19 @@ export function JobResultPill({ state }: { state: JobState }) {
   );
 }
 
-export function NoJobs({ available }: { available: boolean }) {
+// `brief` is the overview panel's shorter wording.
+export function NoJobs({ available, brief = false }: { available: boolean; brief?: boolean }) {
   return available ? (
     <EmptyState
       icon={CalendarClock}
       title="No scheduled jobs found"
-      body="Jobs appear here once systemd timers are detected on the host."
+      body={`Jobs appear here once crontab entries or systemd timers are detected${brief ? '' : ' on the host'}.`}
     />
   ) : (
     <EmptyState
       icon={CalendarClock}
-      title="systemd not available"
-      body="Timers can't be read on this host or inside this container."
+      title="Scheduled jobs not readable"
+      body="Neither systemd timers nor crontab files can be read on this host or inside this container."
     />
   );
 }

@@ -1,5 +1,5 @@
 import { PALETTE } from '@/lib/theme';
-import type { UptimeCheck, UptimeSample } from '@/types/system';
+import type { UptimeCheck, UptimeExpect, UptimeSample } from '@/types/system';
 
 // Pure presentation maths for the Uptime page: per-check status, the 60-bar
 // history strip and the summary cards.
@@ -35,6 +35,27 @@ function uptimePercent(samples: UptimeSample[], allUp: boolean): string {
   const ok = samples.filter(sample => sample.ok).length;
   return `${((ok / samples.length) * 100).toFixed(allUp ? 0 : 1)}%`;
 }
+
+// "10s", "60s", "5m": whole minutes from two minutes up, seconds below.
+export function intervalLabel(seconds: number): string {
+  return seconds >= 120 && seconds % 60 === 0 ? `${seconds / 60}m` : `${seconds}s`;
+}
+
+// What a check accepts as up, in the endpoint list's words.
+export function expectLabel(expect: UptimeExpect): string {
+  return expect === '2xx' ? 'expects 2xx' : 'expects 200';
+}
+
+// The list header: one wording when every check agrees, both otherwise.
+export function expectSummary(checks: Pick<UptimeCheck, 'expect'>[]): string {
+  const kinds = new Set(checks.map(check => check.expect));
+  if (kinds.size > 1) return 'expects 200 or 2xx';
+  return expectLabel(kinds.has('2xx') ? '2xx' : '200');
+}
+
+// Client-side check before the request, worded as the server's error.
+export const URL_ERROR = 'Enter a full URL starting with http:// or https://';
+export const isProbeUrl = (url: string): boolean => /^https?:\/\/[^\s/]+/.test(url.trim());
 
 export function historyBars(history: UptimeSample[]): HistoryBar[] {
   const scale = Math.max(SCALE_FLOOR_MS, ...history.map(sample => Math.min(sample.ms ?? 0, SCALE_CAP_MS)));

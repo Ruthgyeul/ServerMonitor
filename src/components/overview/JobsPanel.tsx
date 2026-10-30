@@ -19,7 +19,8 @@ export function JobsPanel({ now }: { now: number }) {
   const list = usePolled<JobList>(JOBS_URL, POLL_MS);
   const jobs = list?.jobs ?? [];
   const summary = summarizeJobs(jobs, now);
-  const hasBackups = jobs.some(job => job.kind === 'backup');
+  // No successful backup at all reads as stale, like an old one.
+  const stale = summary.backupStale || summary.lastGoodBackupAt === null;
 
   return (
     <Panel
@@ -27,8 +28,8 @@ export function JobsPanel({ now }: { now: number }) {
       title="Backups & scheduled jobs"
       actions={
         <>
-          {hasBackups && (
-            <span className={cn('text-xs', summary.backupStale ? 'text-warn-fg' : 'text-ok-fg')}>
+          {list !== null && (
+            <span className={cn('text-xs', stale ? 'text-warn-fg' : 'text-ok-fg')}>
               {summary.lastGoodBackupAt
                 ? `Last backup ${relativeAgo(summary.lastGoodBackupAt, now)}`
                 : 'No successful backup'}
@@ -41,7 +42,7 @@ export function JobsPanel({ now }: { now: number }) {
       }
     >
       {list !== null && jobs.length === 0 ? (
-        <NoJobs available={list.available} />
+        <NoJobs available={list.available} brief />
       ) : (
         <div className="overflow-x-auto">
           <div className="min-w-[640px]">

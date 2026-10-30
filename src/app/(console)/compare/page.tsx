@@ -16,6 +16,7 @@ import {
   type CompareMetric,
   type ComparePeriod,
   type Delta,
+  type RangeStep,
   type StatKind
 } from '@/components/compare/compareData';
 import { PageBody } from '@/components/ui/PageBody';
@@ -27,10 +28,13 @@ import { cn } from '@/lib/utils';
 import { formatTimestamp } from '@/utils/timeFormat';
 
 // One metric over this day/week/month against the previous one, from the
-// persisted hourly history (kept 62 days).
+// persisted history: 15-minute buckets for the day view, hourly buckets
+// (kept HISTORY_RETENTION_DAYS) for weeks and months. Peaks come from each
+// bucket's recorded maximum rather than its average.
 
 const POLL_MS = 5 * 60_000;
 const HOUR = 3_600_000;
+const DAY = 24 * HOUR;
 
 const METRICS = (Object.keys(METRIC_LABELS) as CompareMetric[]).map(value => ({
   value,
@@ -61,8 +65,13 @@ function DeltaTag({ value }: { value: Delta }) {
   );
 }
 
-const rangeUrl = (metric: CompareMetric, from: number, to: number) =>
-  `/api/history/range?metric=${metric}&from=${from}&to=${to}`;
+const rangeUrl = (
+  metric: CompareMetric,
+  from: number,
+  to: number,
+  step: RangeStep,
+  kind: 'avg' | 'max' = 'avg'
+) => `/api/history/range?metric=${metric}&from=${from}&to=${to}&step=${step}&stat=${kind}`;
 
 export default function ComparePage() {
   const now = useNow();
@@ -73,31 +82,44 @@ export default function ComparePage() {
   const hour = now === null ? null : Math.floor(now / HOUR) * HOUR;
   const span = hour === null ? null : periodWindow(period, hour);
   const currentRaw = usePolled<(number | null)[]>(
-    span ? rangeUrl(metric, span.start, span.end) : null,
+    span ? rangeUrl(metric, span.start, span.end, span.step) : null,
     POLL_MS
   );
   const previousRaw = usePolled<(number | null)[]>(
-    span ? rangeUrl(metric, span.prevStart, span.prevEnd) : null,
+    span ? rangeUrl(metric, span.prevStart, span.prevEnd, span.step) : null,
+    POLL_MS
+  );
+  const currentPeakRaw = usePolled<(number | null)[]>(
+    span ? rangeUrl(metric, span.start, span.end, span.step, 'max') : null,
+    POLL_MS
+  );
+  const previousPeakRaw = usePolled<(number | null)[]>(
+    span ? rangeUrl(metric, span.prevStart, span.prevEnd, span.step, 'max') : null,
     POLL_MS
   );
 
   if (now === null || span === null) return null;
 
   const labels = PERIOD_LABELS[period];
-  const current = foldPoints(currentRaw ?? [], span.hoursPerPoint);
-  const previous = foldPoints(previousRaw ?? [], span.hoursPerPoint);
-  const nowIndex = Math.max(0, Math.floor((now - span.start) / (span.hoursPerPoint * HOUR)));
+  const current = foldPoints(currentRaw ?? [], span.foldBy);
+  const previous = foldPoints(previousRaw ?? [], span.foldBy);
+  const currentPeaks = foldPoints(currentPeakRaw ?? [], span.foldBy, 'max');
+  const previousPeaks = foldPoints(previousPeakRaw ?? [], span.foldBy, 'max');
+  const nowIndex = Math.max(0, Math.floor((now - span.start) / span.pointMs));
   // Compare like with like: both periods up to the same point.
-  const currentSoFar = current.slice(0, nowIndex + 1);
-  const previousSoFar = previous.slice(0, nowIndex + 1);
+  const soFar = (values: (number | null)[]) => values.slice(0, nowIndex + 1);
+  // Averages and percentiles read the bucket averages; the peak reads the
+  // bucket maxima, so a short spike isn't averaged away.
+  const statSource = (kind: StatKind, averages: (number | null)[], peaks: (number | null)[]) =>
+    kind === 'max' && peaks.some(value => value !== null) ? peaks : averages;
   const previousEmpty = previousRaw !== null && previousRaw.every(value => value === null);
   const points = Math.max(current.length, previous.length);
   const pointLabels = Array.from({ length: points }, (_, i) => {
-    const at = span.start + i * span.hoursPerPoint * HOUR;
+    const at = span.start + i * span.pointMs;
     if (period === 'month') return `Day ${i + 1}`;
     const stamp = formatTimestamp(at);
     return period === 'week'
-      ? `${['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'][Math.floor(i / 24)]} ${stamp.slice(11, 16)}`
+      ? `${['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'][Math.floor((i * span.pointMs) / DAY)]} ${stamp.slice(11, 16)}`
       : stamp.slice(11, 16);
   });
 
@@ -114,18 +136,19 @@ export default function ComparePage() {
   return (
     <PageBody className="max-w-[1400px]">
       <div className="flex flex-wrap items-center gap-x-3.5 gap-y-2.5">
-        <Segmented options={METRICS} value={metric} onChange={setMetric} label="Metric" />
-        <Segmented options={PERIODS} value={period} onChange={setPeriod} label="Period" />
+        <Segmented options={METRICS} value={metric} onChange={setMetric} font="sans" label="Metric" />
+        <Segmented options={PERIODS} value={period} onChange={setPeriod} font="sans" label="Period" />
         <span className="ml-auto text-xs text-dim">
-          Both periods are compared up to the same point (
-          {formatTimestamp(now).slice(period === 'day' ? 11 : 5, 16)}).
+          {previousEmpty
+            ? `History doesn't reach back to ${labels.previous.toLowerCase()} yet, so it can't be compared.`
+            : `Both periods are compared up to the same point (${formatTimestamp(now).slice(period === 'day' ? 11 : 5, 16)}).`}
         </span>
       </div>
 
       <div className="grid grid-cols-[repeat(auto-fit,minmax(200px,1fr))] gap-4">
         {STATS.map(({ kind, label }) => {
-          const cur = stat(currentSoFar, kind);
-          const prev = previousEmpty ? null : stat(previousSoFar, kind);
+          const cur = stat(soFar(statSource(kind, current, currentPeaks)), kind);
+          const prev = previousEmpty ? null : stat(soFar(statSource(kind, previous, previousPeaks)), kind);
           return (
             <div
               key={kind}
@@ -178,6 +201,7 @@ export default function ComparePage() {
             xLabels={span.xLabels}
             currentLabel={labels.current}
             previousLabel={labels.previous}
+            previousEmpty={previousEmpty}
           />
         </div>
       </Panel>

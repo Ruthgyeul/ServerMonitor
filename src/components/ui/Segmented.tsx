@@ -4,13 +4,15 @@ import React from 'react';
 
 import { cn } from '@/lib/utils';
 
-// Compact option picker (range 1h/6h/24h/7d, sort CPU/MEM, filters).
+// Compact option picker. Mono for ranges and sort keys (1h/6h/24h/7d,
+// CPU/MEM); font="sans" for word filters and tabs (Running / Stopped, Images).
 
 interface SegmentedProps<T extends string | number> {
   options: readonly { value: T; label: string }[];
   value: T;
   onChange: (value: T) => void;
   size?: 'sm' | 'xs';
+  font?: 'mono' | 'sans';
   label?: string;
 }
 
@@ -19,6 +21,7 @@ export function Segmented<T extends string | number>({
   value,
   onChange,
   size = 'sm',
+  font = 'mono',
   label
 }: SegmentedProps<T>) {
   return (
@@ -39,8 +42,14 @@ export function Segmented<T extends string | number>({
             aria-pressed={active}
             onClick={() => onChange(option.value)}
             className={cn(
-              'font-mono',
-              size === 'sm' ? 'rounded px-2 py-0.5 text-[11px]' : 'rounded-[3px] px-[5px] py-px text-[10px]',
+              font === 'sans'
+                ? 'rounded px-[10px] py-[3px] font-sans text-[11.5px]'
+                : cn(
+                    'font-mono',
+                    size === 'sm'
+                      ? 'rounded px-2 py-0.5 text-[11px]'
+                      : 'rounded-[3px] px-[5px] py-px text-[10px]'
+                  ),
               active ? 'bg-active text-fg' : 'text-subtle hover:text-fg-2'
             )}
           >

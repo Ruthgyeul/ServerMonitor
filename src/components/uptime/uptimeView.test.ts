@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest';
 
-import { checkView, historyBars, HISTORY_SLOTS, summarize } from '@/components/uptime/uptimeView';
+import {
+  checkView,
+  expectSummary,
+  historyBars,
+  HISTORY_SLOTS,
+  intervalLabel,
+  isProbeUrl,
+  summarize
+} from '@/components/uptime/uptimeView';
 import { PALETTE } from '@/lib/theme';
 import type { UptimeCheck, UptimeSample } from '@/types/system';
 
@@ -80,5 +88,26 @@ describe('summarize', () => {
       check([sample(10, true, 50)], { id: 'd', paused: true })
     ]);
     expect(summary).toEqual({ up: 2, live: 3, avgResponseMs: 200, uptimePct: 75, paused: 1 });
+  });
+});
+
+describe('labels', () => {
+  it('reads intervals as seconds or whole minutes', () => {
+    expect(intervalLabel(10)).toBe('10s');
+    expect(intervalLabel(60)).toBe('60s');
+    expect(intervalLabel(300)).toBe('5m');
+  });
+
+  it('summarises what the checks expect', () => {
+    expect(expectSummary([])).toBe('expects 200');
+    expect(expectSummary([{ expect: '2xx' }, { expect: '2xx' }])).toBe('expects 2xx');
+    expect(expectSummary([{ expect: '200' }, { expect: '2xx' }])).toBe('expects 200 or 2xx');
+  });
+
+  it('accepts http(s) URLs with a host only', () => {
+    expect(isProbeUrl('https://example.com/health')).toBe(true);
+    expect(isProbeUrl('http://10.0.0.2:8080')).toBe(true);
+    expect(isProbeUrl('example.com')).toBe(false);
+    expect(isProbeUrl('ftp://example.com')).toBe(false);
   });
 });

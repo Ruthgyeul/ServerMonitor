@@ -14,7 +14,7 @@ import {
 } from '@/components/control/controlApi';
 import { ContainerInspector } from '@/components/docker/ContainerInspector';
 import { DiskUsagePanel } from '@/components/docker/DiskUsagePanel';
-import { formatSize } from '@/components/docker/format';
+import { containerStatus, formatSize } from '@/components/docker/format';
 import { ResourceTabs } from '@/components/docker/ResourceTabs';
 import { useSystem } from '@/components/providers/SystemDataProvider';
 import { useShellActions } from '@/components/shell/ShellActions';
@@ -39,15 +39,11 @@ type Filter = 'all' | 'running' | 'stopped';
 const FILTERS = [
   { value: 'all', label: 'All' },
   { value: 'running', label: 'Running' },
-  { value: 'stopped', label: 'Stopped' }
+  { value: 'stopped', label: 'Paused / stopped' }
 ] as const;
 
 const statusColor = (state: string) =>
-  state === 'running'
-    ? PALETTE.text3
-    : state === 'restarting' || state === 'paused'
-      ? PALETTE.warnFg
-      : PALETTE.subtle;
+  state === 'running' ? PALETTE.text3 : state === 'exited' ? PALETTE.subtle : PALETTE.warnFg;
 
 type ContainerAction = 'start' | 'stop' | 'restart' | 'pause' | 'unpause';
 
@@ -85,6 +81,7 @@ const PRUNES: {
   { kind: 'buildCache', type: 'buildCache', label: 'Clear build cache', what: 'the whole build cache' }
 ];
 
+// "Paused / stopped" is everything that isn't running.
 function matches(container: DockerContainerDetail, filter: Filter, query: string): boolean {
   const running = container.state === 'running';
   if ((filter === 'running' && !running) || (filter === 'stopped' && running)) return false;
@@ -227,7 +224,10 @@ export default function DockerPage() {
   const logsButton = (container: DockerContainerDetail) => (
     <button
       onClick={() =>
-        openLogs({ kind: 'container', name: container.name, title: `docker logs ${container.name}` })
+        openLogs({
+          kind: 'container',
+          name: container.name
+        })
       }
       className="rounded-[5px] border border-line-strong px-2.5 py-1 text-[11.5px] text-fg-2 hover:bg-white/5"
     >
@@ -255,7 +255,13 @@ export default function DockerPage() {
         <section className="min-w-0 flex-[3_1_620px] overflow-hidden rounded-[10px] border border-line bg-card">
           <div className="flex flex-wrap items-center gap-2.5 border-b border-white/5 px-[18px] py-3">
             <h2 className="mr-auto text-[13.5px] font-medium">Containers</h2>
-            <Segmented options={FILTERS} value={filter} onChange={setFilter} label="Container state" />
+            <Segmented
+              options={FILTERS}
+              value={filter}
+              onChange={setFilter}
+              font="sans"
+              label="Container state"
+            />
             <input
               value={query}
               onChange={event => setQuery(event.target.value)}
@@ -306,7 +312,7 @@ export default function DockerPage() {
                     </span>
                     <span className="truncate text-muted">{container.image}</span>
                     <span className="truncate" style={{ color: statusColor(container.state) }}>
-                      {container.status}
+                      {containerStatus(container, now)}
                     </span>
                     <span className="text-right">{stats?.cpuPercent?.toFixed(1) ?? '—'}</span>
                     <span className="text-right text-fg-3">{stats?.memPercent?.toFixed(1) ?? '—'}</span>

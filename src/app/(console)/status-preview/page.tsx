@@ -13,7 +13,7 @@ export default function StatusPreviewPage() {
   const copyLink = async () => {
     try {
       await navigator.clipboard.writeText(`${window.location.origin}/status`);
-      flash('Status page link copied');
+      flash('Status link copied');
     } catch {
       flash('Could not copy the link');
     }
