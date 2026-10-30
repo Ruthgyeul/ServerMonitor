@@ -209,7 +209,7 @@ The console follows `Dashboard_Pro` closely; these differences are deliberate:
 
 ## Tech stack
 
-- [Next.js](https://nextjs.org) (App Router) + React + TypeScript
+- [Next.js](https://nextjs.org) 16 (App Router) + React 19 + TypeScript 6
 - Tailwind CSS
 - Hand-rolled SVG charts on the main dashboard (viewBox-based, so they scale
   with the card instead of being measured); Recharts on the cluster view
@@ -222,7 +222,7 @@ The console follows `Dashboard_Pro` closely; these differences are deliberate:
 
 ### Prerequisites
 
-- Node.js 18+
+- Node.js 22.12+ (24 LTS recommended — Node 20 is past end of life)
 - A Linux host (metrics come from `/proc/stat`, `/proc/meminfo`,
   `/proc/net/route`, `/sys/class/net`, `/sys/class/thermal`, …)
 - `lm-sensors` is optional. Install it for per-chip temperatures and fan RPM;
@@ -355,7 +355,7 @@ cp .env.example .env   # edit as needed
 sudo ./scripts/install.sh
 ```
 
-`scripts/install.sh` checks for Node.js 18+, runs `npm ci` and `npm run build`
+`scripts/install.sh` checks for Node.js 22.12+, runs `npm ci` and `npm run build`
 as the service user, creates the `data/` directory, then renders and installs
 `deploy/servermonitor.service` into `/etc/systemd/system/` and enables it.
 

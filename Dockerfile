@@ -7,13 +7,13 @@
 # host's binaries and /proc, /sys, so they are not baked into the image — see
 # docker-compose.yml's mount/namespace settings.
 
-FROM node:20-alpine AS deps
+FROM node:24-alpine AS deps
 WORKDIR /app
 # Reproducible install from the lockfile. Copy package*.json first to keep the layer cache.
 COPY package.json package-lock.json ./
 RUN npm ci
 
-FROM node:20-alpine AS builder
+FROM node:24-alpine AS builder
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
@@ -22,7 +22,7 @@ ENV NEXT_TELEMETRY_DISABLED=1
 # metadata, pass it via --build-arg, or use server-only variables read at runtime after deploy.
 RUN npm run build
 
-FROM node:20-alpine AS runner
+FROM node:24-alpine AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1

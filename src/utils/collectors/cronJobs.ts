@@ -368,7 +368,7 @@ export function buildCronJob(
 
 async function readText(file: string): Promise<string | null> {
   try {
-    return await fs.promises.readFile(file, 'utf-8');
+    return await fs.promises.readFile(/*turbopackIgnore: true*/ file, 'utf-8');
   } catch {
     return null;
   }
@@ -376,7 +376,9 @@ async function readText(file: string): Promise<string | null> {
 
 async function listDir(dir: string): Promise<string[]> {
   try {
-    return (await fs.promises.readdir(dir)).filter(name => !name.startsWith('.') && !name.includes('~'));
+    return (await fs.promises.readdir(/*turbopackIgnore: true*/ dir)).filter(
+      name => !name.startsWith('.') && !name.includes('~')
+    );
   } catch {
     return [];
   }
@@ -391,7 +393,7 @@ async function readEntries(): Promise<{ entries: CronEntry[]; found: boolean }> 
     entries.push(...parseCrontab(system, { system: true, source: 'crontab (system)' }));
   }
   for (const name of await listDir(CRON_D)) {
-    const content = await readText(path.join(CRON_D, name));
+    const content = await readText(path.join(/*turbopackIgnore: true*/ CRON_D, name));
     if (content !== null) {
       found = true;
       entries.push(...parseCrontab(content, { system: true, source: `cron.d/${name}` }));
@@ -399,7 +401,7 @@ async function readEntries(): Promise<{ entries: CronEntry[]; found: boolean }> 
   }
   for (const dir of USER_CRONTABS) {
     for (const user of await listDir(dir)) {
-      const content = await readText(path.join(dir, user));
+      const content = await readText(path.join(/*turbopackIgnore: true*/ dir, user));
       if (content !== null) {
         found = true;
         entries.push(...parseCrontab(content, { system: false, user, source: `crontab (${user})` }));
