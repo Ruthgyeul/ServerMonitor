@@ -2,13 +2,22 @@
 
 import React from 'react';
 
-import { formatValue, type CompareMetric } from '@/components/compare/compareData';
+import { delta, formatValue, type CompareMetric, type Delta } from '@/components/compare/compareData';
 import { areaPath, indexAt, linePath, niceMax } from '@/components/charts/paths';
 import { useHoverFraction } from '@/components/charts/useHoverFraction';
 import { PALETTE } from '@/lib/theme';
+import { cn } from '@/lib/utils';
 
 // Current period (solid, filled) over the previous one (dashed), with a "now"
 // line and a tooltip showing both values and their difference.
+
+// Up is the warning direction for a usage metric; down is the good one.
+const DELTA_TEXT: Record<Delta['tone'], string> = {
+  up: 'text-warn-fg',
+  down: 'text-ok-fg',
+  flat: 'text-fg-3',
+  none: 'text-muted'
+};
 
 const VIEW_W = 760;
 const VIEW_H = 240;
@@ -25,6 +34,7 @@ interface CompareChartProps {
   xLabels: string[];
   currentLabel: string;
   previousLabel: string;
+  previousEmpty: boolean;
 }
 
 export function CompareChart(props: CompareChartProps) {
@@ -44,6 +54,10 @@ export function CompareChart(props: CompareChartProps) {
 
   const { fraction, handlers } = useHoverFraction(GUTTER / VIEW_W, 1);
   const index = fraction === null ? null : indexAt(fraction, length);
+  const hoverDelta =
+    index !== null && index <= nowIndex && !props.previousEmpty
+      ? delta(past[index] ?? null, prev[index] ?? null)
+      : null;
   const left = (i: number) => ((GUTTER + (i / (length - 1)) * BOX.width) / VIEW_W) * 100;
   const top = (value: number | null) =>
     value === null ? null : ((BOX.y + BOX.height - (Math.min(max, value) / max) * BOX.height) / VIEW_H) * 100;
@@ -148,8 +162,20 @@ export function CompareChart(props: CompareChartProps) {
               <span className="flex items-center gap-[7px] text-xs text-fg-3">
                 <span className="h-[7px] w-[7px] rounded-full bg-dim" />
                 <span className="flex-1">{props.previousLabel}</span>
-                <span className="font-mono text-fg">{formatValue(metric, prev[index] ?? null)}</span>
+                <span className="font-mono text-fg">
+                  {props.previousEmpty ? 'no data' : formatValue(metric, prev[index] ?? null)}
+                </span>
               </span>
+              {hoverDelta && hoverDelta.tone !== 'none' && (
+                <span
+                  className={cn(
+                    'border-t border-white/8 pt-1.5 font-mono text-[11.5px]',
+                    DELTA_TEXT[hoverDelta.tone]
+                  )}
+                >
+                  {hoverDelta.text} vs {props.previousLabel.toLowerCase()}
+                </span>
+              )}
             </div>
           </>
         )}

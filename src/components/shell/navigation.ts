@@ -16,7 +16,8 @@ import {
 // Console routes: sidebar entries plus the header breadcrumb/title for each page.
 // Pages land here as their phase ships; the order follows the design.
 
-export type NavBadgeKey = 'alerts' | 'cluster' | 'docker' | 'services' | 'jobs' | 'uptime';
+export type NavBadgeKey =
+  'alerts' | 'cluster' | 'docker' | 'services' | 'jobs' | 'uptime' | 'rules' | 'notifications';
 
 export interface NavItem {
   href: string;
@@ -49,8 +50,8 @@ export const NAV_GROUPS: NavGroup[] = [
   {
     title: 'Configure',
     items: [
-      { href: '/settings/rules', label: 'Alert rules', icon: SlidersHorizontal },
-      { href: '/settings/notifications', label: 'Notifications', icon: BellRing }
+      { href: '/settings/rules', label: 'Alert rules', icon: SlidersHorizontal, badge: 'rules' },
+      { href: '/settings/notifications', label: 'Notifications', icon: BellRing, badge: 'notifications' }
     ]
   }
 ];

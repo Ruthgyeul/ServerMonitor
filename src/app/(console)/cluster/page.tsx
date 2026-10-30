@@ -8,6 +8,7 @@ import { NodeModal } from '@/components/cluster/NodeModal';
 import { useCluster } from '@/components/cluster/useCluster';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { PageBody } from '@/components/ui/PageBody';
+import { useNow } from '@/hooks/useNow';
 import { cn } from '@/lib/utils';
 
 // Every configured node side by side, refreshed each second. A node's detail
@@ -17,6 +18,7 @@ const POLL_INTERVAL_MS = 1000;
 
 export default function ClusterPage() {
   const { nodes, history } = useCluster(POLL_INTERVAL_MS);
+  const now = useNow();
   // Initialised lazily from ?node= (safe against hydration: the dialog only
   // renders once nodes have loaded client-side).
   const [selected, setSelected] = useState<string | null>(() => {
@@ -44,7 +46,7 @@ export default function ClusterPage() {
           <span
             className={cn(
               'h-[7px] w-[7px] rounded-full',
-              online === list.length && list.length > 0 ? 'bg-ok' : 'bg-crit'
+              nodes === null ? 'bg-faint' : online < list.length ? 'bg-warn' : 'bg-ok'
             )}
           />
           {nodes === null ? 'Connecting…' : `${online} of ${list.length} nodes online`}
@@ -70,13 +72,14 @@ export default function ClusterPage() {
               key={node.name}
               node={node}
               history={history[node.name] ?? []}
+              now={now}
               onSelect={() => openNode(node.name)}
             />
           ))}
         </div>
       )}
 
-      {open && <NodeModal node={open} onClose={() => openNode(null)} />}
+      {open && <NodeModal node={open} now={now} onClose={() => openNode(null)} />}
     </PageBody>
   );
 }

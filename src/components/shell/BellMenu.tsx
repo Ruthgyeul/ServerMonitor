@@ -12,21 +12,20 @@ import { formatAge } from '@/utils/timeFormat';
 // Dropdown under the header bell: the latest alert-log entries for the chosen
 // levels, plus the per-browser sound/desktop-notification switch.
 
-// Levels shown in the bell until per-level preferences land with the
-// Notifications page.
-export const BELL_LEVELS: ReadonlySet<AlertLevel> = new Set(['critical', 'warning']);
 const BELL_ITEMS = 6;
 
 interface BellMenuProps {
   alerts: AlertEntry[];
+  // The notification settings' level filter (Notifications page).
+  levels: Record<AlertLevel, boolean>;
   now: number;
   soundEnabled: boolean;
   onToggleSound: () => void;
   onClose: () => void;
 }
 
-export function BellMenu({ alerts, now, soundEnabled, onToggleSound, onClose }: BellMenuProps) {
-  const items = alerts.filter(alert => BELL_LEVELS.has(alert.level)).slice(0, BELL_ITEMS);
+export function BellMenu({ alerts, levels, now, soundEnabled, onToggleSound, onClose }: BellMenuProps) {
+  const items = alerts.filter(alert => levels[alert.level]).slice(0, BELL_ITEMS);
 
   return (
     <>

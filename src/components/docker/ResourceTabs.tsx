@@ -12,12 +12,6 @@ import { formatAge } from '@/utils/timeFormat';
 
 type Tab = 'images' | 'volumes' | 'networks';
 
-const TABS = [
-  { value: 'images', label: 'Images' },
-  { value: 'volumes', label: 'Volumes' },
-  { value: 'networks', label: 'Networks' }
-] as const;
-
 const headCell = 'px-[18px] pt-[9px] pb-1.5 text-[11px] text-faint';
 const row = 'items-center border-t border-line-soft px-[18px] py-2 font-mono text-xs';
 
@@ -30,11 +24,16 @@ interface ResourceTabsProps {
 export function ResourceTabs({ details, now, imageActions }: ResourceTabsProps) {
   const [tab, setTab] = useState<Tab>('images');
   const usedColor = (inUse: boolean) => (inUse ? 'text-fg-3' : 'text-warn-fg');
+  const tabs: { value: Tab; label: string }[] = [
+    { value: 'images', label: `Images ${details.images.length}` },
+    { value: 'volumes', label: `Volumes ${details.volumes.length}` },
+    { value: 'networks', label: `Networks ${details.networks.length}` }
+  ];
 
   return (
     <section className="min-w-0 flex-[3_1_620px] overflow-hidden rounded-[10px] border border-line bg-card">
       <div className="flex items-center gap-2.5 border-b border-white/5 px-[18px] py-3">
-        <Segmented options={TABS} value={tab} onChange={setTab} label="Docker resources" />
+        <Segmented options={tabs} value={tab} onChange={setTab} font="sans" label="Docker resources" />
       </div>
       <div className="overflow-x-auto">
         {tab === 'images' && (

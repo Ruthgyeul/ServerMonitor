@@ -55,7 +55,7 @@ import {
 } from '@/utils/collectors/alerts';
 import { collectExternalConditions } from '@/utils/collectors/externalConditions';
 import { muteStatus } from '@/utils/collectors/alertMute';
-import { getEffectiveThresholds } from '@/utils/collectors/alertOverrides';
+import { getAllOverrides, getEffectiveThresholds } from '@/utils/collectors/alertOverrides';
 import { isAnomalous } from '@/utils/collectors/anomaly';
 
 // systemd unit start times and restart counters, read once a minute (the
@@ -834,6 +834,7 @@ export async function getSystemInfo(): Promise<ServerData> {
     ),
     alertTiming: getAlertTiming(),
     mute: { globalMutedUntil, quietHours, quietNow },
+    overrideCount: Object.keys(getAllOverrides()).length,
     loginEnabled: Boolean(process.env.DASHBOARD_PASSWORD),
     thresholds: getEffectiveThresholds(),
     timestamp: new Date(now).toISOString(),

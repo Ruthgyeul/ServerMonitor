@@ -22,6 +22,14 @@ const volume = (mb: number) => {
 };
 const day = (date: string) => date.slice(5);
 
+// The browser's calendar date as the store keys it ("2026-10-30").
+function todayKey(): string {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+}
+// The newest bar is usually today's running total.
+export const lastDayLabel = (date: string, today: string) => (date === today ? 'today' : day(date));
+
 export function BandwidthPanel() {
   const [span, setSpan] = useState<30 | 90>(30);
   const { days } = useBandwidthHistory(span);
@@ -79,7 +87,7 @@ export function BandwidthPanel() {
             <span>
               {list[Math.floor(list.length / 2)] ? day(list[Math.floor(list.length / 2)].date) : ''}
             </span>
-            <span>{list.at(-1) ? day(list.at(-1)!.date) : ''}</span>
+            <span>{list.at(-1) ? lastDayLabel(list.at(-1)!.date, todayKey()) : ''}</span>
           </div>
         </div>
       )}

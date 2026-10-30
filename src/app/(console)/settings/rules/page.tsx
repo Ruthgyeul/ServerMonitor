@@ -177,6 +177,7 @@ export default function AlertRulesPage() {
                       options={delayOptions(setting.presets, threshold?.value)}
                       value={threshold?.value ?? 0}
                       onChange={value => void setDelay(threshold, value, setting.done(value))}
+                      font="sans"
                       label={setting.title}
                     />
                   </div>
@@ -187,6 +188,9 @@ export default function AlertRulesPage() {
               );
             })}
           </div>
+          <p className="px-[18px] pb-3.5 text-xs text-subtle">
+            Applies to the threshold rules below. Service, HTTP check and job failures notify right away.
+          </p>
         </section>
       )}
 

@@ -17,10 +17,13 @@ import { actOnIncident } from '@/components/alerts/incidentApi';
 import {
   contextChart,
   contextSpec,
+  eventAuthor,
   formatSpan,
+  formatThreshold,
   incidentDuration,
   INCIDENTS_URL,
-  STATUS_STYLE
+  STATUS_STYLE,
+  windowUrl
 } from '@/components/alerts/incidentView';
 import { linePath } from '@/components/charts/paths';
 import { useSystem } from '@/components/providers/SystemDataProvider';
@@ -31,7 +34,7 @@ import { Panel } from '@/components/ui/Panel';
 import { useNow } from '@/hooks/useNow';
 import { usePolled } from '@/hooks/usePolled';
 import { PALETTE } from '@/lib/theme';
-import type { MetricSeries } from '@/types/system';
+import type { MetricWindow } from '@/types/system';
 import type { Incident, IncidentAction, IncidentEventKind } from '@/utils/collectors/incidents';
 import { formatTimestamp } from '@/utils/timeFormat';
 
@@ -69,30 +72,37 @@ const DONE: Record<IncidentAction, string> = {
 function MetricContext({ incident, now }: { incident: Incident; now: number }) {
   const { data } = useSystem();
   const spec = contextSpec(incident, now);
-  const series = usePolled<MetricSeries>(spec ? `/api/history?range=${spec.range}` : null, 60_000);
+  const series = usePolled<MetricWindow>(spec ? windowUrl(spec) : null, 60_000);
 
   if (!spec) {
     return (
       <p className="px-[18px] py-4 text-[12.5px] text-subtle">
-        This rule has no numeric series in the retained charts. Check the service or endpoint logs for detail.
+        This rule has no numeric series. Check the service or endpoint logs for detail.
       </p>
     );
   }
-  const chart = series ? contextChart(series.points, spec.metric, incident, now) : null;
-  if (!chart) return <p className="px-[18px] py-4 text-[12.5px] text-subtle">Loading…</p>;
+  const cores = spec.perCore ? (data?.cpu.cores ?? 1) : 1;
+  const chart = series ? contextChart(series, incident, now, cores) : null;
+  if (!series) return <p className="px-[18px] py-4 text-[12.5px] text-subtle">Loading…</p>;
+  const values = chart?.values.filter((value): value is number => value !== null) ?? [];
+  if (!chart || values.length === 0) {
+    return (
+      <p className="px-[18px] py-4 text-[12.5px] text-subtle">
+        No samples were kept for this window — the monitor wasn&apos;t collecting then.
+      </p>
+    );
+  }
 
-  const threshold = data?.thresholds[spec.thresholdKey] ?? null;
-  const values = chart.values.filter((value): value is number => value !== null);
-  const high = Math.max(threshold ?? 0, ...values) * 1.1 || 100;
-  const low = Math.max(0, Math.min(threshold ?? Infinity, ...values) * 0.8);
+  const threshold =
+    incident.threshold?.value ?? (spec.thresholdKey ? (data?.thresholds[spec.thresholdKey] ?? null) : null);
+  const high = Math.max(threshold ?? 0, ...values) * 1.15 || 1;
+  const low = Math.max(0, Math.min(threshold ?? Infinity, ...values) * 0.75);
   const toY = (value: number) =>
     CHART_BOX.y + CHART_BOX.height - ((value - low) / (high - low || 1)) * CHART_BOX.height;
 
   return (
     <div className="flex flex-col gap-2 px-[18px] py-3.5">
-      <span className="text-[11.5px] text-subtle">
-        {spec.label} around the incident · last {spec.range}
-      </span>
+      <span className="text-[11.5px] text-subtle">{spec.label} around the incident</span>
       <svg viewBox="0 0 300 110" preserveAspectRatio="none" className="block h-[150px] w-full">
         <rect
           x={chart.spanStart * 300}
@@ -122,9 +132,14 @@ function MetricContext({ incident, now }: { incident: Incident; now: number }) {
         />
       </svg>
       <div className="flex justify-between font-mono text-[10.5px] text-faint">
-        <span>-{spec.range}</span>
-        {threshold !== null && <span className="text-crit-fg">threshold {threshold}%</span>}
-        <span>now</span>
+        <span>before</span>
+        {threshold !== null && (
+          <span className="text-crit-fg">
+            threshold {threshold}
+            {incident.threshold?.unit ?? spec.unit}
+          </span>
+        )}
+        <span>{incident.resolvedAt ? 'after' : 'now'}</span>
       </div>
     </div>
   );
@@ -208,7 +223,8 @@ export default function IncidentPage() {
                 [
                   'Duration',
                   `${formatSpan(incidentDuration(incident, now))}${incident.resolvedAt ? '' : ' · ongoing'}`
-                ]
+                ],
+                ['Threshold', formatThreshold(incident.threshold)]
               ].map(([label, value]) => (
                 <div key={label} className="flex flex-col gap-[3px]">
                   <dt className="text-[11.5px] text-subtle">{label}</dt>
@@ -234,10 +250,7 @@ export default function IncidentPage() {
                       <div className="flex min-w-0 flex-col gap-[3px]">
                         <span className="text-[13px] leading-[1.45] text-pretty text-fg">{event.text}</span>
                         <span className="font-mono text-[11px] text-subtle">
-                          {event.kind === 'note' || event.kind === 'ack' || event.kind === 'reopen'
-                            ? 'operator'
-                            : 'system'}{' '}
-                          · {formatTimestamp(new Date(event.at).getTime())}
+                          {eventAuthor(event)} · {formatTimestamp(new Date(event.at).getTime())}
                         </span>
                       </div>
                     </li>

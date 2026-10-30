@@ -9,8 +9,8 @@ import { AlertTimeline } from '@/components/alerts/AlertTimeline';
 import {
   formatSpan,
   incidentDuration,
+  incidentByKey,
   INCIDENTS_URL,
-  openIncidentByKey,
   STATUS_STYLE
 } from '@/components/alerts/incidentView';
 import { setMute } from '@/components/alerts/muteApi';
@@ -75,7 +75,7 @@ export default function AlertsPage() {
   const waiting = data.pendingAlerts;
   const fireDelay = data.alertTiming.fireDelaySec;
   const incidentsShown = incidentList ?? [];
-  const openIncidents = openIncidentByKey(incidentsShown);
+  const incidentFor = incidentByKey(incidentsShown);
   const openCount = incidentsShown.filter(incident => incident.status !== 'resolved').length;
 
   const mute = async (minutes: number | null) => {
@@ -96,7 +96,7 @@ export default function AlertsPage() {
           <div className="flex flex-wrap items-center gap-x-5 gap-y-2.5 border-b border-white/5 px-[18px] py-3.5">
             <h2 className="flex-1 text-[13.5px] font-medium">Pending &amp; recovering</h2>
             <span className="text-xs text-dim">
-              Threshold rules fire after {fireDelay ? `${fireDelay}s` : 'no delay'}
+              Threshold rules fire after {fireDelay ? `${fireDelay}s` : 'immediately'}
             </span>
             <Link href="/settings/rules#timing" className="text-xs">
               Alert timing
@@ -118,7 +118,7 @@ export default function AlertsPage() {
                 >
                   {pendingRow ? 'PEND' : 'RECOV'}
                 </span>
-                <span className="text-[13px] text-fg">{alert.message}</span>
+                <span className="text-[13px] text-fg">{alert.short ?? alert.message}</span>
                 <span className="font-mono text-[11.5px] text-fg-3">
                   {pendingRow ? `fires in ${left}s` : `resolves in ${left}s`}
                 </span>
@@ -152,14 +152,13 @@ export default function AlertsPage() {
           </p>
         ) : (
           active.map(alert => {
-            const incident = openIncidents.get(alert.key);
+            const incident = incidentFor.get(alert.key);
             const row = (
               <>
                 <LevelTag level={alert.level} />
                 <span className="text-[13px] text-fg">{alert.message}</span>
                 <span className="font-mono text-[11px] text-subtle">
-                  {alert.rule ?? alert.key} · since{' '}
-                  {formatTimestamp(new Date(alert.since).getTime()).slice(5, 16)}
+                  {alert.ruleText ?? alert.rule ?? alert.key}
                 </span>
                 <span className="text-xs text-link">{incident ? 'Incident →' : ''}</span>
               </>

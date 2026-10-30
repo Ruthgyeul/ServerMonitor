@@ -36,11 +36,11 @@ export function DockerPanel({ docker }: { docker: DockerInfo }) {
       {!docker.available || docker.containers.length === 0 ? (
         <EmptyState
           icon={Container}
-          title={docker.available ? 'No containers' : 'Docker not reachable'}
+          title={docker.available ? 'No containers' : 'Docker not detected'}
           body={
             docker.available
               ? 'Containers will appear here once they are created.'
-              : 'Install Docker or give this service access to the Docker socket to see containers here.'
+              : 'Install Docker or give the monitor read access to /var/run/docker.sock.'
           }
         />
       ) : (

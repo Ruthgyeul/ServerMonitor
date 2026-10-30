@@ -4,11 +4,10 @@ import { linePath, padToWindow } from '@/components/charts/paths';
 import { Panel } from '@/components/ui/Panel';
 import { Tag } from '@/components/ui/Tag';
 import type { DiskIoPoint } from '@/hooks/useSystemData';
-import { usageColor } from '@/lib/statusColors';
 import { PALETTE } from '@/lib/theme';
 import type { DashboardData } from '@/utils/dashboardData';
 import { formatAge } from '@/utils/timeFormat';
-import { formatLinkSpeed, formatMbPair, formatNetSpeed } from '@/utils/format';
+import { formatLinkSpeed, formatNetSpeed } from '@/utils/format';
 
 // The bottom row of the overview: hardware sensors, interfaces, security.
 
@@ -19,12 +18,30 @@ const IO_WINDOW = 60;
 
 const row = 'flex justify-between border-b border-line-soft px-[18px] py-[11px] text-[12.5px]';
 
+// Green under the clear threshold, amber between clear and alert, red above.
+export function tempColor(temp: number, clear: number, enter: number): string {
+  if (temp > enter) return PALETTE.crit;
+  if (temp > clear) return PALETTE.warn;
+  return PALETTE.ok;
+}
+
+// Disk I/O in KB/s (the collector's unrounded rates), MB/s once it's busy.
+const KB_TO_MB_AT = 10 * 1024;
+export function formatDiskIo(io: DashboardData['diskIO']): { read: string; write: string; unit: string } {
+  const readKBps = io.readKBps ?? io.read * 1024;
+  const writeKBps = io.writeKBps ?? io.write * 1024;
+  if (Math.max(readKBps, writeKBps) >= KB_TO_MB_AT) {
+    return { read: (readKBps / 1024).toFixed(1), write: (writeKBps / 1024).toFixed(1), unit: 'MB/s' };
+  }
+  return { read: readKBps.toFixed(1), write: writeKBps.toFixed(1), unit: 'KB/s' };
+}
+
 export function HardwarePanel({ data, diskIo }: { data: DashboardData; diskIo: DiskIoPoint[] }) {
   const { cpu, gpu, fan, swap, diskIO, thresholds } = data;
   const enter = thresholds.ALERT_TEMP_ENTER ?? 74;
   const clear = thresholds.ALERT_TEMP_CLEAR ?? 70;
   const temp = cpu.temperature === 'N/A' ? null : cpu.temperature;
-  const io = formatMbPair(diskIO.read, diskIO.write);
+  const io = formatDiskIo(diskIO);
   const ioMax = Math.max(0.001, ...diskIo.map(point => Math.max(point.read, point.write)));
   const ioBox = { x: 0, y: 1, width: 200, height: 28 };
   const pct = (value: number) => `${Math.min(100, (value / TEMP_SCALE) * 100)}%`;
@@ -42,7 +59,7 @@ export function HardwarePanel({ data, diskIo }: { data: DashboardData; diskIo: D
               <div className="relative h-1 rounded-sm bg-track">
                 <div
                   className="h-full rounded-sm"
-                  style={{ width: pct(temp), background: usageColor((temp / enter) * 85, PALETTE.ok) }}
+                  style={{ width: pct(temp), background: tempColor(temp, clear, enter) }}
                 />
                 <div
                   title="clear threshold"

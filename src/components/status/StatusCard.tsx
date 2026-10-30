@@ -80,7 +80,12 @@ export function StatusCard() {
     const { days, hours, minutes } = status.uptime;
     dot = status.status === 'operational' ? PALETTE.ok : PALETTE.warn;
     heading = status.status === 'operational' ? 'All systems operational' : 'Degraded performance';
-    sub = `uptime ${days}d ${hours}h ${minutes}m · ${status.activeAlerts} active alert${status.activeAlerts === 1 ? '' : 's'}`;
+    // The alert count only appears when something is wrong.
+    const alerts =
+      status.status === 'degraded'
+        ? ` · ${status.activeAlerts} active alert${status.activeAlerts === 1 ? '' : 's'}`
+        : '';
+    sub = `up ${days}d ${hours}h ${minutes}m${alerts}`;
   }
 
   const metrics = status

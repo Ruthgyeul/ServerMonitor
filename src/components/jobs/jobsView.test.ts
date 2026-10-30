@@ -1,6 +1,16 @@
 import { describe, expect, it } from 'vitest';
 
-import { durationLabel, jobState, relativeIn, runBars, summarizeJobs } from '@/components/jobs/jobsView';
+import {
+  cronLimit,
+  durationLabel,
+  jobState,
+  outputSource,
+  relativeIn,
+  RUN_SLOTS,
+  runBars,
+  summarizeJobs
+} from '@/components/jobs/jobsView';
+import { PALETTE } from '@/lib/theme';
 import type { ScheduledJob } from '@/types/system';
 
 const NOW = Date.UTC(2026, 9, 29, 12, 0, 0);
@@ -56,7 +66,9 @@ describe('labels', () => {
         ]
       })
     );
-    expect(bars.map(bar => bar.tip)).toEqual(['1 runs earlier · success', 'Last run · failed']);
+    expect(bars).toHaveLength(RUN_SLOTS);
+    expect(bars.slice(-2).map(bar => bar.tip)).toEqual(['1 runs earlier · success', 'Last run · failed']);
+    expect(bars[0]).toEqual({ color: PALETTE.track, tip: 'No run recorded' });
   });
 });
 
@@ -86,7 +98,29 @@ describe('summarizeJobs', () => {
     expect(summary.nextBackupAt).toBe(iso(-15));
   });
 
-  it('is not stale without any backup jobs', () => {
-    expect(summarizeJobs([job()], NOW).backupStale).toBe(false);
+  it('reads as stale when no backup has ever succeeded', () => {
+    expect(summarizeJobs([job()], NOW).backupStale).toBe(true);
+    expect(
+      summarizeJobs([job({ kind: 'backup', history: [{ at: iso(2), ok: true }] })], NOW).backupStale
+    ).toBe(false);
+  });
+});
+
+describe('row actions', () => {
+  const cron = job({ id: 'cron:root:abc', source: 'crontab (root)', controllable: false, service: '' });
+
+  it('keeps cron jobs out of run/enable and output', () => {
+    expect(cronLimit(job())).toBeNull();
+    expect(cronLimit(cron)).toMatchObject({ allowed: false });
+    expect(outputSource(cron)).toMatchObject({ allowed: false });
+  });
+
+  it('points Output at the last invocation of a timer', () => {
+    expect(outputSource(job())).toEqual({ allowed: false, reason: 'No run recorded yet' });
+    expect(outputSource(job({ invocationId: 'ab'.repeat(16), lastRunStartedAt: iso(9) }))).toEqual({
+      kind: 'unit',
+      name: 'x.service',
+      run: { invocation: 'ab'.repeat(16), since: iso(9) }
+    });
   });
 });

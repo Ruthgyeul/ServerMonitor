@@ -152,7 +152,7 @@ export function KioskScreen({ data, networkHistory, now, initialEvery, onExit }:
             </span>
             {active.map(alert => (
               <span key={alert.key} className="font-mono text-base text-fg">
-                {alert.message}
+                {alert.short ?? alert.message}
               </span>
             ))}
           </div>

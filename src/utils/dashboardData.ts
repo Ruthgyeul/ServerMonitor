@@ -24,7 +24,8 @@ import {
   ReadOnlyMount,
   DockerInfo,
   MuteState,
-  PendingAlert
+  PendingAlert,
+  CapacityForecast
 } from '@/types/system';
 
 // The API's new fields are all optional (old-node compatible). Rather than
@@ -82,6 +83,9 @@ export interface DashboardData {
   pendingAlerts: PendingAlert[];
   alertTiming: AlertTiming;
   mute: MuteState;
+  // 14-day disk / memory trend; null from nodes that don't report it.
+  capacity: { disk: CapacityForecast; mem: CapacityForecast } | null;
+  overrideCount: number;
   loginEnabled: boolean;
   thresholds: Record<string, number>;
   timestamp: string;
@@ -165,6 +169,8 @@ export function toDashboardData(raw: ServerData): DashboardData {
     pendingAlerts: raw.pendingAlerts ?? [],
     alertTiming: raw.alertTiming ?? { fireDelaySec: 0, resolveDelaySec: 0, suppressedSpikes: 0 },
     mute: raw.mute ?? { globalMutedUntil: null, quietHours: null, quietNow: false },
+    capacity: raw.capacity ?? null,
+    overrideCount: raw.overrideCount ?? 0,
     loginEnabled: raw.loginEnabled ?? false,
     thresholds: raw.thresholds ?? {},
     timestamp: raw.timestamp ?? new Date().toISOString(),

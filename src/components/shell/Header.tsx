@@ -7,7 +7,7 @@ import { Bell, BellOff, Download, LayoutGrid, Menu, Tv } from 'lucide-react';
 import { BellMenu } from '@/components/shell/BellMenu';
 import type { PageMeta } from '@/components/shell/navigation';
 import { cn } from '@/lib/utils';
-import type { AlertEntry, MuteState } from '@/types/system';
+import type { AlertEntry, AlertLevel, MuteState } from '@/types/system';
 import { formatHourMinute, formatTimestamp } from '@/utils/timeFormat';
 
 // Sticky page header: breadcrumb + title, connection state, clock and the
@@ -28,6 +28,8 @@ interface HeaderProps {
   staleSeconds: number;
   mute: MuteState | null;
   alerts: AlertEntry[];
+  // Levels the bell lists: the notification settings' level filter.
+  bellLevels: Record<AlertLevel, boolean>;
   activeCount: number;
   bellOpen: boolean;
   onToggleBell: () => void;
@@ -79,10 +81,14 @@ export function Header(props: HeaderProps) {
       </div>
 
       {muted && (
-        <span className="flex items-center gap-[7px] rounded-full border border-warn/30 bg-warn/8 px-2.5 py-[5px] text-xs text-warn-fg">
+        <Link
+          href="/settings/notifications"
+          title="Notification settings"
+          className="flex items-center gap-[7px] rounded-full border border-warn/30 bg-warn/8 px-2.5 py-[5px] text-xs text-warn-fg hover:text-warn-fg"
+        >
           <BellOff size={13} />
           {muted}
-        </span>
+        </Link>
       )}
 
       <LinkPill link={link} staleSeconds={staleSeconds} />
@@ -138,6 +144,7 @@ export function Header(props: HeaderProps) {
         {bellOpen && now !== null && (
           <BellMenu
             alerts={props.alerts}
+            levels={props.bellLevels}
             now={now}
             soundEnabled={props.soundEnabled}
             onToggleSound={props.onToggleSound}

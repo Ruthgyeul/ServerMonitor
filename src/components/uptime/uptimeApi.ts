@@ -1,5 +1,5 @@
 import { refreshPolled } from '@/hooks/usePolled';
-import type { UptimeCheck } from '@/types/system';
+import type { UptimeCheck, UptimeExpect } from '@/types/system';
 
 // Client for /api/uptime. Every call refreshes the shared poll so the page
 // (and the sidebar badge) pick up the change without waiting for the next tick.
@@ -40,7 +40,7 @@ async function call<T>(url: string, method: string, body?: unknown): Promise<Res
   }
 }
 
-export function addCheck(input: { name: string; url: string; intervalSec: number }) {
+export function addCheck(input: { name: string; url: string; intervalSec: number; expect: UptimeExpect }) {
   return call<UptimeCheck>(UPTIME_URL, 'POST', input);
 }
 

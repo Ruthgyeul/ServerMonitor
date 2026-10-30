@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { usePathname } from 'next/navigation';
 
 import { useSystem } from '@/components/providers/SystemDataProvider';
@@ -20,6 +20,7 @@ import { useAlertNotifications } from '@/hooks/useAlertNotifications';
 import { useAlertTabIndicator } from '@/hooks/useAlertTabIndicator';
 import { useNow } from '@/hooks/useNow';
 import { usePolled } from '@/hooks/usePolled';
+import type { AlertLevel } from '@/types/system';
 
 // The console frame around every authenticated page: sidebar, sticky header,
 // offline banner, and the loading / unreachable states before the first sample.
@@ -28,6 +29,17 @@ import { usePolled } from '@/hooks/usePolled';
 const STALE_AFTER_SECONDS = 10;
 // Notification levels change rarely (only from the Notifications page, which refreshes them).
 const NOTIFY_POLL_MS = 5 * 60_000;
+// Until the settings load, the bell shows what the server sends by default.
+const DEFAULT_BELL_LEVELS: Record<AlertLevel, boolean> = {
+  critical: true,
+  warning: true,
+  info: false,
+  ok: false
+};
+// A short placeholder between pages so a route change reads as navigation.
+const PAGE_SWITCH_MS = 420;
+// How long Retry waits for the stream to come back before saying it hasn't.
+const RETRY_VERDICT_MS = 3000;
 
 export function ConsoleShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -50,6 +62,32 @@ export function ConsoleShell({ children }: { children: React.ReactNode }) {
   );
 
   useAlertTabIndicator((data?.activeAlerts.length ?? 0) > 0);
+
+  // Page switches show the skeleton briefly, as the design does.
+  const [switching, setSwitching] = useState(false);
+  const previousPath = useRef(pathname);
+  useEffect(() => {
+    if (previousPath.current === pathname) return;
+    previousPath.current = pathname;
+    setSwitching(true);
+    window.scrollTo(0, 0);
+    const timer = setTimeout(() => setSwitching(false), PAGE_SWITCH_MS);
+    return () => clearTimeout(timer);
+  }, [pathname]);
+
+  // Retry reports whether the stream came back. The latest state is read from
+  // a ref because the verdict lands after this render.
+  const linkRef = useRef({ connected, lastUpdate });
+  useEffect(() => {
+    linkRef.current = { connected, lastUpdate };
+  }, [connected, lastUpdate]);
+  const retryTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(
+    () => () => {
+      if (retryTimer.current) clearTimeout(retryTimer.current);
+    },
+    []
+  );
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -82,8 +120,13 @@ export function ConsoleShell({ children }: { children: React.ReactNode }) {
       : undefined;
 
   const retry = () => {
+    const before = linkRef.current.lastUpdate;
     reconnect();
-    flash('Reconnecting…');
+    if (retryTimer.current) clearTimeout(retryTimer.current);
+    retryTimer.current = setTimeout(() => {
+      const { connected: back, lastUpdate: latest } = linkRef.current;
+      flash(back && latest !== before ? 'Reconnected' : 'Still unreachable · retrying every 5s');
+    }, RETRY_VERDICT_MS);
   };
 
   let content: React.ReactNode = children;
@@ -93,6 +136,8 @@ export function ConsoleShell({ children }: { children: React.ReactNode }) {
     ) : (
       <PageSkeleton what={meta.title.toLowerCase()} />
     );
+  } else if (switching) {
+    content = <PageSkeleton what={meta.title.toLowerCase()} />;
   }
 
   return (
@@ -106,6 +151,7 @@ export function ConsoleShell({ children }: { children: React.ReactNode }) {
           staleSeconds={staleSeconds}
           mute={data?.mute ?? null}
           alerts={data?.alerts ?? []}
+          bellLevels={notifySettings?.levels ?? DEFAULT_BELL_LEVELS}
           activeCount={data?.activeAlerts.length ?? 0}
           bellOpen={bellOpen}
           onToggleBell={() => setBellOpen(open => !open)}

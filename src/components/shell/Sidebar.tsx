@@ -6,67 +6,17 @@ import { usePathname } from 'next/navigation';
 import { LogOut, Server } from 'lucide-react';
 
 import type { ClusterNode } from '@/components/cluster/clusterTypes';
-import { jobState } from '@/components/jobs/jobsView';
 import { useSystem } from '@/components/providers/SystemDataProvider';
 import { InstallPwa } from '@/components/shell/InstallPwa';
-import { NAV_GROUPS, isActive, type NavBadgeKey, type NavItem } from '@/components/shell/navigation';
+import { badgeFor, SERVICES_BRIEF_POLL_MS, SERVICES_BRIEF_URL, type Badge } from '@/components/shell/badges';
+import { NAV_GROUPS, isActive, type NavItem } from '@/components/shell/navigation';
 import { UPTIME_BADGE_URL, type UptimeList } from '@/components/uptime/uptimeApi';
-import { summarize } from '@/components/uptime/uptimeView';
 import { SITE_NAME } from '@/config/siteConfig';
+import { useNow } from '@/hooks/useNow';
 import { usePolled } from '@/hooks/usePolled';
 import { cn } from '@/lib/utils';
-import type { JobList, ScheduledJob, UptimeCheck } from '@/types/system';
-import type { DashboardData } from '@/utils/dashboardData';
+import type { JobList, ServiceUnitList } from '@/types/system';
 import { shortKernel } from '@/utils/format';
-
-interface Badge {
-  text: string;
-  alarm: boolean;
-}
-
-// Live counts behind the sidebar badges.
-interface BadgeSources {
-  data: DashboardData | null;
-  cluster: ClusterNode[] | null;
-  uptime: UptimeCheck[] | null;
-  jobs: ScheduledJob[] | null;
-}
-
-function badgeFor(key: NavBadgeKey | undefined, { data, cluster, uptime, jobs }: BadgeSources): Badge | null {
-  switch (key) {
-    case 'alerts': {
-      const count = data?.activeAlerts.length ?? 0;
-      return count > 0 ? { text: String(count), alarm: true } : null;
-    }
-    case 'cluster': {
-      if (!cluster || cluster.length === 0) return null;
-      const online = cluster.filter(node => node.result.ok).length;
-      return { text: `${online}/${cluster.length}`, alarm: online < cluster.length };
-    }
-    case 'docker':
-      return data?.docker.available
-        ? { text: `${data.docker.running}/${data.docker.total}`, alarm: false }
-        : null;
-    case 'services': {
-      const failed = data?.services.failed ?? 0;
-      return failed > 0 ? { text: String(failed), alarm: true } : null;
-    }
-    case 'jobs': {
-      if (!jobs || jobs.length === 0) return null;
-      const failing = jobs.filter(job => jobState(job) === 'failed').length;
-      return failing > 0
-        ? { text: String(failing), alarm: true }
-        : { text: String(jobs.length), alarm: false };
-    }
-    case 'uptime': {
-      if (!uptime || uptime.length === 0) return null;
-      const { up, live } = summarize(uptime);
-      return { text: `${up}/${uptime.length}`, alarm: up < live };
-    }
-    default:
-      return null;
-  }
-}
 
 // The cluster badge only needs a coarse refresh; the Cluster page polls fast.
 const CLUSTER_BADGE_POLL_MS = 30_000;
@@ -124,6 +74,9 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
     usePolled<{ nodes: ClusterNode[] }>('/api/cluster', CLUSTER_BADGE_POLL_MS, false)?.nodes ?? null;
   const uptime = usePolled<UptimeList>(UPTIME_BADGE_URL, UPTIME_BADGE_POLL_MS)?.checks ?? null;
   const jobs = usePolled<JobList>(JOBS_BADGE_URL, JOBS_BADGE_POLL_MS)?.jobs ?? null;
+  const services = usePolled<ServiceUnitList>(SERVICES_BRIEF_URL, SERVICES_BRIEF_POLL_MS);
+  const units = services?.available ? services.units : null;
+  const now = useNow() ?? 0;
 
   const defaultIp = data?.network.interfaces.find(iface => iface.isDefault)?.ip ?? null;
   const healthy = data !== null && connected && data.activeAlerts.length === 0;
@@ -168,7 +121,7 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
                   key={item.href}
                   item={item}
                   active={isActive(pathname, item.href)}
-                  badge={badgeFor(item.badge, { data, cluster, uptime, jobs })}
+                  badge={badgeFor(item.badge, { data, cluster, uptime, jobs, units, now })}
                   onNavigate={onClose}
                 />
               ))}

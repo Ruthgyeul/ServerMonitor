@@ -18,20 +18,28 @@ export const PERIOD_LABELS: Record<ComparePeriod, { title: string; current: stri
   month: { title: 'This month vs last month', current: 'This month', previous: 'Last month' }
 };
 
+const QUARTER = 15 * 60_000;
 const HOUR = 3_600_000;
 const DAY = 24 * HOUR;
+
+// History bucket width requested from /api/history/range.
+export type RangeStep = '15m' | '1h';
 
 export interface PeriodWindow {
   start: number;
   end: number;
   prevStart: number;
   prevEnd: number;
-  // Hours folded into one chart point (1 = hourly, 24 = daily).
-  hoursPerPoint: number;
+  step: RangeStep;
+  // Fetched buckets folded into one chart point (24 hourly buckets = one day).
+  foldBy: number;
+  // Width of one chart point.
+  pointMs: number;
   xLabels: string[];
 }
 
-// Local-calendar windows: today/yesterday, Monday-based weeks, calendar months.
+// Local-calendar windows: today/yesterday in 15-minute points (96 per day),
+// Monday-based weeks in hours, calendar months in days.
 export function periodWindow(period: ComparePeriod, now: number): PeriodWindow {
   const midnight = new Date(now);
   midnight.setHours(0, 0, 0, 0);
@@ -42,7 +50,9 @@ export function periodWindow(period: ComparePeriod, now: number): PeriodWindow {
       end: start + DAY,
       prevStart: start - DAY,
       prevEnd: start,
-      hoursPerPoint: 1,
+      step: '15m',
+      foldBy: 1,
+      pointMs: QUARTER,
       xLabels: ['00:00', '06:00', '12:00', '18:00', '24:00']
     };
   }
@@ -59,7 +69,9 @@ export function periodWindow(period: ComparePeriod, now: number): PeriodWindow {
       end: end.getTime(),
       prevStart: prevStart.getTime(),
       prevEnd: start.getTime(),
-      hoursPerPoint: 1,
+      step: '1h',
+      foldBy: 1,
+      pointMs: HOUR,
       xLabels: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
     };
   }
@@ -71,18 +83,27 @@ export function periodWindow(period: ComparePeriod, now: number): PeriodWindow {
     end: end.getTime(),
     prevStart: prevStart.getTime(),
     prevEnd: start.getTime(),
-    hoursPerPoint: 24,
+    step: '1h',
+    foldBy: 24,
+    pointMs: DAY,
     xLabels: ['1', '8', '15', '22', '29']
   };
 }
 
-// Average consecutive groups of `size` values (nulls ignored; all-null → null).
-export function foldPoints(values: (number | null)[], size: number): (number | null)[] {
+// Combine consecutive groups of `size` values — their average, or their peak
+// for a series of bucket maxima (nulls ignored; all-null → null).
+export function foldPoints(
+  values: (number | null)[],
+  size: number,
+  combine: 'avg' | 'max' = 'avg'
+): (number | null)[] {
   if (size <= 1) return values;
   const folded: (number | null)[] = [];
   for (let index = 0; index < values.length; index += size) {
     const group = values.slice(index, index + size).filter((value): value is number => value !== null);
-    folded.push(group.length ? group.reduce((sum, value) => sum + value, 0) / group.length : null);
+    if (group.length === 0) folded.push(null);
+    else if (combine === 'max') folded.push(Math.max(...group));
+    else folded.push(group.reduce((sum, value) => sum + value, 0) / group.length);
   }
   return folded;
 }
@@ -117,13 +138,16 @@ export interface BucketDef {
   to: number; // point index, exclusive
 }
 
-// The summary rows under the chart: 4-hour blocks, weekdays, or weeks.
+// The summary rows under the chart: 4-hour blocks (16 quarter-hour points),
+// weekdays, or weeks.
+const POINTS_PER_DAY_BLOCK = 16;
+
 export function bucketDefs(period: ComparePeriod, points: number): BucketDef[] {
   if (period === 'day') {
     return Array.from({ length: 6 }, (_, block) => ({
       label: `${String(block * 4).padStart(2, '0')}–${String(block * 4 + 4).padStart(2, '0')}`,
-      from: block * 4,
-      to: block * 4 + 4
+      from: block * POINTS_PER_DAY_BLOCK,
+      to: (block + 1) * POINTS_PER_DAY_BLOCK
     }));
   }
   if (period === 'week') {
