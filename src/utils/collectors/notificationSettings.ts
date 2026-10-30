@@ -7,8 +7,8 @@ import { processSingleton } from '@/utils/processSingleton';
 // Which notification channels are on and which alert levels they carry, set
 // from the Notifications page. Browser push is per device (the browser keeps
 // its own opt-in); this store holds the server-side switch for the webhook
-// and the level filter both channels honour. Defaults keep the behaviour from
-// before this page existed: webhook on, every level sent. One store per
+// and the level filter both channels honour. Defaults follow the design:
+// webhook on, critical and warning sent, info and recoveries kept quiet. One store per
 // process (globalThis) so routes and the collection loop agree.
 
 export interface NotificationSettings {
@@ -18,7 +18,7 @@ export interface NotificationSettings {
 
 export const DEFAULT_SETTINGS: NotificationSettings = {
   webhook: true,
-  levels: { critical: true, warning: true, info: true, ok: true }
+  levels: { critical: true, warning: true, info: false, ok: false }
 };
 
 const LEVELS: AlertLevel[] = ['critical', 'warning', 'info', 'ok'];

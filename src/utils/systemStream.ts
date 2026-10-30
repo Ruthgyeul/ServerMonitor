@@ -1,6 +1,7 @@
 import { ServerData } from '@/types/system';
 import { getSystemInfo } from '@/utils/systemMonitor';
 import { logger } from '@/utils/logger';
+import { processSingleton } from '@/utils/processSingleton';
 
 // Instead of running the collectors per request, run exactly one loop in the
 // process. No matter how many clients connect, the shell spawns
@@ -23,15 +24,30 @@ const IDLE_TICK_MS = (() => {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 15000;
 })();
 
-const listeners = new Set<Listener>();
-let running = false;
-let handle: ReturnType<typeof setTimeout> | null = null;
-let lastData: ServerData | null = null;
+// One loop per process, whichever bundle starts it (normally instrumentation
+// at boot). Next bundles instrumentation separately from the route handlers,
+// so without this each bundle ran its own loop with its own copy of every
+// collector's state. The state lives on a process singleton and so does the
+// starting bundle's collect function: routes that need a fresh sample call
+// collectNow(), which runs the collection in the same module graph as the
+// loop instead of a second one.
+const state = processSingleton('systemStream', () => ({
+  listeners: new Set<Listener>(),
+  running: false,
+  handle: null as ReturnType<typeof setTimeout> | null,
+  lastData: null as ServerData | null,
+  // Health of the loop itself, for /api/health.
+  lastTickAt: 0,
+  consecutiveFailures: 0,
+  collect: getSystemInfo as () => Promise<ServerData>
+}));
+const { listeners } = state;
 
-// Health of the collection loop itself. /api/health reads this so a
-// scheduler/monitor can detect a stalled or continuously-failing loop.
-let lastTickAt = 0;
-let consecutiveFailures = 0;
+// A fresh sample from the loop's collector (cached for 1s there), for routes
+// such as /api/system that answer a request directly.
+export function collectNow(): Promise<ServerData> {
+  return state.collect();
+}
 
 export interface LoopHealth {
   running: boolean;
@@ -42,19 +58,19 @@ export interface LoopHealth {
 
 export function getLoopHealth(): LoopHealth {
   return {
-    running,
+    running: state.running,
     subscribers: listeners.size,
-    lastTickAgeMs: lastTickAt === 0 ? null : Date.now() - lastTickAt,
-    consecutiveFailures
+    lastTickAgeMs: state.lastTickAt === 0 ? null : Date.now() - state.lastTickAt,
+    consecutiveFailures: state.consecutiveFailures
   };
 }
 
 async function tick(): Promise<void> {
   try {
-    const data = await getSystemInfo();
-    lastData = data;
-    lastTickAt = Date.now();
-    consecutiveFailures = 0;
+    const data = await state.collect();
+    state.lastData = data;
+    state.lastTickAt = Date.now();
+    state.consecutiveFailures = 0;
     for (const listener of listeners) {
       // Isolate each subscriber so one's exception doesn't spread to the others.
       try {
@@ -66,7 +82,7 @@ async function tick(): Promise<void> {
   } catch (error) {
     // Keep the loop alive even if collection itself fails. Skip just this tick;
     // subscribers keep holding the last value they received.
-    consecutiveFailures += 1;
+    state.consecutiveFailures += 1;
     logger.error('system collection loop failed:', error);
   }
 }
@@ -75,12 +91,12 @@ async function tick(): Promise<void> {
 // don't pile up when collection takes longer than the interval. The interval
 // is re-decided every tick based on whether there are subscribers.
 async function loop(): Promise<void> {
-  if (!running) return;
+  if (!state.running) return;
   await tick();
-  if (!running) return;
+  if (!state.running) return;
   const interval = listeners.size > 0 ? ACTIVE_TICK_MS : IDLE_TICK_MS;
-  handle = setTimeout(() => void loop(), interval);
-  if (handle && typeof handle.unref === 'function') handle.unref();
+  state.handle = setTimeout(() => void loop(), interval);
+  if (typeof state.handle.unref === 'function') state.handle.unref();
 }
 
 /**
@@ -89,8 +105,8 @@ async function loop(): Promise<void> {
  * already running.
  */
 export function ensureCollecting(): void {
-  if (running) return;
-  running = true;
+  if (state.running) return;
+  state.running = true;
   void loop();
 }
 
@@ -104,9 +120,9 @@ export function subscribe(listener: Listener): () => void {
   listeners.add(listener);
   ensureCollecting();
 
-  if (lastData) {
+  if (state.lastData) {
     try {
-      listener(lastData);
+      listener(state.lastData);
     } catch (error) {
       logger.error('SSE listener threw on initial push:', error);
     }

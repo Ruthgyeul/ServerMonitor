@@ -44,7 +44,8 @@ const isoOrNull = (value: string | undefined | null): string | null => {
     .replace(' ', 'T')
     .replace(' ', '');
   const time = Date.parse(normalized);
-  if (Number.isFinite(time)) return new Date(time).toISOString();
+  // Docker writes "0001-01-01T00:00:00Z" for a time that never happened.
+  if (Number.isFinite(time)) return time > 0 ? new Date(time).toISOString() : null;
   const direct = Date.parse(value);
   return Number.isFinite(direct) && direct > 0 ? new Date(direct).toISOString() : null;
 };
@@ -60,7 +61,13 @@ interface InspectContainer {
   Created?: string;
   Path?: string;
   Args?: string[];
-  State?: { Status?: string; Health?: { Status?: string } };
+  State?: {
+    Status?: string;
+    Health?: { Status?: string };
+    StartedAt?: string;
+    FinishedAt?: string;
+    ExitCode?: number;
+  };
   Config?: { Image?: string };
   HostConfig?: { RestartPolicy?: { Name?: string; MaximumRetryCount?: number }; Memory?: number };
   NetworkSettings?: {
@@ -125,7 +132,10 @@ export function parseContainerInspect(json: string): Omit<DockerContainerDetail,
       health: row.State?.Health?.Status ?? null,
       command: command || null,
       createdAt: isoOrNull(row.Created),
-      memLimitMb: memory > 0 ? Math.round(memory / (1024 * 1024)) : null
+      memLimitMb: memory > 0 ? Math.round(memory / (1024 * 1024)) : null,
+      startedAt: isoOrNull(row.State?.StartedAt),
+      finishedAt: isoOrNull(row.State?.FinishedAt),
+      exitCode: typeof row.State?.ExitCode === 'number' ? row.State.ExitCode : null
     };
   });
 }

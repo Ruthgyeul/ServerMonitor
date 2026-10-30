@@ -5,6 +5,7 @@ import {
   ActiveAlert,
   AlertEntry,
   AlertLevel,
+  AlertThreshold,
   AlertTiming,
   FirewallInfo,
   PendingAlert,
@@ -50,6 +51,9 @@ interface Rule {
   // Shown next to the alert: the setting that governs it.
   source: string;
   label: string;
+  // Unit of the value and threshold ("%", "°C", "h", "" for load per core);
+  // undefined for yes/no rules (anomaly, memory pressure) that have no number to show.
+  unit?: string;
   level: AlertLevel;
   direction: 'above' | 'below';
   // Functions, not plain numbers, so a threshold read fresh from num() on
@@ -81,6 +85,7 @@ const RULES: Rule[] = [
     key: 'cpu',
     source: 'ALERT_CPU_ENTER',
     label: 'CPU',
+    unit: '%',
     level: 'warning',
     direction: 'above',
     enter: () => num('ALERT_CPU_ENTER', 90),
@@ -92,6 +97,7 @@ const RULES: Rule[] = [
     key: 'memory',
     source: 'ALERT_MEM_ENTER',
     label: 'Memory',
+    unit: '%',
     level: 'warning',
     direction: 'above',
     enter: () => num('ALERT_MEM_ENTER', 90),
@@ -103,6 +109,7 @@ const RULES: Rule[] = [
     key: 'disk',
     source: 'ALERT_DISK_ENTER',
     label: 'Disk',
+    unit: '%',
     level: 'warning',
     direction: 'above',
     enter: () => num('ALERT_DISK_ENTER', 85),
@@ -114,6 +121,7 @@ const RULES: Rule[] = [
     key: 'temperature',
     source: 'ALERT_TEMP_ENTER',
     label: 'CPU temp',
+    unit: '°C',
     level: 'critical',
     direction: 'above',
     enter: () => num('ALERT_TEMP_ENTER', 74),
@@ -125,6 +133,7 @@ const RULES: Rule[] = [
     key: 'swap',
     source: 'ALERT_SWAP_ENTER',
     label: 'Swap',
+    unit: '%',
     level: 'warning',
     direction: 'above',
     enter: () => num('ALERT_SWAP_ENTER', 80),
@@ -137,6 +146,7 @@ const RULES: Rule[] = [
     key: 'loadPerCore',
     source: 'ALERT_LOAD_ENTER',
     label: 'Load',
+    unit: '',
     level: 'warning',
     direction: 'above',
     enter: () => num('ALERT_LOAD_ENTER', 2),
@@ -149,6 +159,7 @@ const RULES: Rule[] = [
     key: 'gpuTemp',
     source: 'ALERT_GPU_TEMP_ENTER',
     label: 'GPU temp',
+    unit: '°C',
     level: 'critical',
     direction: 'above',
     enter: () => num('ALERT_GPU_TEMP_ENTER', 85),
@@ -162,6 +173,7 @@ const RULES: Rule[] = [
     key: 'battery',
     source: 'ALERT_BATTERY_ENTER',
     label: 'Battery',
+    unit: '%',
     level: 'warning',
     direction: 'below',
     enter: () => num('ALERT_BATTERY_ENTER', 15),
@@ -175,6 +187,7 @@ const RULES: Rule[] = [
     key: 'diskFill',
     source: 'ALERT_DISKFILL_ENTER_HOURS',
     label: 'Disk fill',
+    unit: 'h',
     level: 'warning',
     direction: 'below',
     enter: () => num('ALERT_DISKFILL_ENTER_HOURS', 24),
@@ -190,6 +203,7 @@ const RULES: Rule[] = [
     key: 'memFill',
     source: 'ALERT_MEMFILL_ENTER_HOURS',
     label: 'Memory fill',
+    unit: 'h',
     level: 'warning',
     direction: 'below',
     enter: () => num('ALERT_MEMFILL_ENTER_HOURS', 24),
@@ -291,10 +305,11 @@ const state = processSingleton('alerts', () => ({
   transitions: new Map<string, number[]>(),
   flapping: new Set<string>(),
   // Rules breached but still inside the fire delay: key → when the breach began.
-  pending: new Map<string, { since: number; level: AlertLevel; message: string }>(),
+  pending: new Map<string, { since: number; level: AlertLevel; message: string; short?: string }>(),
   // Active rules recovered but still inside the resolve delay: key → when recovery began.
   recovering: new Map<string, number>(),
-  suppressedAt: [] as number[],
+  // Breaches that ended inside the fire delay, since this process started.
+  suppressedSpikes: 0,
   // External conditions' recovery messages, kept from when they fired.
   externalRecovery: new Map<string, string>(),
   externalPrimed: false,
@@ -303,26 +318,19 @@ const state = processSingleton('alerts', () => ({
   writing: false,
   exitHooked: false
 }));
-const {
-  active,
-  log,
-  lastNotifiedAt,
-  transitions,
-  flapping,
-  pending,
-  recovering,
-  suppressedAt,
-  externalRecovery
-} = state;
+const { active, log, lastNotifiedAt, transitions, flapping, pending, recovering, externalRecovery } = state;
 
-// Alert timing (0 = off, the default). A threshold breach must hold for the
-// fire delay before it alerts; shorter breaches are logged as suppressed
+// Alert timing (design defaults: fire after 30s, clear after 60s; 0 = off). A
+// threshold breach must hold for the fire delay before it alerts; shorter breaches are logged as suppressed
 // spikes. An active alert must stay recovered for the resolve delay before it
 // clears. Read fresh each tick so the rules page applies without a restart.
 const MAX_DELAY_SECONDS = 3600;
-const SUPPRESSED_WINDOW_MS = 24 * 60 * 60 * 1000;
+const DEFAULT_DELAY_SECONDS: Record<string, number> = {
+  ALERT_FIRE_DELAY_SECONDS: 30,
+  ALERT_RESOLVE_DELAY_SECONDS: 60
+};
 function delayMs(key: string): number {
-  return Math.min(Math.max(0, num(key, 0)), MAX_DELAY_SECONDS) * 1000;
+  return Math.min(Math.max(0, num(key, DEFAULT_DELAY_SECONDS[key] ?? 0)), MAX_DELAY_SECONDS) * 1000;
 }
 
 // Record an enter/clear transition and report whether the rule is now flapping.
@@ -537,16 +545,22 @@ export function evaluateAlerts(input: AlertInput, at: number = Date.now()): Aler
             rule.source,
             at,
             !firstEvaluation && !flap,
-            flap
+            flap,
+            describeRule(rule, value)
           );
           announceFlap(rule, flap, at, firstEvaluation);
         } else {
-          pending.set(rule.key, { since, level: rule.level, message: rule.onEnter(value) });
+          pending.set(rule.key, {
+            since,
+            level: rule.level,
+            message: rule.onEnter(value),
+            short: describeRule(rule, value).short
+          });
         }
       } else if (wait) {
         // The breach ended inside the fire delay: a short spike, not an alert.
         pending.delete(rule.key);
-        suppressedAt.push(at);
+        state.suppressedSpikes += 1;
         const seconds = Math.max(1, Math.round((at - wait.since) / 1000));
         push(
           'info',
@@ -583,7 +597,10 @@ export function evaluateAlerts(input: AlertInput, at: number = Date.now()): Aler
     }
 
     const current = active.get(rule.key);
-    if (current && value !== null) current.message = rule.onEnter(value);
+    if (current && value !== null) {
+      current.message = rule.onEnter(value);
+      current.short = describeRule(rule, value).short;
+    }
   }
 
   // Record only newly appeared SSH sessions. On the first evaluation, quietly
@@ -732,6 +749,27 @@ function notifyText(level: AlertLevel, key: string, at: number, notify: boolean,
   return webhookWouldSend(level) ? 'Notified webhook' : 'No notification channels enabled';
 }
 
+interface AlertDescription {
+  short: string;
+  ruleText: string;
+  threshold: AlertThreshold | null;
+}
+
+const formatNumber = (value: number) => (Number.isInteger(value) ? String(value) : value.toFixed(1));
+
+// Pure: compact text for a threshold rule at a value — "CPU 95% > 90%" and
+// "cpu > 90%". Yes/no rules (no unit) fall back to their message and env key.
+function describeRule(rule: Rule, value: number): AlertDescription {
+  if (rule.unit === undefined) return { short: rule.onEnter(value), ruleText: rule.source, threshold: null };
+  const enter = rule.enter();
+  const op = rule.direction === 'above' ? '>' : '<';
+  return {
+    short: `${rule.label} ${formatNumber(value)}${rule.unit} ${op} ${formatNumber(enter)}${rule.unit}`,
+    ruleText: `${rule.key} ${op} ${formatNumber(enter)}${rule.unit}`,
+    threshold: { value: enter, unit: rule.unit }
+  };
+}
+
 function fireAlert(
   key: string,
   level: AlertLevel,
@@ -739,13 +777,21 @@ function fireAlert(
   rule: string,
   at: number,
   notify: boolean,
-  flap = false
+  flap = false,
+  description: AlertDescription = { short: message, ruleText: rule, threshold: null }
 ): void {
-  active.set(key, { key, level, message, since: new Date(at).toISOString(), rule });
+  active.set(key, { key, level, message, since: new Date(at).toISOString(), rule, ...description });
   lastNotifiedAt.set(key, at);
   push(level, message, at, notify, key);
   incidents().open(
-    { key, level, title: message, rule, notifyText: notifyText(level, key, at, notify, flap) },
+    {
+      key,
+      level,
+      title: message,
+      rule,
+      threshold: description.threshold,
+      notifyText: notifyText(level, key, at, notify, flap)
+    },
     at
   );
 }
@@ -766,6 +812,7 @@ export interface ExternalCondition {
   message: string;
   recoveredMessage: string;
   rule: string;
+  short?: string; // "API down"; defaults to the message
 }
 
 const EXTERNAL_PREFIXES = ['http:', 'job:', 'svc:'];
@@ -788,7 +835,11 @@ export function evaluateExternal(failing: ExternalCondition[], at: number = Date
       continue;
     }
     externalRecovery.set(condition.key, condition.recoveredMessage);
-    fireAlert(condition.key, condition.level, condition.message, condition.rule, at, notify);
+    fireAlert(condition.key, condition.level, condition.message, condition.rule, at, notify, false, {
+      short: condition.short ?? condition.message,
+      ruleText: condition.rule,
+      threshold: null
+    });
   }
   for (const key of [...active.keys()]) {
     if (!isExternalKey(key) || current.has(key)) continue;
@@ -805,6 +856,7 @@ export function getPendingAlerts(at: number = Date.now()): PendingAlert[] {
     key,
     level: wait.level,
     message: wait.message,
+    short: wait.short,
     state: 'pending',
     since: new Date(wait.since).toISOString(),
     dueAt: new Date(wait.since + fireDelay).toISOString()
@@ -824,12 +876,11 @@ export function getPendingAlerts(at: number = Date.now()): PendingAlert[] {
   return waiting;
 }
 
-export function getAlertTiming(at: number = Date.now()): AlertTiming {
-  while (suppressedAt.length > 0 && at - suppressedAt[0] > SUPPRESSED_WINDOW_MS) suppressedAt.shift();
+export function getAlertTiming(): AlertTiming {
   return {
     fireDelaySec: delayMs('ALERT_FIRE_DELAY_SECONDS') / 1000,
     resolveDelaySec: delayMs('ALERT_RESOLVE_DELAY_SECONDS') / 1000,
-    suppressedSpikes: suppressedAt.length
+    suppressedSpikes: state.suppressedSpikes
   };
 }
 
@@ -838,4 +889,11 @@ export function getAlertTiming(at: number = Date.now()): AlertTiming {
 export function logControlAction(message: string, ok: boolean, at: number = Date.now()): void {
   ensureLoaded();
   push(ok ? 'info' : 'warning', `Control: ${message}`, at, false, 'control');
+}
+
+// Something that happened on the host worth a line in the alert history
+// (e.g. a container that exited), without notifying anyone.
+export function logHostEvent(message: string, key: string, at: number = Date.now()): void {
+  ensureLoaded();
+  push('info', message, at, false, key);
 }

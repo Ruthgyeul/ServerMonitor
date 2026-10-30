@@ -8,6 +8,10 @@ export interface ClusterNode {
   host: string;
   type: 'intel' | 'rpi';
   result: NodeResult;
+  // Added for the redesigned cluster view (optional: older dashboards omit them).
+  rttMs?: number | null; // dashboard → node round trip
+  lastOkAt?: string | null; // when the node last answered
+  net?: { at: string; down: number; up: number }[]; // recent KB/s, oldest first
 }
 
 export function formatUptime(uptime: ServerData['uptime']): string {

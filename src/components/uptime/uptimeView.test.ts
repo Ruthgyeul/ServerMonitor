@@ -21,6 +21,7 @@ function check(history: UptimeSample[], extra: Partial<UptimeCheck> = {}): Uptim
     name: 'API',
     url: 'https://api.local/health',
     intervalSec: 30,
+    expect: '200',
     paused: false,
     history,
     ...extra

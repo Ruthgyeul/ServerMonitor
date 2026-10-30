@@ -73,6 +73,9 @@ export interface SwapInfo {
 export interface DiskIoInfo {
   read: number; // MB/s
   write: number; // MB/s
+  // The same rates in KB/s (unrounded to 0.1 MB/s), so light I/O doesn't read 0.0.
+  readKBps?: number;
+  writeKBps?: number;
 }
 
 export interface GpuInfo {
@@ -240,6 +243,17 @@ export interface ActiveAlert {
   since: string; // ISO 8601, when the rule entered
   // What raised it: the threshold's env key, "uptime check", "systemctl --failed", …
   rule?: string;
+  // Compact form for banners and the kiosk ("CPU 95% > 90%").
+  short?: string;
+  // The condition in words ("cpu > 90%", "uptime check").
+  ruleText?: string;
+  // The threshold that fired, for threshold rules.
+  threshold?: AlertThreshold | null;
+}
+
+export interface AlertThreshold {
+  value: number;
+  unit: string; // "%", "°C", "h" or "" (load per core)
 }
 
 // A threshold breach waiting out the fire delay, or an active alert waiting
@@ -249,6 +263,7 @@ export interface PendingAlert {
   level: AlertLevel;
   message: string;
   state: 'pending' | 'recovering';
+  short?: string;
   since: string; // ISO 8601, when the wait started
   dueAt: string; // ISO 8601, when it fires / resolves if the condition holds
 }
@@ -256,7 +271,7 @@ export interface PendingAlert {
 export interface AlertTiming {
   fireDelaySec: number;
   resolveDelaySec: number;
-  // Breaches that ended before the fire delay, in the last 24 hours.
+  // Breaches that ended before the fire delay, since the monitor started.
   suppressedSpikes: number;
 }
 
@@ -382,6 +397,8 @@ export interface ServerData {
   // Added in 3.0 for the console shell (optional: old-node compatible).
   activeAlerts?: ActiveAlert[];
   pendingAlerts?: PendingAlert[];
+  // 14-day disk / memory trend for the capacity panel (recomputed every few minutes).
+  capacity?: { disk: CapacityForecast; mem: CapacityForecast };
   alertTiming?: AlertTiming;
   mute?: MuteState;
   // Whether DASHBOARD_PASSWORD login is on, so the sidebar knows to offer Sign out.
@@ -423,6 +440,29 @@ export interface MetricPoint {
   disk: number | null; // %
   down: number | null; // KB/s
   up: number | null; // KB/s
+  load?: number | null; // 1-minute load average
+  temp?: number | null; // °C
+  swap?: number | null; // %
+  diskRead?: number | null; // KB/s
+  diskWrite?: number | null; // KB/s
+}
+
+// The capacity panel's 14-day trend for one resource.
+export interface CapacityForecast {
+  ratePerDay: number | null; // percentage points per day; null below 3 days of data
+  hoursToFull: number | null; // null when not growing meaningfully
+  daily: (number | null)[]; // 14 daily averages, oldest first
+  daysWithData: number;
+}
+
+// One metric over an arbitrary window (incident context charts), at the
+// finest resolution still kept for that time.
+export type WindowMetric = 'cpu' | 'mem' | 'disk' | 'temp' | 'swap' | 'load' | 'net';
+
+export interface MetricWindow {
+  metric: WindowMetric;
+  stepSeconds: number;
+  points: { at: string; value: number | null }[];
 }
 
 export interface MetricSeries {
@@ -450,6 +490,7 @@ export interface ServiceUnit {
   active: string; // active / inactive / failed / activating / deactivating
   sub: string; // running / exited / dead / failed / start …
   since: string | null; // ISO 8601, when it last became active
+  restarts?: number | null; // systemd's NRestarts (automatic restarts)
 }
 
 export interface ServiceUnitList {
@@ -485,6 +526,9 @@ export interface DockerContainerDetail {
   command: string | null;
   createdAt: string | null; // ISO 8601
   memLimitMb: number | null; // null = unlimited
+  startedAt?: string | null; // ISO 8601, when the current run began
+  finishedAt?: string | null; // ISO 8601, when it last stopped
+  exitCode?: number | null; // of the last run (meaningful once stopped)
 }
 
 export interface DockerImage {
@@ -536,11 +580,15 @@ export interface UptimeSample {
   error?: 'timeout' | 'unreachable';
 }
 
+// What counts as up: exactly 200 (the default), or any 2xx/3xx after redirects.
+export type UptimeExpect = '200' | '2xx';
+
 export interface UptimeCheck {
   id: string;
   name: string;
   url: string;
   intervalSec: number;
+  expect: UptimeExpect;
   paused: boolean;
   history: UptimeSample[]; // oldest first, at most 60
 }
@@ -550,23 +598,29 @@ export interface UptimeCheck {
 export type JobKind = 'backup' | 'maintenance';
 
 export interface JobRun {
-  at: string; // ISO 8601, when the run finished
-  ok: boolean;
+  at: string; // ISO 8601, when the run finished (or started, when the end isn't logged)
+  ok: boolean | null; // null: ran, but the result wasn't recorded (plain cron)
 }
 
 export interface ScheduledJob {
-  id: string; // the timer unit, e.g. restic-backup.timer
+  id: string; // the timer unit (restic-backup.timer) or cron:<user>:<hash>
   name: string;
   kind: JobKind;
-  service: string; // the unit the timer activates
-  schedule: string; // raw OnCalendar / monotonic spec
+  // Where it is scheduled: "systemd timer", "crontab (root)", "cron.daily", …
+  source: string;
+  // Timer jobs can be run / enabled / disabled from the dashboard; cron jobs can't.
+  controllable: boolean;
+  service: string; // the unit the timer activates ('' for cron jobs)
+  schedule: string; // raw OnCalendar / monotonic spec, or the cron expression
   human: string; // "Daily at 03:30"
   command: string | null;
-  enabled: boolean; // timer active (waiting)
+  enabled: boolean; // timer active (waiting); cron jobs are always enabled
   running: boolean;
   lastRunAt: string | null;
+  lastRunStartedAt: string | null; // start of the last run, for "output of the last run"
+  invocationId: string | null; // systemd invocation of the last run
   lastDurationSec: number | null;
-  lastResult: 'success' | 'failed' | null;
+  lastResult: 'success' | 'failed' | 'unknown' | null;
   nextRunAt: string | null;
   history: JobRun[]; // oldest first, at most 14
 }

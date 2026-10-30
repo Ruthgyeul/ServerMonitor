@@ -3,6 +3,7 @@ import { ClusterServer, getClusterHost, getClusterServers, getClusterUrl } from 
 import { jsonResponse } from '@/utils/http';
 import { expectedSessionToken, requireApiAuth } from '@/utils/apiAuth';
 import { enforceRateLimit } from '@/utils/rateLimit';
+import { errorCode, nodeMemory, recordNodeOk, type NetPoint } from '@/utils/collectors/clusterState';
 
 // Until now the cluster view polled each node's /api/system directly from the
 // browser. That meant (a) every node had to CORS-allow the dashboard origin,
@@ -25,6 +26,28 @@ export interface ClusterNode {
   host: string;
   type: ClusterServer['type'];
   result: NodeResult;
+  // Round trip from this dashboard to the node, in ms (null when it didn't answer).
+  rttMs: number | null;
+  // When the node last answered (ISO 8601), kept server-side across requests.
+  lastOkAt: string | null;
+  // The node's recent download/upload rates, oldest first (up to 30 points).
+  net: NetPoint[];
+}
+
+function withMemory(server: ClusterServer, result: NodeResult, rttMs: number | null): ClusterNode {
+  const memory =
+    result.ok && rttMs !== null
+      ? recordNodeOk(server.name, result.data.network?.download ?? 0, result.data.network?.upload ?? 0)
+      : nodeMemory(server.name);
+  return {
+    name: server.name,
+    host: getClusterHost(server),
+    type: server.type,
+    result,
+    rttMs,
+    lastOkAt: memory.lastOkAt === null ? null : new Date(memory.lastOkAt).toISOString(),
+    net: memory.net
+  };
 }
 
 async function fetchNode(server: ClusterServer): Promise<ClusterNode> {
@@ -40,25 +63,16 @@ async function fetchNode(server: ClusterServer): Promise<ClusterNode> {
   const token = expectedSessionToken();
   if (token) headers.Authorization = `Bearer ${token}`;
 
+  const started = performance.now();
   try {
     const response = await fetch(url, { signal: controller.signal, headers, cache: 'no-store' });
-    if (!response.ok) {
-      return {
-        name: server.name,
-        host: getClusterHost(server),
-        type: server.type,
-        result: { ok: false, error: `HTTP ${response.status}` }
-      };
-    }
+    // Time to the response headers: the network round trip plus the node's own handling.
+    const rttMs = Math.round(performance.now() - started);
+    if (!response.ok) return withMemory(server, { ok: false, error: `HTTP ${response.status}` }, null);
     const data = (await response.json()) as ServerData;
-    return { name: server.name, host: getClusterHost(server), type: server.type, result: { ok: true, data } };
-  } catch {
-    return {
-      name: server.name,
-      host: getClusterHost(server),
-      type: server.type,
-      result: { ok: false, error: 'Connection failed' }
-    };
+    return withMemory(server, { ok: true, data }, rttMs);
+  } catch (error) {
+    return withMemory(server, { ok: false, error: errorCode(error) }, null);
   } finally {
     clearTimeout(timeout);
   }

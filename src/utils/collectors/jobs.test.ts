@@ -4,12 +4,13 @@ import {
   buildJob,
   describeCalendar,
   describeMonotonic,
+  historyQuery,
   parseExecStart,
-  parseJobsConfig,
   parseRunHistory,
   parseShowBlocks,
   parseTimerList
 } from '@/utils/collectors/jobs';
+import { parseJobsConfig } from '@/utils/collectors/jobConfig';
 
 const TIMER_SHOW = `Id=restic-backup.timer
 Description=Nightly restic backup
@@ -150,5 +151,16 @@ describe('buildJob', () => {
       nextRunAt: null,
       human: 'Weekly · Mon 00:00'
     });
+  });
+});
+
+describe('historyQuery', () => {
+  it('asks the journal for the last 14 stop messages, with no time limit', () => {
+    const args = historyQuery('restic-backup.service');
+    expect(args).toContain('-n');
+    expect(args[args.indexOf('-n') + 1]).toBe('14');
+    expect(args).not.toContain('--since');
+    expect(args.filter(arg => arg === 'UNIT=restic-backup.service')).toHaveLength(2);
+    expect(args).toContain('+');
   });
 });

@@ -15,6 +15,9 @@ async function freshAlerts(env: Record<string, string> = {}) {
   process.env.DATA_DIR = dir;
   process.env.ALERTS_FILE = join(dir, 'alerts.json');
   process.env.ALERT_WEBHOOK_URL = 'https://example.test/hook';
+  // Fire/resolve delays are covered in alertTiming.test.ts; transitions here are immediate.
+  process.env.ALERT_FIRE_DELAY_SECONDS = '0';
+  process.env.ALERT_RESOLVE_DELAY_SECONDS = '0';
   for (const [key, value] of Object.entries(env)) process.env[key] = value;
 
   const fetchMock = vi.fn(async () => new Response(null, { status: 200 }));
@@ -46,7 +49,9 @@ const ENV_KEYS = [
   'ALERT_CPU_ENTER',
   'ALERT_CPU_CLEAR',
   'ALERT_RENOTIFY_MINUTES',
-  'ALERT_FLAP_THRESHOLD'
+  'ALERT_FLAP_THRESHOLD',
+  'ALERT_FIRE_DELAY_SECONDS',
+  'ALERT_RESOLVE_DELAY_SECONDS'
 ];
 
 describe('evaluateAlerts', () => {
@@ -103,6 +108,9 @@ describe('evaluateAlerts', () => {
 
   it('notifies on a new SSH session but not on an already-present one', async () => {
     const { evaluateAlerts, fetchMock } = await freshAlerts();
+    // SSH logins are info-level, which the default level filter keeps quiet.
+    const { notificationSettings } = await import('@/utils/collectors/notificationSettings');
+    notificationSettings().update({ levels: { info: true } });
     const t0 = Date.UTC(2026, 0, 2, 12, 0, 0);
 
     const existing = { user: 'root', ip: '10.0.0.1', since: new Date(t0).toISOString() };
@@ -115,6 +123,16 @@ describe('evaluateAlerts', () => {
     const log = evaluateAlerts(baseInput({ sshSessions: [existing, newSession] }), t0 + 1000);
     expect(log[0].message).toBe('SSH login: deploy@10.0.0.2');
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps info-level alerts off the webhook by default', async () => {
+    const { evaluateAlerts, fetchMock } = await freshAlerts();
+    const t0 = Date.UTC(2026, 0, 2, 12, 0, 0);
+    evaluateAlerts(baseInput(), t0);
+    const session = { user: 'deploy', ip: '10.0.0.2', since: new Date(t0 + 1000).toISOString() };
+    const log = evaluateAlerts(baseInput({ sshSessions: [session] }), t0 + 1000);
+    expect(log[0].message).toBe('SSH login: deploy@10.0.0.2');
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it('records interface down/recovery transitions', async () => {

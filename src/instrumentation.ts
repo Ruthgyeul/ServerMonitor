@@ -19,4 +19,12 @@ export async function register(): Promise<void> {
   ]);
   ensureCollecting();
   uptime().start();
+
+  // A new app version since the last run is a deploy marker on the charts.
+  const { readAppVersion } = await import('@/utils/appVersion');
+  const version = readAppVersion();
+  if (version) {
+    const { recordAppVersion } = await import('@/utils/collectors/events');
+    recordAppVersion(version);
+  }
 }

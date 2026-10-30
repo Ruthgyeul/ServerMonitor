@@ -67,11 +67,11 @@ export const CONFIGURABLE_THRESHOLDS: ThresholdDef[] = [
   },
   // Alert timing (alerts.ts): how long a breach must hold before it fires and
   // how long recovery must hold before it clears. 0 = immediately.
-  { key: 'ALERT_FIRE_DELAY_SECONDS', label: 'Fire delay (s)', default: 0, direction: 'above', max: 3600 },
+  { key: 'ALERT_FIRE_DELAY_SECONDS', label: 'Fire delay (s)', default: 30, direction: 'above', max: 3600 },
   {
     key: 'ALERT_RESOLVE_DELAY_SECONDS',
     label: 'Resolve delay (s)',
-    default: 0,
+    default: 60,
     direction: 'above',
     max: 3600
   }

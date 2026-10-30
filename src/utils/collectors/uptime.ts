@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 
-import { UptimeCheck, UptimeSample } from '@/types/system';
+import { UptimeCheck, UptimeExpect, UptimeSample } from '@/types/system';
 import { logger } from '@/utils/logger';
 import { processSingleton } from '@/utils/processSingleton';
 
@@ -25,7 +25,10 @@ export interface NewCheck {
   name: string;
   url: string;
   intervalSec: number;
+  expect?: UptimeExpect;
 }
+
+export const EXPECTS: readonly UptimeExpect[] = ['200', '2xx'];
 
 // Pure: validate a new check, returning a message for the form or null.
 export function validateCheck(input: Partial<NewCheck>): string | null {
@@ -34,7 +37,7 @@ export function validateCheck(input: Partial<NewCheck>): string | null {
   try {
     parsed = new URL(url);
   } catch {
-    return 'Enter a full URL, e.g. https://example.com/health';
+    return 'Enter a full URL starting with http:// or https://';
   }
   if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:')
     return 'Only http and https URLs can be checked';
@@ -43,6 +46,7 @@ export function validateCheck(input: Partial<NewCheck>): string | null {
     return `Name must be ${MAX_NAME} characters or fewer`;
   if (!INTERVALS.includes(input.intervalSec as (typeof INTERVALS)[number]))
     return 'Pick one of the listed intervals';
+  if (input.expect !== undefined && !EXPECTS.includes(input.expect)) return 'Expect 200 or 2xx';
   return null;
 }
 
@@ -63,7 +67,25 @@ export function isDue(check: UptimeCheck, now: number): boolean {
 }
 
 // One GET with a timeout. 2xx/3xx (after redirects) counts as up.
-export async function probe(url: string, at: number = Date.now()): Promise<UptimeSample> {
+// Pure: does this status count as up?
+export function isUp(status: number, expect: UptimeExpect): boolean {
+  return expect === '200' ? status === 200 : status >= 200 && status < 400;
+}
+
+// Pure: a check as stored by an earlier version (no `expect`) keeps its old
+// 2xx/3xx behaviour.
+export function migrateCheck(check: Omit<UptimeCheck, 'expect'> & { expect?: unknown }): UptimeCheck {
+  return {
+    ...check,
+    expect: EXPECTS.includes(check.expect as UptimeExpect) ? (check.expect as UptimeExpect) : '2xx'
+  };
+}
+
+export async function probe(
+  url: string,
+  at: number = Date.now(),
+  expect: UptimeExpect = '200'
+): Promise<UptimeSample> {
   const started = performance.now();
   try {
     const response = await fetch(url, {
@@ -76,7 +98,7 @@ export async function probe(url: string, at: number = Date.now()): Promise<Uptim
     const ms = Math.round(performance.now() - started);
     return {
       at: new Date(at).toISOString(),
-      ok: response.status >= 200 && response.status < 400,
+      ok: isUp(response.status, expect),
       ms,
       code: response.status
     };
@@ -109,7 +131,8 @@ class UptimeService {
   constructor() {
     try {
       const parsed = JSON.parse(fs.readFileSync(/*turbopackIgnore: true*/ STORE_FILE, 'utf-8')) as StoreShape;
-      if (parsed?.v === STORE_VERSION && Array.isArray(parsed.checks)) this.checks = parsed.checks;
+      if (parsed?.v === STORE_VERSION && Array.isArray(parsed.checks))
+        this.checks = parsed.checks.map(migrateCheck);
     } catch {
       // first run
     }
@@ -141,6 +164,7 @@ class UptimeService {
       name: input.name.trim() || defaultName(url),
       url,
       intervalSec: input.intervalSec,
+      expect: input.expect ?? '200',
       paused: false,
       history: []
     };
@@ -182,7 +206,7 @@ class UptimeService {
     if (this.inflight.has(check.id)) return;
     this.inflight.add(check.id);
     try {
-      const sample = await probe(check.url);
+      const sample = await probe(check.url, Date.now(), check.expect);
       // The check may have been deleted while the request was in flight.
       if (!this.checks.includes(check)) return;
       check.history = [...check.history, sample].slice(-HISTORY_LENGTH);

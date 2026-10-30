@@ -4,11 +4,14 @@ import { join } from 'path';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { resetProcessSingletons } from '@/utils/processSingleton';
+
 // bandwidth.ts holds its daily buckets in module scope, so it must be
 // reimported per test. Each test also gets its own temp store file so they
 // don't interfere with each other.
 async function freshBandwidth() {
   vi.resetModules();
+  resetProcessSingletons();
   const dir = mkdtempSync(join(tmpdir(), 'bandwidth-test-'));
   process.env.DATA_DIR = dir;
   process.env.BANDWIDTH_FILE = join(dir, 'bandwidth.json');
@@ -71,7 +74,7 @@ describe('bandwidth daily totals', () => {
 
   it('splits a delta proportionally by elapsed time when it spans a day boundary', async () => {
     const { recordBandwidthSample, getBandwidthHistory } = await freshBandwidth();
-    const midnight = Date.UTC(2026, 0, 3, 0, 0, 0);
+    const midnight = new Date(2026, 0, 3, 0, 0, 0).getTime(); // local midnight
     const prevAt = midnight - 60 * 60 * 1000; // 23:00, day 1
     const at = midnight + 60 * 60 * 1000; // 01:00, day 2
 
@@ -121,6 +124,7 @@ describe('bandwidth daily totals', () => {
     const dataDir = process.env.DATA_DIR!;
     const file = process.env.BANDWIDTH_FILE!;
     vi.resetModules();
+    resetProcessSingletons();
     process.env.DATA_DIR = dataDir;
     process.env.BANDWIDTH_FILE = file;
     const second = await import('@/utils/collectors/bandwidth');
@@ -132,5 +136,32 @@ describe('bandwidth daily totals', () => {
     // on top of that, not against zero.
     expect(history[0].downloadMB).toBe(5);
     expect(history[0].uploadMB).toBe(2);
+  });
+});
+
+describe('local days', () => {
+  it('moves v1 UTC keys to the local day with the same date', async () => {
+    const { utcKeyToLocal, dayKey, shiftDay } = await freshBandwidth();
+    expect(utcKeyToLocal(Date.UTC(2026, 0, 2))).toBe(new Date(2026, 0, 2).getTime());
+    expect(dayKey(new Date(2026, 0, 2, 23, 59).getTime())).toBe(new Date(2026, 0, 2).getTime());
+    expect(shiftDay(new Date(2026, 0, 31).getTime(), 1)).toBe(new Date(2026, 1, 1).getTime());
+  });
+
+  it('loads a v1 store and labels days by local date', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'bandwidth-test-'));
+    const file = join(dir, 'bandwidth.json');
+    const { writeFileSync } = await import('fs');
+    writeFileSync(
+      file,
+      JSON.stringify({ v: 1, days: [[Date.UTC(2026, 0, 2), 3 * MB, MB]], prevCumulative: null })
+    );
+
+    vi.resetModules();
+    resetProcessSingletons();
+    process.env.DATA_DIR = dir;
+    process.env.BANDWIDTH_FILE = file;
+    const { getBandwidthHistory } = await import('@/utils/collectors/bandwidth');
+    const [day] = getBandwidthHistory(1, new Date(2026, 0, 2, 15, 0).getTime());
+    expect(day).toEqual({ date: '2026-01-02', downloadMB: 3, uploadMB: 1 });
   });
 });

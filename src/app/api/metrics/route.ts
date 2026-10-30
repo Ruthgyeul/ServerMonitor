@@ -1,10 +1,10 @@
-import { getSystemInfo } from '@/utils/systemMonitor';
+import { collectNow } from '@/utils/systemStream';
 import { isX86TemperatureInfo } from '@/types/system';
 import { enforceRateLimit } from '@/utils/rateLimit';
 
 // Prometheus scrape endpoint. This is a monitoring tool with no standard
 // exposition format, so long-term storage/alerting could not be delegated to
-// Grafana/Prometheus. getSystemInfo() is already cached for 1s, so a scrape
+// Grafana/Prometheus. collectNow() is already cached for 1s, so a scrape
 // triggers no extra collection.
 //
 // Important: sensitive data (SSH source IPs, process names, traffic peers) is
@@ -27,7 +27,7 @@ export async function GET(request: Request) {
   const limited = enforceRateLimit(request);
   if (limited) return limited;
 
-  const data = await getSystemInfo();
+  const data = await collectNow();
   const out: string[] = [];
 
   const metric = (name: string, help: string, type: 'gauge' | 'counter', rows: string[]) => {

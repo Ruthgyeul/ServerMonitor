@@ -25,6 +25,7 @@ describe('applyAction', () => {
     const reopened = applyAction(resolved, 'reopen', T0 + 3000) as Incident;
     expect(reopened).toMatchObject({ status: 'open', resolvedAt: null });
     expect(reopened.events.map(event => event.kind)).toEqual(['ack', 'resolve', 'reopen']);
+    expect(reopened.events.every(event => event.author === 'operator')).toBe(true);
   });
 
   it('rejects invalid transitions and empty notes', () => {

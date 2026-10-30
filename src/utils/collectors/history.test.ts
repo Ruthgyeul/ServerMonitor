@@ -4,10 +4,13 @@ import { join } from 'path';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-// history holds its buckets in module scope, so it must be reimported per test.
-// The store file is also given a per-test temp directory so they don't interfere.
+import { resetProcessSingletons } from '@/utils/processSingleton';
+
+// history keeps its buckets in a process singleton (reset before each test by
+// the test setup); the store file gets a per-test temp directory.
 async function freshHistory() {
   vi.resetModules();
+  resetProcessSingletons();
   const dir = mkdtempSync(join(tmpdir(), 'history-test-'));
   process.env.DATA_DIR = dir;
   process.env.HISTORY_FILE = join(dir, 'history.json');
@@ -76,7 +79,7 @@ describe('load history buckets', () => {
 
     process.emit('SIGTERM');
     const saved = JSON.parse(readFileSync(first.file, 'utf-8'));
-    const keys = saved.loadBuckets.map((row: [number, number, number]) => row[0]);
+    const keys = saved.hour.load.map((row: number[]) => row[0]);
     // The bucket from 100 hours ago must remain on disk (not pruned).
     expect(keys).toContain(now - 100 * HOUR);
     // The graph still draws only 48 cells — old data is retained but not displayed.
@@ -92,7 +95,7 @@ describe('load history buckets', () => {
 
     process.emit('SIGTERM');
     const saved = JSON.parse(readFileSync(first.file, 'utf-8'));
-    const keys = saved.loadBuckets.map((row: [number, number, number]) => row[0]);
+    const keys = saved.hour.load.map((row: number[]) => row[0]);
     expect(keys).not.toContain(now - 1500 * HOUR);
   });
 
@@ -106,10 +109,11 @@ describe('load history buckets', () => {
     // Trigger the same synchronous save as the shutdown path instead of waiting for the scheduled save.
     process.emit('SIGTERM');
     const saved = JSON.parse(readFileSync(first.file, 'utf-8'));
-    expect(saved.loadBuckets.length).toBeGreaterThan(0);
+    expect(saved.hour.load.length).toBeGreaterThan(0);
 
-    // A new module instance pointing at the same file must re-read the values.
+    // A new process (fresh module and singletons) pointing at the same file must re-read the values.
     vi.resetModules();
+    resetProcessSingletons();
     process.env.DATA_DIR = first.dir;
     process.env.HISTORY_FILE = first.file;
     const second = await import('@/utils/collectors/history');
@@ -264,5 +268,69 @@ describe('getHourlyRange', () => {
     recordSample(42, 1, old);
     recordSample(1, 1, old + 61 * 24 * HOUR);
     expect(getHourlyRange('cpu', old, old + HOUR)).toEqual([42]);
+  });
+});
+
+describe('history store v3', () => {
+  beforeEach(() => {
+    delete process.env.DATA_DIR;
+    delete process.env.HISTORY_FILE;
+  });
+
+  it('keeps 15-minute buckets alongside hourly ones, with the max', async () => {
+    const { recordSample, getRange, QUARTER_MS, HOUR_MS } = await freshHistory();
+    const hour = Date.UTC(2026, 0, 2, 12, 0, 0);
+    recordSample(10, 1, hour + 60_000);
+    recordSample(50, 1, hour + 2 * 60_000);
+    recordSample(30, 1, hour + 20 * 60_000);
+
+    expect(getRange('cpu', hour, hour + 30 * 60_000, QUARTER_MS)).toEqual([30, 30]);
+    expect(getRange('cpu', hour, hour + 30 * 60_000, QUARTER_MS, 'max')).toEqual([50, 30]);
+    expect(getRange('cpu', hour, hour + HOUR_MS, HOUR_MS, 'max')).toEqual([50]);
+  });
+
+  it('records swap with the other trend metrics', async () => {
+    const { recordTrend, getRange, HOUR_MS } = await freshHistory();
+    const hour = Date.UTC(2026, 0, 2, 12, 0, 0);
+    recordTrend({ swap: 12, temp: 50 }, hour + 1000);
+    expect(getRange('swap', hour, hour + HOUR_MS)).toEqual([12]);
+    expect(getRange('temp', hour, hour + HOUR_MS)).toEqual([50]);
+  });
+
+  it('migrates a v2 store into the hourly tier, using the average as max', async () => {
+    const { migrateStore } = await freshHistory();
+    expect(
+      migrateStore({ v: 2, loadBuckets: [[1, 4, 2]], memBuckets: [[1, 30, 1]], netBuckets: 'bad' })
+    ).toEqual({ v: 3, hour: { load: [[1, 4, 2]], mem: [[1, 30, 1]] }, quarter: {} });
+    expect(migrateStore({ v: 99 })).toBeNull();
+  });
+
+  it('loads a v2 file and writes it back as v3', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'history-test-'));
+    const file = join(dir, 'history.json');
+    const now = Math.floor(Date.now() / HOUR) * HOUR;
+    writeFileSync(file, JSON.stringify({ v: 2, loadBuckets: [], cpuBuckets: [[now, 40, 2]] }));
+
+    vi.resetModules();
+    resetProcessSingletons();
+    process.env.DATA_DIR = dir;
+    process.env.HISTORY_FILE = file;
+    const history = await import('@/utils/collectors/history');
+    expect(history.getRange('cpu', now, now + HOUR, HOUR, 'max')).toEqual([20]);
+
+    history.recordSample(10, 1, now);
+    process.emit('SIGTERM');
+    const saved = JSON.parse(readFileSync(file, 'utf-8'));
+    expect(saved.v).toBe(3);
+    expect(saved.hour.cpu[0]).toEqual([now, 50, 3, 20]);
+  });
+
+  it('clamps HISTORY_RETENTION_DAYS', async () => {
+    const { retentionDays } = await freshHistory();
+    expect(retentionDays(undefined)).toBe(62);
+    expect(retentionDays('90')).toBe(90);
+    expect(retentionDays('1')).toBe(7);
+    expect(retentionDays('5000')).toBe(400);
+    expect(retentionDays('abc')).toBe(62);
   });
 });

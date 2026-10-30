@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { defaultName, isDue, probe, validateCheck } from '@/utils/collectors/uptime';
+import { defaultName, isDue, isUp, migrateCheck, probe, validateCheck } from '@/utils/collectors/uptime';
 import type { UptimeCheck } from '@/types/system';
 
 describe('validateCheck', () => {
@@ -32,6 +32,7 @@ describe('isDue', () => {
   const check = (paused: boolean, lastAt: number | null): UptimeCheck => ({
     id: 'a',
     name: 'a',
+    expect: '200',
     url: 'https://a',
     intervalSec: 30,
     paused,
@@ -44,6 +45,24 @@ describe('isDue', () => {
     expect(isDue(check(false, now - 10_000), now)).toBe(false);
     expect(isDue(check(false, now - 30_000), now)).toBe(true);
     expect(isDue(check(true, null), now)).toBe(false);
+  });
+});
+
+describe('expect', () => {
+  it('counts exactly 200, or any 2xx/3xx', () => {
+    expect(isUp(200, '200')).toBe(true);
+    expect(isUp(204, '200')).toBe(false);
+    expect(isUp(301, '2xx')).toBe(true);
+    expect(isUp(404, '2xx')).toBe(false);
+  });
+
+  it('keeps old checks on their 2xx/3xx behaviour', () => {
+    const old = { id: 'a', name: 'a', url: 'https://a', intervalSec: 30, paused: false, history: [] };
+    expect(migrateCheck(old).expect).toBe('2xx');
+    expect(migrateCheck({ ...old, expect: '200' }).expect).toBe('200');
+    expect(validateCheck({ url: 'https://a', intervalSec: 30, expect: '3xx' as never })).toBe(
+      'Expect 200 or 2xx'
+    );
   });
 });
 
@@ -66,6 +85,12 @@ describe('probe', () => {
       vi.fn(async () => new Response('', { status: 503 }))
     );
     expect(await probe('https://example.com', 0)).toMatchObject({ ok: false, code: 503 });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response(null, { status: 204 }))
+    );
+    expect(await probe('https://example.com', 0)).toMatchObject({ ok: false, code: 204 });
+    expect(await probe('https://example.com', 0, '2xx')).toMatchObject({ ok: true, code: 204 });
     vi.stubGlobal(
       'fetch',
       vi.fn(async () => {

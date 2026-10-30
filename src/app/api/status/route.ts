@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 
-import { getSystemInfo } from '@/utils/systemMonitor';
+import { collectNow } from '@/utils/systemStream';
 import { enforceRateLimit } from '@/utils/rateLimit';
 
 // A deliberately public, sanitised status endpoint for the /status page — an
@@ -8,7 +8,7 @@ import { enforceRateLimit } from '@/utils/rateLimit';
 // (a status word, rounded CPU/memory/disk/GPU/load-avg, outbound ping
 // latency, uptime, an active-alert COUNT) and never any reconnaissance data:
 // no IPs, process names, ports, alert messages, firewall or SSH detail, GPU
-// model name, or core count. Every field is hand-picked from getSystemInfo()
+// model name, or core count. Every field is hand-picked from collectNow()
 // — never spread a whole sub-object into this response, since that's exactly
 // how a field like gpu.name would leak in unnoticed. It stays outside the
 // auth gate on purpose so a public status page works even when /api/system
@@ -21,26 +21,14 @@ export async function GET(request: Request) {
   const limited = enforceRateLimit(request);
   if (limited) return limited;
 
-  const data = await getSystemInfo();
+  const data = await collectNow();
   const warnings = data.warnings ?? [];
   const collectorFailed = (name: string) => warnings.some(warning => warning.startsWith(`${name}:`));
 
-  // Derive "active" from CURRENT metric conditions, not the persisted alert log
-  // (which retains earlier warning/critical entries after a rule recovers and
-  // would otherwise pin the page to "degraded" indefinitely).
-  const temperature = data.cpu.temperature;
-  const conditions = [
-    data.cpu.usage > 85,
-    data.memory.percentage > 90,
-    data.disk.percentage > 90,
-    typeof temperature === 'number' && temperature > 74,
-    (data.swap?.total ?? 0) > 0 && (data.swap?.percentage ?? 0) > 80,
-    data.security?.firewall.status === 'inactive',
-    (data.readOnlyMounts?.length ?? 0) > 0,
-    (data.services?.failed ?? 0) > 0,
-    (data.smart ?? []).some(drive => drive.healthy === false)
-  ];
-  const activeAlerts = conditions.filter(Boolean).length;
+  // The same alerts the dashboard shows as firing right now (threshold rules,
+  // inactive firewall, failed units/jobs/HTTP checks), so the public page and
+  // the console never disagree. Only the count leaves the server.
+  const activeAlerts = data.activeAlerts?.length ?? 0;
 
   // A failed core collector returns a zero-filled fallback; treat that as
   // unavailable telemetry (report the metric as null and degrade), not a healthy 0.
