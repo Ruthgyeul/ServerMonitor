@@ -832,7 +832,7 @@ export async function getSystemInfo(): Promise<ServerData> {
       collectorFailed('memory') ? null : memory.percentage,
       now
     ),
-    alertTiming: getAlertTiming(now),
+    alertTiming: getAlertTiming(),
     mute: { globalMutedUntil, quietHours, quietNow },
     loginEnabled: Boolean(process.env.DASHBOARD_PASSWORD),
     thresholds: getEffectiveThresholds(),

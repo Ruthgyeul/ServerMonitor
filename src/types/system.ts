@@ -271,7 +271,7 @@ export interface PendingAlert {
 export interface AlertTiming {
   fireDelaySec: number;
   resolveDelaySec: number;
-  // Breaches that ended before the fire delay, in the last 24 hours.
+  // Breaches that ended before the fire delay, since the monitor started.
   suppressedSpikes: number;
 }
 

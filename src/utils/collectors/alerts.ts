@@ -308,7 +308,8 @@ const state = processSingleton('alerts', () => ({
   pending: new Map<string, { since: number; level: AlertLevel; message: string; short?: string }>(),
   // Active rules recovered but still inside the resolve delay: key → when recovery began.
   recovering: new Map<string, number>(),
-  suppressedAt: [] as number[],
+  // Breaches that ended inside the fire delay, since this process started.
+  suppressedSpikes: 0,
   // External conditions' recovery messages, kept from when they fired.
   externalRecovery: new Map<string, string>(),
   externalPrimed: false,
@@ -317,26 +318,19 @@ const state = processSingleton('alerts', () => ({
   writing: false,
   exitHooked: false
 }));
-const {
-  active,
-  log,
-  lastNotifiedAt,
-  transitions,
-  flapping,
-  pending,
-  recovering,
-  suppressedAt,
-  externalRecovery
-} = state;
+const { active, log, lastNotifiedAt, transitions, flapping, pending, recovering, externalRecovery } = state;
 
-// Alert timing (0 = off, the default). A threshold breach must hold for the
-// fire delay before it alerts; shorter breaches are logged as suppressed
+// Alert timing (design defaults: fire after 30s, clear after 60s; 0 = off). A
+// threshold breach must hold for the fire delay before it alerts; shorter breaches are logged as suppressed
 // spikes. An active alert must stay recovered for the resolve delay before it
 // clears. Read fresh each tick so the rules page applies without a restart.
 const MAX_DELAY_SECONDS = 3600;
-const SUPPRESSED_WINDOW_MS = 24 * 60 * 60 * 1000;
+const DEFAULT_DELAY_SECONDS: Record<string, number> = {
+  ALERT_FIRE_DELAY_SECONDS: 30,
+  ALERT_RESOLVE_DELAY_SECONDS: 60
+};
 function delayMs(key: string): number {
-  return Math.min(Math.max(0, num(key, 0)), MAX_DELAY_SECONDS) * 1000;
+  return Math.min(Math.max(0, num(key, DEFAULT_DELAY_SECONDS[key] ?? 0)), MAX_DELAY_SECONDS) * 1000;
 }
 
 // Record an enter/clear transition and report whether the rule is now flapping.
@@ -566,7 +560,7 @@ export function evaluateAlerts(input: AlertInput, at: number = Date.now()): Aler
       } else if (wait) {
         // The breach ended inside the fire delay: a short spike, not an alert.
         pending.delete(rule.key);
-        suppressedAt.push(at);
+        state.suppressedSpikes += 1;
         const seconds = Math.max(1, Math.round((at - wait.since) / 1000));
         push(
           'info',
@@ -882,12 +876,11 @@ export function getPendingAlerts(at: number = Date.now()): PendingAlert[] {
   return waiting;
 }
 
-export function getAlertTiming(at: number = Date.now()): AlertTiming {
-  while (suppressedAt.length > 0 && at - suppressedAt[0] > SUPPRESSED_WINDOW_MS) suppressedAt.shift();
+export function getAlertTiming(): AlertTiming {
   return {
     fireDelaySec: delayMs('ALERT_FIRE_DELAY_SECONDS') / 1000,
     resolveDelaySec: delayMs('ALERT_RESOLVE_DELAY_SECONDS') / 1000,
-    suppressedSpikes: suppressedAt.length
+    suppressedSpikes: state.suppressedSpikes
   };
 }
 

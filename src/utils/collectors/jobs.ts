@@ -1,4 +1,4 @@
-import { JobKind, JobList, JobRun, ScheduledJob } from '@/types/system';
+import { JobList, JobRun, ScheduledJob } from '@/types/system';
 import { runArgs, withTtl } from '@/utils/collectors/shell';
 import { listCronJobs } from '@/utils/collectors/cronJobs';
 import { defaultKind, HISTORY_RUNS, type JobOverride, parseJobsConfig } from '@/utils/collectors/jobConfig';

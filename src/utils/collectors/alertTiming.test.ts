@@ -25,6 +25,9 @@ async function fresh(env: Record<string, string> = {}) {
   process.env.ALERTS_FILE = join(dir, 'alerts.json');
   process.env.INCIDENTS_FILE = join(dir, 'incidents.json');
   process.env.ALERT_WEBHOOK_URL = 'https://example.test/hook';
+  // Each test names the delays it exercises; the rest start at 0.
+  process.env.ALERT_FIRE_DELAY_SECONDS = '0';
+  process.env.ALERT_RESOLVE_DELAY_SECONDS = '0';
   for (const [key, value] of Object.entries(env)) process.env[key] = value;
   const fetchMock = vi.fn(async () => new Response(null, { status: 200 }));
   vi.stubGlobal('fetch', fetchMock);
@@ -78,8 +81,13 @@ describe('fire delay', () => {
     evaluateAlerts(input(95), T0 + 1000);
     evaluateAlerts(input(10), T0 + 6000);
     expect(getActiveAlerts()).toHaveLength(0);
-    expect(getAlertTiming(T0 + 6000)).toEqual({ fireDelaySec: 30, resolveDelaySec: 0, suppressedSpikes: 1 });
+    expect(getAlertTiming()).toEqual({ fireDelaySec: 30, resolveDelaySec: 0, suppressedSpikes: 1 });
     expect(getAlertLog()[0].message).toMatch(/^Suppressed short spike: CPU usage 95% for 5s/);
+
+    // The count is cumulative for the process, not a rolling 24h window.
+    evaluateAlerts(input(95), T0 + 2 * 86_400_000);
+    evaluateAlerts(input(10), T0 + 2 * 86_400_000 + 5000);
+    expect(getAlertTiming().suppressedSpikes).toBe(2);
   });
 });
 
@@ -158,7 +166,11 @@ describe('alert descriptions', () => {
       threshold: { value: 90, unit: '%' }
     });
     expect(incidents().list()[0]).toMatchObject({ threshold: { value: 90, unit: '%' } });
-    expect(incidents().list()[0].events.every(event => event.author === 'system')).toBe(true);
+    expect(
+      incidents()
+        .list()[0]
+        .events.every(event => event.author === 'system')
+    ).toBe(true);
     expect(getPendingAlerts(T0 + 1000)).toEqual([]);
   });
 
@@ -167,5 +179,14 @@ describe('alert descriptions', () => {
     evaluateAlerts(input(10), T0);
     evaluateAlerts(input(93.5), T0 + 1000);
     expect(getPendingAlerts(T0 + 1000)[0].short).toBe('CPU 93.5% > 90%');
+  });
+});
+
+describe('design defaults', () => {
+  it('fires after 30s and resolves after 60s when nothing is configured', async () => {
+    const { getAlertTiming } = await fresh();
+    delete process.env.ALERT_FIRE_DELAY_SECONDS;
+    delete process.env.ALERT_RESOLVE_DELAY_SECONDS;
+    expect(getAlertTiming()).toMatchObject({ fireDelaySec: 30, resolveDelaySec: 60 });
   });
 });

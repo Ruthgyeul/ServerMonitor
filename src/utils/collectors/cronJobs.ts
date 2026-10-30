@@ -16,7 +16,7 @@ import { runArgs } from '@/utils/collectors/shell';
 const SYSTEM_CRONTAB = '/etc/crontab';
 const CRON_D = '/etc/cron.d';
 const USER_CRONTABS = ['/var/spool/cron/crontabs', '/var/spool/cron'];
-const PERIODIC_DIRS = ['hourly', 'daily', 'weekly', 'monthly'] as const;
+type PeriodicDir = 'hourly' | 'daily' | 'weekly' | 'monthly';
 const JOURNAL_SINCE = '-45d';
 const JOURNAL_LIMIT = '20000';
 
@@ -62,9 +62,9 @@ export function parseCrontab(
 }
 
 // Pure: the cron.<period> directory a run-parts line runs, if any.
-export function periodicDir(command: string): (typeof PERIODIC_DIRS)[number] | null {
+export function periodicDir(command: string): PeriodicDir | null {
   const match = command.match(/run-parts\b[^;|&]*\/etc\/cron\.(hourly|daily|weekly|monthly)\b/);
-  return match ? (match[1] as (typeof PERIODIC_DIRS)[number]) : null;
+  return match ? (match[1] as PeriodicDir) : null;
 }
 
 // --- Schedule maths ----------------------------------------------------------
@@ -185,6 +185,12 @@ export function describeCron(schedule: string): string {
   if (everyMinutes && hour === '*' && day === '*' && month === '*' && weekday === '*') {
     return `Every ${Number(everyMinutes[1])} minutes`;
   }
+  if (/^\d+(,\d+)+$/.test(minute) && hour === '*' && day === '*' && month === '*' && weekday === '*') {
+    return `Hourly at ${minute
+      .split(',')
+      .map(value => `:${pad(Number(value))}`)
+      .join(', ')}`;
+  }
   if (!/^\d+$/.test(minute)) return schedule;
   if (hour === '*' && day === '*' && month === '*' && weekday === '*')
     return `Hourly at :${pad(Number(minute))}`;
@@ -270,10 +276,51 @@ export function cronJobId(entry: Pick<CronEntry, 'user' | 'schedule' | 'command'
   return `cron:${entry.user}:${hash.slice(0, 10)}`;
 }
 
-// A short name: the script's basename, or the command's first word.
-function nameOf(command: string): string {
-  const first = command.trim().split(/\s+/)[0] ?? command;
-  return path.basename(first.replace(/^["']|["']$/g, '')) || command.slice(0, 40);
+// Shell plumbing around the real job: guards and steps that aren't the job
+// itself, and words that lead into the command (control flow, wrappers).
+const NOT_THE_JOB = new Set(['[', '[[', 'test', 'cd', 'true', 'false', ':', 'sleep', 'fi', 'done', 'esac']);
+const LEADING_WORDS = new Set([
+  'if',
+  'then',
+  'else',
+  'elif',
+  'do',
+  'while',
+  'until',
+  '!',
+  '(',
+  '{',
+  'exec',
+  'nice',
+  'ionice',
+  'env',
+  'time'
+]);
+
+const unquote = (word: string) => word.replace(/^["'(]+|["');]+$/g, '');
+
+// The program a command segment runs, skipping lead-in words, flags, numbers
+// and VAR=value assignments.
+function programOf(segment: string): string | null {
+  for (const raw of segment.trim().split(/\s+/)) {
+    const word = unquote(raw);
+    if (!word || LEADING_WORDS.has(word) || word.startsWith('-') || /^\d+$/.test(word)) continue;
+    if (/^[A-Za-z_][A-Za-z0-9_]*=/.test(word)) continue;
+    return word;
+  }
+  return null;
+}
+
+// Pure: a short name — the basename of the first program in the command that
+// isn't a guard (`[ -x /usr/lib/php/sessionclean ] && … sessionclean` →
+// "sessionclean"), else the command's first word.
+export function nameOf(command: string): string {
+  for (const segment of command.split(/&&|\|\||;|\|/)) {
+    const program = programOf(segment);
+    if (program && !NOT_THE_JOB.has(program)) return path.basename(program) || program;
+  }
+  const first = unquote(command.trim().split(/\s+/)[0] ?? '');
+  return path.basename(first) || command.slice(0, 40);
 }
 
 // Pure: one job from an entry, its runs and the clock.

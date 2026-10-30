@@ -146,7 +146,7 @@ export default function AlertRulesPage() {
             <h2 className="flex-1 text-[13.5px] font-medium">Alert timing</h2>
             <span className="text-xs text-dim">
               {data && data.alertTiming.suppressedSpikes > 0
-                ? `${data.alertTiming.suppressedSpikes} short spike${data.alertTiming.suppressedSpikes === 1 ? '' : 's'} suppressed (24h)`
+                ? `${data.alertTiming.suppressedSpikes} short spike${data.alertTiming.suppressedSpikes === 1 ? '' : 's'} suppressed`
                 : 'No spikes suppressed yet'}
             </span>
           </div>

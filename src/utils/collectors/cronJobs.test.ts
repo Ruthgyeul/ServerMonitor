@@ -4,6 +4,7 @@ import {
   buildCronJob,
   cronJobId,
   describeCron,
+  nameOf,
   expandField,
   nextCronRun,
   parseCronRuns,
@@ -76,6 +77,7 @@ describe('schedules', () => {
     expect(describeCron('*/5 * * * *')).toBe('Every 5 minutes');
     expect(describeCron('@daily')).toBe('Daily at 00:00');
     expect(describeCron('0 2 1 * *')).toBe('Monthly · day 1 at 02:00');
+    expect(describeCron('09,39 * * * *')).toBe('Hourly at :09, :39');
   });
 });
 
@@ -133,5 +135,20 @@ describe('buildCronJob', () => {
   it('applies overrides and reports never-run jobs', () => {
     const job = buildCronJob(entry, [], Date.now(), { name: 'Postgres backup' });
     expect(job).toMatchObject({ name: 'Postgres backup', lastResult: null, lastRunAt: null });
+  });
+});
+
+describe('nameOf', () => {
+  it.each([
+    ['/usr/bin/restic backup /srv --tag nightly', 'restic'],
+    [
+      '[ -x /usr/lib/php/sessionclean ] && if [ ! -d /run/systemd/system ]; then /usr/lib/php/sessionclean; fi',
+      'sessionclean'
+    ],
+    ['cd /srv/app && ./scripts/rotate.sh >/dev/null 2>&1', 'rotate.sh'],
+    ['PATH=/usr/local/bin nice -n 10 /opt/backup/run.sh', 'run.sh'],
+    ['test -x /usr/sbin/anacron', 'test']
+  ])('%s → %s', (command, name) => {
+    expect(nameOf(command)).toBe(name);
   });
 });
