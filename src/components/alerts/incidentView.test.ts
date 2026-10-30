@@ -74,6 +74,17 @@ describe('contextSpec', () => {
     expect(contextSpec(incident({ resolvedAt: iso(5) }), NOW)!.to).toBe(NOW);
   });
 
+  it('charts the usage behind a fill forecast, without its hours threshold', () => {
+    expect(contextSpec(incident({ key: 'memFill' }), NOW)).toMatchObject({
+      metric: 'mem',
+      thresholdKey: null
+    });
+    expect(contextSpec(incident({ key: 'diskFill' }), NOW)).toMatchObject({
+      metric: 'disk',
+      thresholdKey: null
+    });
+  });
+
   it('maps temperature, swap and load rules to their series', () => {
     expect(contextSpec(incident({ key: 'temperature' }), NOW)).toMatchObject({ metric: 'temp', unit: '°C' });
     expect(contextSpec(incident({ key: 'swap' }), NOW)).toMatchObject({ metric: 'swap' });

@@ -70,7 +70,7 @@ function KpiCard({
   const [range, setRange] = useState<HistoryRange>('1h');
   const series = useMetricSeries(range);
   const points = series?.points ?? [];
-  const values = withLive(points.map(spec.pick), spec.value);
+  const values = withLive(points.map(spec.pick), spec.value, range);
   const labels = points.map(point => pointLabel(point.at, range));
 
   const firing = spec.alertKey ? data.activeAlerts.find(alert => alert.key === spec.alertKey) : undefined;

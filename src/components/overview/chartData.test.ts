@@ -37,9 +37,15 @@ describe('pointLabel', () => {
 });
 
 describe('withLive', () => {
-  it('replaces the filling bucket with the live reading', () => {
-    expect(withLive([1, 2, 3], 9)).toEqual([1, 2, 9]);
-    expect(withLive([1, 2, 3], null)).toEqual([1, 2, 3]);
-    expect(withLive([], 4)).toEqual([4]);
+  it('replaces the filling bucket with the live reading on minute ranges', () => {
+    expect(withLive([1, 2, 3], 9, '1h')).toEqual([1, 2, 9]);
+    expect(withLive([1, 2, 3], 9, '6h')).toEqual([1, 2, 9]);
+    expect(withLive([1, 2, 3], null, '1h')).toEqual([1, 2, 3]);
+    expect(withLive([], 4, '1h')).toEqual([4]);
+  });
+
+  it('keeps 15-minute and hourly averages as they are', () => {
+    expect(withLive([1, 2, 3], 9, '24h')).toEqual([1, 2, 3]);
+    expect(withLive([1, 2, 3], 9, '7d')).toEqual([1, 2, 3]);
   });
 });

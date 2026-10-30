@@ -74,7 +74,7 @@ export function NetworkPanel({
             <Flag size={12} className="shrink-0" />
             Events
           </button>
-          <Segmented options={optionsOf(RANGES)} value={range} onChange={setRange} label="Network range" />
+          <Segmented options={optionsOf(RANGES)} value={range} onChange={setRange} label="Throughput range" />
         </>
       }
     >
@@ -82,11 +82,13 @@ export function NetworkPanel({
         <ThroughputChart
           down={withLive(
             points.map(point => point.down),
-            network.download
+            network.download,
+            range
           )}
           up={withLive(
             points.map(point => point.up),
-            network.upload
+            network.upload,
+            range
           )}
           labels={points.map(point => pointLabel(point.at, range))}
           xLabels={X_LABELS[range]}

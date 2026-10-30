@@ -6,7 +6,13 @@ speed, uptime, top processes) from the host it runs on and exposes them
 through a small dashboard UI and a JSON API, with an optional cluster view
 that aggregates several nodes on one screen.
 
-![ServerMonitor screenshot](public/screenshots/home.png)
+![ServerMonitor overview](public/screenshots/home.png)
+
+| | |
+| --- | --- |
+| ![Docker](public/screenshots/docker.png) | ![Alerts](public/screenshots/alerts.png) |
+| ![Backups & scheduled jobs](public/screenshots/jobs.png) | ![HTTP uptime checks](public/screenshots/uptime.png) |
+| ![Cluster](public/screenshots/cluster.png) | |
 
 ## Features
 
@@ -194,6 +200,12 @@ The console follows `Dashboard_Pro` closely; these differences are deliberate:
   accounts.
 - Process names are the kernel's `comm` (15 characters); full command lines
   can carry secrets and are not shown.
+- Compare's note for a period with no history yet doesn't quote a fixed
+  retention ("History is kept for 30 days…"), since `HISTORY_RETENTION_DAYS`
+  sets it.
+- An ongoing incident's metric chart ends at *now* rather than *after*.
+- Fan speeds read *N/A* when no sensor reports them; the JSON API sends
+  `null` for those (older nodes send `0`).
 
 ## Tech stack
 

@@ -374,10 +374,12 @@ export interface ServerData {
     minutes: number;
   };
   temperature: TemperatureInfo;
+  // RPM per fan header; null when no sensor reports it. Nodes before 3.1
+  // send 0 instead.
   fan: {
-    cpu: number;
-    case1: number;
-    case2: number;
+    cpu: number | null;
+    case1: number | null;
+    case2: number | null;
   };
   processes: Process[];
   // The fields below were added in 1.3. Cluster nodes running older versions

@@ -60,7 +60,7 @@
   "screenshots": [
     {
       "src": "/screenshots/home.png",
-      "sizes": "1280x720",
+      "sizes": "1440x900",
       "type": "image/png",
       "platform": "wide",
       "label": "Server Monitoring System Web"

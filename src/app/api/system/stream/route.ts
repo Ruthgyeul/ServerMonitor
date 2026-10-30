@@ -43,7 +43,8 @@ export async function GET(request: Request) {
         push(`id: ${id}\ndata: ${JSON.stringify(data)}\n\n`);
       };
 
-      push('retry: 3000\n\n');
+      // Matches the offline toast's "retrying every 5s".
+      push('retry: 5000\n\n');
       unsubscribe = subscribe(send);
 
       // A line starting with ": " is an SSE comment the client ignores. Used to keep the connection alive.

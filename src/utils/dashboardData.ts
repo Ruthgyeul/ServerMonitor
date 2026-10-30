@@ -61,7 +61,7 @@ export interface DashboardData {
   };
   uptime: { days: number; hours: number; minutes: number };
   temperature: TemperatureInfo;
-  fan: { cpu: number; case1: number; case2: number };
+  fan: { cpu: number | null; case1: number | null; case2: number | null };
   processes: Process[];
   host: HostInfo;
   load: LoadInfo;

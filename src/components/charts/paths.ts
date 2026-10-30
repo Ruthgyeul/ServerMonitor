@@ -8,40 +8,64 @@ export interface Box {
   height: number;
 }
 
-// "M x,y L x,y …" through the non-null values, scaled into `box` with `max` at
-// the top and `min` at the bottom. Null values break the line (a new M), so a
-// gap in sampling shows as a gap rather than a straight bridge.
-export function linePath(values: (number | null)[], box: Box, max: number, min = 0): string {
-  if (values.length === 0) return '';
+type Point = [x: number, y: number];
+
+// The non-null values scaled into `box` (`max` at the top, `min` at the
+// bottom), split into continuous runs at each null. A run of one sample (a
+// lone bucket between gaps) is widened into a short level dash a quarter step
+// either side, so it stays visible instead of collapsing to a zero-length
+// line.
+function runs(values: (number | null)[], box: Box, max: number, min: number): Point[][] {
   const span = max - min || 1;
   const step = values.length > 1 ? box.width / (values.length - 1) : 0;
-  let path = '';
-  let drawing = false;
+  const result: Point[][] = [];
+  let run: Point[] = [];
+  const close = () => {
+    if (run.length === 1) {
+      const [x, y] = run[0];
+      const half = Math.max(step / 4, 1);
+      run = [
+        [Math.max(box.x, x - half), y],
+        [Math.min(box.x + box.width, x + half), y]
+      ];
+    }
+    if (run.length > 0) result.push(run);
+    run = [];
+  };
   values.forEach((value, index) => {
     if (value === null || !Number.isFinite(value)) {
-      drawing = false;
+      close();
       return;
     }
     const clamped = Math.min(max, Math.max(min, value));
-    const x = box.x + index * step;
-    const y = box.y + box.height - ((clamped - min) / span) * box.height;
-    path += `${drawing ? 'L' : 'M'}${x.toFixed(1)},${y.toFixed(1)} `;
-    drawing = true;
+    run.push([box.x + index * step, box.y + box.height - ((clamped - min) / span) * box.height]);
   });
-  return path.trim();
+  close();
+  return result;
 }
 
-// The line closed down to the baseline, for a filled area under it. Only the
-// last continuous run is filled when the series has gaps.
+const pointText = ([x, y]: Point) => `${x.toFixed(1)},${y.toFixed(1)}`;
+
+// "M x,y L x,y …" through the non-null values. Null values break the line (a
+// new M), so a gap in sampling shows as a gap rather than a straight bridge.
+export function linePath(values: (number | null)[], box: Box, max: number, min = 0): string {
+  return runs(values, box, max, min)
+    .map(run => run.map((point, index) => `${index === 0 ? 'M' : 'L'}${pointText(point)}`).join(' '))
+    .join(' ');
+}
+
+// Every run of the line closed down to the baseline, for a filled area under
+// it that matches the line across gaps.
 export function areaPath(values: (number | null)[], box: Box, max: number, min = 0): string {
-  const line = linePath(values, box, max, min);
-  if (!line) return '';
-  const lastRun = line.slice(line.lastIndexOf('M'));
-  const points = lastRun.slice(1).split(' L');
-  const firstX = points[0].split(',')[0];
-  const lastX = points[points.length - 1].split(',')[0];
   const bottom = (box.y + box.height).toFixed(1);
-  return `${lastRun} L${lastX},${bottom} L${firstX},${bottom} Z`;
+  return runs(values, box, max, min)
+    .map(run => {
+      const line = run.map((point, index) => `${index === 0 ? 'M' : 'L'}${pointText(point)}`).join(' ');
+      const first = run[0][0].toFixed(1);
+      const last = run[run.length - 1][0].toFixed(1);
+      return `${line} L${last},${bottom} L${first},${bottom} Z`;
+    })
+    .join(' ');
 }
 
 // The smallest "nice" axis maximum at or above `value` (with 15% headroom).

@@ -90,7 +90,7 @@ export function HardwarePanel({ data, diskIo }: { data: DashboardData; diskIo: D
         </div>
         <div className={row}>
           <dt className="text-muted">Fan</dt>
-          <dd className="font-mono text-subtle">{fan.cpu > 0 ? `${fan.cpu} RPM` : 'N/A'}</dd>
+          <dd className="font-mono text-subtle">{fan.cpu === null ? 'N/A' : `${fan.cpu} RPM`}</dd>
         </div>
         <div className={row}>
           <dt className="text-muted">Swap</dt>
