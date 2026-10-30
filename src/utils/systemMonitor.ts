@@ -17,6 +17,7 @@ import {
 import { collect, readSys, round, run } from '@/utils/collectors/shell';
 import { parseDf } from '@/utils/collectors/df';
 import { getBatteryInfo } from '@/utils/collectors/battery';
+import { getCapacityForecast } from '@/utils/collectors/capacity';
 import { getHoursToFull, recordDiskSample } from '@/utils/collectors/diskTrend';
 import { getMemHoursToFull, recordMemSample } from '@/utils/collectors/memTrend';
 import { recordBandwidthSample } from '@/utils/collectors/bandwidth';
@@ -78,6 +79,24 @@ function trackUnitRestarts(now: number): void {
     .catch(() => {
       // systemd unavailable: no unit restart markers.
     });
+}
+
+// The 14-day capacity trend changes slowly; recompute it every few minutes.
+const CAPACITY_REFRESH_MS = 5 * 60_000;
+let capacityCache: { at: number; value: NonNullable<ServerData['capacity']> } | null = null;
+
+function capacityFor(
+  disk: number | null,
+  mem: number | null,
+  now: number
+): NonNullable<ServerData['capacity']> {
+  if (!capacityCache || now - capacityCache.at >= CAPACITY_REFRESH_MS) {
+    capacityCache = {
+      at: now,
+      value: { disk: getCapacityForecast('disk', disk, now), mem: getCapacityForecast('mem', mem, now) }
+    };
+  }
+  return capacityCache.value;
 }
 
 // Cached system info
@@ -808,6 +827,11 @@ export async function getSystemInfo(): Promise<ServerData> {
     alerts,
     activeAlerts: getActiveAlerts(),
     pendingAlerts: getPendingAlerts(now),
+    capacity: capacityFor(
+      collectorFailed('disk') ? null : disk.percentage,
+      collectorFailed('memory') ? null : memory.percentage,
+      now
+    ),
     alertTiming: getAlertTiming(now),
     mute: { globalMutedUntil, quietHours, quietNow },
     loginEnabled: Boolean(process.env.DASHBOARD_PASSWORD),

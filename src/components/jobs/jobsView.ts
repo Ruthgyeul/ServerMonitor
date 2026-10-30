@@ -9,11 +9,12 @@ export const JOBS_URL = '/api/jobs';
 // A backup older than this reads as stale (a nightly job plus slack).
 const BACKUP_STALE_MS = 26 * 60 * 60 * 1000;
 
-export type JobState = 'success' | 'failed' | 'running' | 'disabled' | 'never';
+export type JobState = 'success' | 'failed' | 'unknown' | 'running' | 'disabled' | 'never';
 
 export const STATE_STYLE: Record<JobState, { label: string; fg: string; bg: string; dot: string }> = {
   success: { label: 'Success', fg: PALETTE.okFg, bg: 'rgba(60,207,145,0.1)', dot: PALETTE.ok },
   failed: { label: 'Failed', fg: PALETTE.critFg, bg: 'rgba(239,95,90,0.14)', dot: PALETTE.crit },
+  unknown: { label: 'Ran', fg: PALETTE.text3, bg: 'rgba(255,255,255,0.06)', dot: PALETTE.muted },
   running: { label: 'Running…', fg: PALETTE.warnFg, bg: 'rgba(232,180,69,0.12)', dot: PALETTE.warn },
   disabled: { label: 'Disabled', fg: PALETTE.muted, bg: 'rgba(255,255,255,0.06)', dot: PALETTE.faint },
   never: { label: 'Not run yet', fg: PALETTE.muted, bg: 'rgba(255,255,255,0.06)', dot: PALETTE.faint }
@@ -51,8 +52,10 @@ export function durationLabel(job: ScheduledJob): string {
 export function runBars(job: ScheduledJob): { color: string; tip: string }[] {
   const last = job.history.length - 1;
   return job.history.map((run, index) => ({
-    color: run.ok ? PALETTE.ok : PALETTE.crit,
-    tip: `${index === last ? 'Last run' : `${last - index} runs earlier`} · ${run.ok ? 'success' : 'failed'}`
+    color: run.ok === null ? PALETTE.faint : run.ok ? PALETTE.ok : PALETTE.crit,
+    tip: `${index === last ? 'Last run' : `${last - index} runs earlier`} · ${
+      run.ok === null ? 'result not logged' : run.ok ? 'success' : 'failed'
+    }`
   }));
 }
 
@@ -67,7 +70,7 @@ export interface JobSummary {
 
 export function summarizeJobs(jobs: ScheduledJob[], now: number): JobSummary {
   const backups = jobs.filter(job => job.kind === 'backup');
-  const goodRuns = backups.flatMap(job => job.history.filter(run => run.ok).map(run => run.at));
+  const goodRuns = backups.flatMap(job => job.history.filter(run => run.ok === true).map(run => run.at));
   const lastGood = goodRuns.length > 0 ? goodRuns.reduce((a, b) => (a > b ? a : b)) : null;
   const next = backups
     .filter(job => job.enabled && job.nextRunAt)

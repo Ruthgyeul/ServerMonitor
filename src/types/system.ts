@@ -385,6 +385,8 @@ export interface ServerData {
   // Added in 3.0 for the console shell (optional: old-node compatible).
   activeAlerts?: ActiveAlert[];
   pendingAlerts?: PendingAlert[];
+  // 14-day disk / memory trend for the capacity panel (recomputed every few minutes).
+  capacity?: { disk: CapacityForecast; mem: CapacityForecast };
   alertTiming?: AlertTiming;
   mute?: MuteState;
   // Whether DASHBOARD_PASSWORD login is on, so the sidebar knows to offer Sign out.
@@ -431,6 +433,14 @@ export interface MetricPoint {
   swap?: number | null; // %
   diskRead?: number | null; // KB/s
   diskWrite?: number | null; // KB/s
+}
+
+// The capacity panel's 14-day trend for one resource.
+export interface CapacityForecast {
+  ratePerDay: number | null; // percentage points per day; null below 3 days of data
+  hoursToFull: number | null; // null when not growing meaningfully
+  daily: (number | null)[]; // 14 daily averages, oldest first
+  daysWithData: number;
 }
 
 // One metric over an arbitrary window (incident context charts), at the
@@ -569,23 +579,29 @@ export interface UptimeCheck {
 export type JobKind = 'backup' | 'maintenance';
 
 export interface JobRun {
-  at: string; // ISO 8601, when the run finished
-  ok: boolean;
+  at: string; // ISO 8601, when the run finished (or started, when the end isn't logged)
+  ok: boolean | null; // null: ran, but the result wasn't recorded (plain cron)
 }
 
 export interface ScheduledJob {
-  id: string; // the timer unit, e.g. restic-backup.timer
+  id: string; // the timer unit (restic-backup.timer) or cron:<user>:<hash>
   name: string;
   kind: JobKind;
-  service: string; // the unit the timer activates
-  schedule: string; // raw OnCalendar / monotonic spec
+  // Where it is scheduled: "systemd timer", "crontab (root)", "cron.daily", …
+  source: string;
+  // Timer jobs can be run / enabled / disabled from the dashboard; cron jobs can't.
+  controllable: boolean;
+  service: string; // the unit the timer activates ('' for cron jobs)
+  schedule: string; // raw OnCalendar / monotonic spec, or the cron expression
   human: string; // "Daily at 03:30"
   command: string | null;
-  enabled: boolean; // timer active (waiting)
+  enabled: boolean; // timer active (waiting); cron jobs are always enabled
   running: boolean;
   lastRunAt: string | null;
+  lastRunStartedAt: string | null; // start of the last run, for "output of the last run"
+  invocationId: string | null; // systemd invocation of the last run
   lastDurationSec: number | null;
-  lastResult: 'success' | 'failed' | null;
+  lastResult: 'success' | 'failed' | 'unknown' | null;
   nextRunAt: string | null;
   history: JobRun[]; // oldest first, at most 14
 }

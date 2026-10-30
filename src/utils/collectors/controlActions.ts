@@ -118,6 +118,8 @@ export async function restartUnit(unit: string): Promise<ActionResult> {
 export async function jobAction(timer: string, action: JobAction): Promise<ActionResult> {
   const job = (await listJobs()).jobs.find(candidate => candidate.id === timer);
   if (!job) return { ok: false, message: 'Unknown job' };
+  if (!job.controllable)
+    return { ok: false, message: "Cron jobs can't be run or toggled from the dashboard" };
   const [file, args] =
     action === 'run' ? systemctl(['start', '--no-block', job.service]) : systemctl([action, '--now', job.id]);
   const audit = action === 'run' ? `systemctl start ${job.service}` : `systemctl ${action} --now ${job.id}`;

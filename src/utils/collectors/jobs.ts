@@ -1,16 +1,13 @@
 import { JobKind, JobList, JobRun, ScheduledJob } from '@/types/system';
 import { runArgs, withTtl } from '@/utils/collectors/shell';
-import { logger } from '@/utils/logger';
+import { listCronJobs } from '@/utils/collectors/cronJobs';
+import { defaultKind, HISTORY_RUNS, type JobOverride, parseJobsConfig } from '@/utils/collectors/jobConfig';
 
 // Backups and scheduled jobs, read from systemd timers: the schedule and next
 // run from the timer, the last result and command from the service it starts,
 // and the recent run history from that service's journal. Cron entries are not
 // listed — cron records no exit status, so their results can't be known.
 // Parsers are pure and exported for testing.
-
-export const HISTORY_RUNS = 14;
-const HISTORY_SINCE = '-30d';
-const JOURNAL_LIMIT = '5000';
 
 // journald MESSAGE_IDs systemd logs when a unit stops (systemd ≥ 248).
 const MESSAGE_UNIT_SUCCESS = '7ad2d189f7e94e70a38c781354912448';
@@ -144,42 +141,6 @@ export function parseRunHistory(output: string, limit = HISTORY_RUNS): JobRun[] 
   return runs.slice(-limit);
 }
 
-// --- Configuration ---------------------------------------------------------
-
-export interface JobOverride {
-  name?: string;
-  kind?: JobKind;
-  hidden?: boolean;
-}
-
-// JOBS_CONFIG: a JSON object keyed by timer, e.g.
-// {"restic-backup.timer":{"name":"Offsite backup","kind":"backup"},"motd-news.timer":{"hidden":true}}
-export function parseJobsConfig(raw: string | undefined): Record<string, JobOverride> {
-  if (!raw?.trim()) return {};
-  try {
-    const parsed = JSON.parse(raw) as unknown;
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('not an object');
-    const overrides: Record<string, JobOverride> = {};
-    for (const [timer, value] of Object.entries(parsed as Record<string, unknown>)) {
-      if (!value || typeof value !== 'object') continue;
-      const entry = value as Record<string, unknown>;
-      overrides[timer] = {
-        name: typeof entry.name === 'string' ? entry.name : undefined,
-        kind: entry.kind === 'backup' || entry.kind === 'maintenance' ? entry.kind : undefined,
-        hidden: entry.hidden === true
-      };
-    }
-    return overrides;
-  } catch {
-    logger.warn('config: JOBS_CONFIG is not a valid JSON object; ignoring it');
-    return {};
-  }
-}
-
-function defaultKind(timer: string): JobKind {
-  return /backup|dump|snapshot|restic|borg/i.test(timer) ? 'backup' : 'maintenance';
-}
-
 const first = (props: Record<string, string[]> | undefined, key: string) => props?.[key]?.[0];
 
 // Pure: assemble one job from the timer's and service's `show` properties.
@@ -202,6 +163,7 @@ export function buildJob(
       : monotonic.map(spec => describeMonotonic(spec.base, spec.span)).join(' · ') || '—';
 
   const started = parseUnixStamp(first(service, 'ExecMainStartTimestamp'));
+  const invocation = first(service, 'InvocationID');
   const exited = parseUnixStamp(first(service, 'ExecMainExitTimestamp'));
   const active = first(service, 'ActiveState');
   const running =
@@ -226,6 +188,8 @@ export function buildJob(
     id,
     name: override.name?.trim() || first(timer, 'Description') || id,
     kind: override.kind ?? defaultKind(id),
+    source: 'systemd timer',
+    controllable: true,
     service: first(timer, 'Unit') ?? id.replace(/\.timer$/, '.service'),
     schedule,
     human,
@@ -233,6 +197,8 @@ export function buildJob(
     enabled: first(timer, 'ActiveState') === 'active',
     running,
     lastRunAt: lastRun?.at ?? parseUnixStamp(first(timer, 'LastTriggerUSec')) ?? started,
+    lastRunStartedAt: started,
+    invocationId: invocation && /^[0-9a-f]{32}$/.test(invocation) ? invocation : null,
     lastDurationSec: running ? null : duration,
     lastResult,
     nextRunAt: parseUnixStamp(first(timer, 'NextElapseUSecRealtime')),
@@ -268,24 +234,37 @@ const SERVICE_PROPS = [
   'Result',
   'ExecMainStartTimestamp',
   'ExecMainExitTimestamp',
-  'ExecStart'
+  'ExecStart',
+  'InvocationID'
 ].join(',');
+
+// Only the stop messages, with no time limit, so a weekly or monthly job still
+// shows 14 runs and a chatty job's own output can't push them out of reach.
+export function historyQuery(service: string): string[] {
+  return [
+    '-o',
+    'json',
+    '-n',
+    String(HISTORY_RUNS),
+    '--no-pager',
+    '-q',
+    `UNIT=${service}`,
+    `MESSAGE_ID=${MESSAGE_UNIT_SUCCESS}`,
+    '+',
+    `UNIT=${service}`,
+    `MESSAGE_ID=${MESSAGE_UNIT_FAILURE}`
+  ];
+}
 
 async function readHistory(service: string): Promise<JobRun[]> {
   try {
-    const output = await runArgs(
-      'journalctl',
-      ['-u', service, '-o', 'json', '--since', HISTORY_SINCE, '-n', JOURNAL_LIMIT, '--no-pager', '-q'],
-      5000,
-      16 * 1024 * 1024
-    );
-    return parseRunHistory(output);
+    return parseRunHistory(await runArgs('journalctl', historyQuery(service), 5000, 4 * 1024 * 1024));
   } catch {
     return [];
   }
 }
 
-export const listJobs = withTtl(30_000, async (): Promise<JobList> => {
+async function listTimerJobs(overrides: Record<string, JobOverride>): Promise<JobList> {
   let timers: string[];
   try {
     timers = parseTimerList(
@@ -302,7 +281,6 @@ export const listJobs = withTtl(30_000, async (): Promise<JobList> => {
     return { available: false, jobs: [] };
   }
 
-  const overrides = parseJobsConfig(process.env.JOBS_CONFIG);
   timers = timers.filter(timer => !overrides[timer]?.hidden);
   if (timers.length === 0) return { available: true, jobs: [] };
 
@@ -341,7 +319,15 @@ export const listJobs = withTtl(30_000, async (): Promise<JobList> => {
     })
   );
 
-  // Backups first, then by name.
-  jobs.sort((a, b) => (a.kind === b.kind ? a.name.localeCompare(b.name) : a.kind === 'backup' ? -1 : 1));
   return { available: true, jobs };
+}
+
+// Timers and cron jobs together: backups first, then by name. Available when
+// either source could be read.
+export const listJobs = withTtl(30_000, async (): Promise<JobList> => {
+  const overrides = parseJobsConfig(process.env.JOBS_CONFIG);
+  const [timers, cron] = await Promise.all([listTimerJobs(overrides), listCronJobs(overrides)]);
+  const jobs = [...timers.jobs, ...cron.jobs];
+  jobs.sort((a, b) => (a.kind === b.kind ? a.name.localeCompare(b.name) : a.kind === 'backup' ? -1 : 1));
+  return { available: timers.available || cron.available, jobs };
 });
