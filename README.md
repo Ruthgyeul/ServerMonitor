@@ -34,20 +34,28 @@ that aggregates several nodes on one screen.
   inspector (ports, networks, mounts, restart policy, health, command, memory
   limit) and container logs, plus images, volumes and networks with what uses
   them, and Docker's disk usage with what pruning would reclaim.
-- **Jobs** (`/jobs`) — backups and scheduled jobs read from systemd timers:
-  schedule in words (*Daily at 03:30*) and as written, last run and how long
-  it took, the result, the last 14 runs from the journal, next run, and the
-  run's output in the log drawer. A failed backup raises a critical alert,
+- **Jobs** (`/jobs`) — backups and scheduled jobs from crontab and systemd
+  timers: schedule in words (*Daily at 03:30*) and as written, where it comes
+  from (`systemd timer`, `crontab (root)`, `cron.daily`, …), last run and how
+  long it took, the result, the last 14 runs, next run, and the output of the
+  most recent run in the log drawer. A failed backup raises a critical alert,
   any other failed job a warning. `JOBS_CONFIG` renames, classifies or hides
-  timers.
+  jobs. Cron doesn't record exit codes, so a cron job reads *Failed* only when
+  cron logged a failure for it and *unknown* otherwise; Run now and
+  Enable/Disable are offered for timers only.
 - **Uptime** (`/uptime`) — HTTP checks run by the server on their own
   schedule (10s/30s/60s/5m): add, pause, *Check now* or delete an endpoint and
-  see its status code, response time and last 60 results. A failing check
+  see its status code, response time and last 60 results. A new check expects
+  `200` exactly; checks created before this setting existed keep accepting any
+  2xx/3xx (*expects 2xx*). A failing check
   raises a critical alert. Checks live in `data/uptime.json`.
 - **Compare** (`/compare`) — CPU, memory, disk, network or load for today,
   this week or this month against the previous period: average, 95th
   percentile and peak with the change, an overlaid chart, and per-block
-  averages. Hourly history is kept for 62 days for this.
+  averages. The day view uses 15-minute buckets (96 points, kept 8 days);
+  week and month use hourly buckets kept for `HISTORY_RETENTION_DAYS`
+  (default 62). Peaks come from each bucket's recorded maximum, not its
+  average.
 - **Cluster view** (`/cluster`) — a compact grid that shows multiple
   ServerMonitor instances (e.g. an x86 server plus several Raspberry Pi
   nodes) side by side. The browser polls a single same-origin endpoint
@@ -72,12 +80,18 @@ that aggregates several nodes on one screen.
   `127.0.0.1` — see [Securing the API](#securing-the-api).
 - **JSON API** (`/api/system`) — returns the current metrics for the host,
   with a configurable CORS allow-list for cross-node requests.
-- **Capacity planning** — a disk/memory fill-forecast card projects hours-to-full
-  from the recent trend (same approach for both), so a slow leak or a growing
-  log directory shows up before it becomes an outage.
+- **Capacity planning** — a disk/memory forecast fits a 14-day linear trend
+  to the persisted hourly history (needs at least 3 days), shows the growth per
+  day with a daily sparkline and when it would fill, so a slow leak or a
+  growing log directory shows up before it becomes an outage.
 - **Monthly bandwidth** (`/api/bandwidth`) — daily download/upload totals
   derived from the network interface's cumulative counters, kept for 90 days,
-  for tracking usage against an ISP data cap.
+  for tracking usage against an ISP data cap. Days start at local midnight
+  (the server's time zone).
+- **Event markers** — reboots (and whether a kernel update caused them),
+  container restarts and exits with their exit code, unit restarts, app
+  deploys and control actions are recorded in `data/events.json` and drawn on
+  the charts. On first start past reboots are backfilled from `last -x`.
 - **Installable (PWA)** — *Install as an app* in the sidebar (or the
   browser's own install entry) adds the console to a phone/desktop. The
   service worker caches only the page shell (network-first); live data never
@@ -135,10 +149,13 @@ units, suppressed spikes, uptime and last reboot), then these panels in order:
 *Customize* (header, or the link under the panels) hides panels per browser,
 with *All / Essentials / Minimal* presets. Rows wrap as the window narrows.
 
-The sparklines and charts read `/api/history?range=1h|6h|24h|7d` — one-minute
-buckets kept in memory for the short ranges, the persisted hourly buckets for
-24h/7d — and the markers read `/api/events` (reboots, container deploys and
-restarts, kept 30 days in `data/events.json`).
+The sparklines and charts read `/api/history?range=1h|6h|24h|7d` — persisted
+one-minute samples for 1h/6h, 15-minute buckets for 24h (96 points) and hourly
+buckets for 7d — and the markers read `/api/events` (reboots, container
+restarts and exits, unit restarts, deploys, kept 30 days in
+`data/events.json`). `/api/history/range` (Compare, `step=1h|15m`,
+`stat=avg|max`) and `/api/history/window` (incident charts, finest resolution
+still kept) read the same store.
 
 ### `/monitor` kiosk
 
@@ -154,6 +171,29 @@ panel shows it at 0.8×), with no hover-only interactions:
 The header shows the countdown to the next view, the rotation choice
 (10s/30s/60s/off), *Switch*, the clock and *Exit*. `src/components/kiosk/KioskScreen.tsx`
 is the source of truth for this layout.
+
+### Differences from the design mock-up
+
+The console follows `Dashboard_Pro` closely; these differences are deliberate:
+
+- Pages are App Router routes (`/docker`, `/alerts/incidents/<id>`, …) rather
+  than `#hash` views, so links are shareable and login redirects keep the
+  page; the kiosk is the `/monitor` route.
+- Notifications go to browser push and webhooks only — there is no email
+  channel.
+- Control actions are off unless enabled, and destructive ones (stop, prune,
+  image removal, unit restart) ask for confirmation.
+- Cron jobs can't be run or toggled from the console, and their result is
+  *unknown* unless cron logged a failure (stock cron doesn't record exit
+  codes).
+- HTTP checks also offer a 5-minute interval, and a check set to *expects 2xx*
+  accepts any 2xx/3xx answer.
+- The live pill reads *stream*: data arrives over Server-Sent Events, not by
+  polling.
+- Incident notes and actions are attributed to *operator* — there are no user
+  accounts.
+- Process names are the kernel's `comm` (15 characters); full command lines
+  can carry secrets and are not shown.
 
 ## Tech stack
 
@@ -187,14 +227,15 @@ missing. A few need more than `/proc` to show real numbers:
 | Firewall blocked attempts | read access to the kernel journal (usually membership in `systemd-journal` or `adm`). |
 | Services page | `systemctl` (systemd 247+ for the "since" column). |
 | Unit logs | read access to the journal (`systemd-journal` or `adm`). |
-| Jobs page | `systemctl` for the timers, and journal read access (systemd 248+) for the run history. |
+| Jobs page | `systemctl` for the timers, and journal read access (systemd 248+) for the run history. Cron jobs need readable `/etc/crontab`, `/etc/cron.d` and `/etc/cron.{hourly,daily,weekly,monthly}` (user crontabs in `/var/spool/cron/crontabs` only when readable), and cron logging to the journal (`-t CRON`) for last runs. In Docker, mount those paths and the journal read-only (see `docker-compose.yml`). |
 | Docker page, container logs | the `docker` CLI and access to the Docker socket (the `docker` group, or the socket mounted into the container). |
 | Last reboot reason | readable `/var/log/wtmp` and a `last` binary; reports whether the previous shutdown was clean. |
 | SSH sessions | detected from sshd session processes (`/proc/<pid>/comm` + cmdline) and established connections on the SSH port(s), so it works without utmp and catches PTY-less sessions (scp/sftp). The remote IP is filled in from the socket when `/proc/<pid>/fd` is readable (own user, or root); otherwise it may read `—`. `who` is merged in as a fallback. Set `SSH_PORTS` if sshd listens somewhere other than 22 and can't read `sshd_config`. |
 
-The 48-hour load grid and 24-hour CPU heatmap are kept in memory by the
-running process and persisted to `data/history.json`, so they survive a
-restart or redeploy. Any stretch the server was actually down stays empty and
+Metric history is kept in memory by the running process and persisted to
+`data/minutes.json` (per-minute samples, 6 hours) and `data/history.json`
+(15-minute buckets for 8 days, hourly buckets for `HISTORY_RETENTION_DAYS`),
+so charts survive a restart or redeploy. Any stretch the server was actually down stays empty and
 fills in again over time.
 
 If a metric looks wrong on a real host, `./scripts/diagnose.sh` prints what
@@ -273,6 +314,12 @@ read on the server.
 | `NEXT_PUBLIC_SITE_DESCRIPTION` | `src/config/siteConfig.ts` | Site description used in metadata and social previews. |
 | `NEXT_PUBLIC_AUTHOR_NAME` | `src/config/siteConfig.ts` | Author/creator/publisher metadata. |
 | `PING_HOST` | `src/utils/systemMonitor.ts` | Host pinged for the latency reading. Defaults to `8.8.8.8`; set it to a reachable host if outbound ICMP is blocked, otherwise ping shows `0`. |
+| `HISTORY_RETENTION_DAYS` | `src/utils/collectors/history.ts` | Days of hourly history to keep, 7–400 (default `62`). Feeds Compare week/month and the 14-day capacity trend. |
+| `ALERT_FIRE_DELAY_SECONDS` / `ALERT_RESOLVE_DELAY_SECONDS` | `src/utils/collectors/alerts.ts` | How long a threshold breach must hold before it alerts (default `30`) and how long recovery must hold before it clears (default `60`). `0` = immediately. Also editable at `/settings/rules`. |
+| `JOBS_CONFIG` | `src/utils/collectors/jobConfig.ts` | JSON object keyed by timer unit or cron job id: `{ "name", "kind": "backup" \| "maintenance", "hidden" }`. |
+| `CONTROL_ENABLED`, `CONTROL_ALLOWED_CIDRS`, `CONTROL_TRUST_PROXY`, `CONTROL_ALLOWLIST_CONTAINERS`, `CONTROL_ALLOWLIST_UNITS`, `CONTROL_ALLOW_PRUNE` | `src/utils/control.ts` | Opt-in control actions; see [Control actions](#control-actions-opt-in). |
+| `DATA_DIR` and `*_FILE` (`HISTORY_FILE`, `MINUTES_FILE`, `UPTIME_FILE`, `INCIDENTS_FILE`, `NOTIFICATIONS_FILE`, `ALERTS_FILE`, `ALERT_OVERRIDES_FILE`, `EVENTS_FILE`, `BANDWIDTH_FILE`) | `src/utils/collectors/*` | Where persisted state lives (default `./data`). Override a file only to move it. |
+| `LOG_LEVEL` | `src/utils/logger.ts` | Server log volume: `error`, `warn`, `info` (default) or `debug`. |
 | `SSH_PORTS` | `src/utils/collectors/security.ts` | Comma-separated SSH port(s) used to match active sessions. Normally read from `sshd_config` with a fallback to `22`; set only if sshd listens elsewhere and the config isn't readable. |
 | `KIOSK_USER` | `scripts/run.sh` | Linux user whose Firefox session is killed/relaunched in kiosk mode. |
 | `KIOSK_URL` | `scripts/run.sh` | URL opened in kiosk mode. |
