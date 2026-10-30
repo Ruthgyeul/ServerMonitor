@@ -10,7 +10,13 @@ describe('linePath', () => {
   });
 
   it('clamps out-of-range values and breaks on nulls', () => {
-    expect(linePath([20, null, -5], box, 10)).toBe('M0.0,0.0 M100.0,10.0');
+    expect(linePath([20, 20, null, -5, -5], box, 10)).toBe('M0.0,0.0 L25.0,0.0 M75.0,10.0 L100.0,10.0');
+  });
+
+  it('draws a lone sample between gaps as a short level dash', () => {
+    // step 25 → a quarter step (6.25) either side, clipped to the box
+    expect(linePath([null, null, 4, null, null], box, 10)).toBe('M43.8,6.0 L56.3,6.0');
+    expect(linePath([4, null, null, null, null], box, 10)).toBe('M0.0,6.0 L6.3,6.0');
   });
 
   it('returns an empty path for no data', () => {
@@ -20,8 +26,18 @@ describe('linePath', () => {
 });
 
 describe('areaPath', () => {
-  it('closes the last run down to the baseline', () => {
+  it('closes the line down to the baseline', () => {
     expect(areaPath([0, 10], box, 10)).toBe('M0.0,10.0 L100.0,0.0 L100.0,10.0 L0.0,10.0 Z');
+  });
+
+  it('fills every run across a gap, not just the last', () => {
+    expect(areaPath([10, 10, null, 10, 10], box, 10)).toBe(
+      'M0.0,0.0 L25.0,0.0 L25.0,10.0 L0.0,10.0 Z M75.0,0.0 L100.0,0.0 L100.0,10.0 L75.0,10.0 Z'
+    );
+  });
+
+  it('returns an empty path for no data', () => {
+    expect(areaPath([null], box, 10)).toBe('');
   });
 });
 

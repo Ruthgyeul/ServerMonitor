@@ -65,8 +65,20 @@ export function eventCounts(
   return counts;
 }
 
-// The newest bucket is still filling, so draw the live reading as its value.
-export function withLive(values: (number | null)[], live: number | null): (number | null)[] {
+// Ranges built from one- and five-minute buckets, where the live reading is a
+// fair stand-in for the bucket still filling. A 15-minute or hourly average
+// keeps its own value: swapping in an instant reading would spike or drop the
+// line at "now".
+const LIVE_RANGES: ReadonlySet<HistoryRange> = new Set<HistoryRange>(['1h', '6h']);
+
+// The newest bucket is still filling, so on the short ranges draw the live
+// reading as its value.
+export function withLive(
+  values: (number | null)[],
+  live: number | null,
+  range: HistoryRange
+): (number | null)[] {
+  if (!LIVE_RANGES.has(range)) return values;
   if (values.length === 0) return live === null ? [] : [live];
   return [...values.slice(0, -1), live ?? values[values.length - 1]];
 }
